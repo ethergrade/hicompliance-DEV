@@ -5021,45 +5021,191 @@ export type Database = {
         }
         Relationships: []
       }
+      supplier_assessment_answers: {
+        Row: {
+          answer: string
+          answered_by: string | null
+          assessment_id: string
+          created_at: string
+          id: string
+          notes: string | null
+          question_id: string
+          updated_at: string
+        }
+        Insert: {
+          answer: string
+          answered_by?: string | null
+          assessment_id: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          question_id: string
+          updated_at?: string
+        }
+        Update: {
+          answer?: string
+          answered_by?: string | null
+          assessment_id?: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          question_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_assessment_answers_assessment_id_fkey"
+            columns: ["assessment_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_assessments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supplier_assessment_answers_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "supply_chain_questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      supplier_assessments: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          due_at: string | null
+          id: string
+          progress_percent: number
+          reopened_at: string | null
+          risk_band: string | null
+          score: number | null
+          started_at: string | null
+          status: string
+          submitted_at: string | null
+          supplier_id: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          due_at?: string | null
+          id?: string
+          progress_percent?: number
+          reopened_at?: string | null
+          risk_band?: string | null
+          score?: number | null
+          started_at?: string | null
+          status?: string
+          submitted_at?: string | null
+          supplier_id: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          due_at?: string | null
+          id?: string
+          progress_percent?: number
+          reopened_at?: string | null
+          risk_band?: string | null
+          score?: number | null
+          started_at?: string | null
+          status?: string
+          submitted_at?: string | null
+          supplier_id?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_assessments_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_directory"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       supplier_directory: {
         Row: {
+          archived_at: string | null
+          assessment_due_at: string | null
+          category: string | null
           contact_name: string | null
+          country: string | null
           created_at: string
+          created_by: string | null
+          criticality: string
           email: string | null
           id: string
+          is_demo: boolean
+          last_assessment_at: string | null
           linked_asset_id: string | null
           notes: string | null
           organization_id: string
           phone: string | null
+          portal_enabled: boolean
+          service_description: string | null
           service_type: string | null
+          status: string
           supplier_name: string
           updated_at: string
+          vat_number: string | null
+          website: string | null
         }
         Insert: {
+          archived_at?: string | null
+          assessment_due_at?: string | null
+          category?: string | null
           contact_name?: string | null
+          country?: string | null
           created_at?: string
+          created_by?: string | null
+          criticality?: string
           email?: string | null
           id?: string
+          is_demo?: boolean
+          last_assessment_at?: string | null
           linked_asset_id?: string | null
           notes?: string | null
           organization_id: string
           phone?: string | null
+          portal_enabled?: boolean
+          service_description?: string | null
           service_type?: string | null
+          status?: string
           supplier_name: string
           updated_at?: string
+          vat_number?: string | null
+          website?: string | null
         }
         Update: {
+          archived_at?: string | null
+          assessment_due_at?: string | null
+          category?: string | null
           contact_name?: string | null
+          country?: string | null
           created_at?: string
+          created_by?: string | null
+          criticality?: string
           email?: string | null
           id?: string
+          is_demo?: boolean
+          last_assessment_at?: string | null
           linked_asset_id?: string | null
           notes?: string | null
           organization_id?: string
           phone?: string | null
+          portal_enabled?: boolean
+          service_description?: string | null
           service_type?: string | null
+          status?: string
           supplier_name?: string
           updated_at?: string
+          vat_number?: string | null
+          website?: string | null
         }
         Relationships: [
           {
@@ -5082,6 +5228,381 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_sales_remediation_dashboard"
             referencedColumns: ["organization_id"]
+          },
+        ]
+      }
+      supplier_invitations: {
+        Row: {
+          accepted_at: string | null
+          auth_user_id: string | null
+          created_at: string
+          delivery_mode: string
+          email: string
+          error_message: string | null
+          expires_at: string | null
+          id: string
+          invited_by: string | null
+          revoked_at: string | null
+          status: string
+          supplier_id: string
+          updated_at: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          auth_user_id?: string | null
+          created_at?: string
+          delivery_mode?: string
+          email: string
+          error_message?: string | null
+          expires_at?: string | null
+          id?: string
+          invited_by?: string | null
+          revoked_at?: string | null
+          status?: string
+          supplier_id: string
+          updated_at?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          auth_user_id?: string | null
+          created_at?: string
+          delivery_mode?: string
+          email?: string
+          error_message?: string | null
+          expires_at?: string | null
+          id?: string
+          invited_by?: string | null
+          revoked_at?: string | null
+          status?: string
+          supplier_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_invitations_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_directory"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      supplier_portal_users: {
+        Row: {
+          activated_at: string | null
+          auth_user_id: string
+          created_at: string
+          email: string
+          id: string
+          invited_at: string | null
+          is_active: boolean
+          last_login_at: string | null
+          must_change_password: boolean
+          role: string
+          supplier_id: string
+          updated_at: string
+        }
+        Insert: {
+          activated_at?: string | null
+          auth_user_id: string
+          created_at?: string
+          email: string
+          id?: string
+          invited_at?: string | null
+          is_active?: boolean
+          last_login_at?: string | null
+          must_change_password?: boolean
+          role?: string
+          supplier_id: string
+          updated_at?: string
+        }
+        Update: {
+          activated_at?: string | null
+          auth_user_id?: string
+          created_at?: string
+          email?: string
+          id?: string
+          invited_at?: string | null
+          is_active?: boolean
+          last_login_at?: string | null
+          must_change_password?: boolean
+          role?: string
+          supplier_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_portal_users_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_directory"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      supplier_technology_profiles: {
+        Row: {
+          accesses_customer_systems: boolean | null
+          cloud_workloads_count: number | null
+          completed_at: string | null
+          created_at: string
+          edr_xdr_product: string | null
+          employees_count: number | null
+          handles_sensitive_data: boolean | null
+          has_central_patch_management: boolean | null
+          has_dark_web_monitoring: boolean | null
+          has_edr_xdr: boolean | null
+          has_email_security: boolean | null
+          has_external_exposure_monitoring: boolean | null
+          has_infrastructure_monitoring: boolean | null
+          has_managed_backup: boolean | null
+          has_managed_firewall: boolean | null
+          has_mdm_uem: boolean | null
+          has_mfa: boolean | null
+          has_siem_log_management: boolean | null
+          has_soc_mdr: boolean | null
+          has_vulnerability_management: boolean | null
+          id: string
+          it_management_model: string | null
+          it_provider_name: string | null
+          linux_endpoints_count: number | null
+          locations_count: number | null
+          macos_endpoints_count: number | null
+          mdm_uem_product: string | null
+          mobile_devices_count: number | null
+          physical_servers_count: number | null
+          remote_users_count: number | null
+          restore_tests_performed: boolean | null
+          supplier_id: string
+          supplier_notes: string | null
+          updated_at: string
+          virtual_machines_count: number | null
+          windows_endpoints_count: number | null
+        }
+        Insert: {
+          accesses_customer_systems?: boolean | null
+          cloud_workloads_count?: number | null
+          completed_at?: string | null
+          created_at?: string
+          edr_xdr_product?: string | null
+          employees_count?: number | null
+          handles_sensitive_data?: boolean | null
+          has_central_patch_management?: boolean | null
+          has_dark_web_monitoring?: boolean | null
+          has_edr_xdr?: boolean | null
+          has_email_security?: boolean | null
+          has_external_exposure_monitoring?: boolean | null
+          has_infrastructure_monitoring?: boolean | null
+          has_managed_backup?: boolean | null
+          has_managed_firewall?: boolean | null
+          has_mdm_uem?: boolean | null
+          has_mfa?: boolean | null
+          has_siem_log_management?: boolean | null
+          has_soc_mdr?: boolean | null
+          has_vulnerability_management?: boolean | null
+          id?: string
+          it_management_model?: string | null
+          it_provider_name?: string | null
+          linux_endpoints_count?: number | null
+          locations_count?: number | null
+          macos_endpoints_count?: number | null
+          mdm_uem_product?: string | null
+          mobile_devices_count?: number | null
+          physical_servers_count?: number | null
+          remote_users_count?: number | null
+          restore_tests_performed?: boolean | null
+          supplier_id: string
+          supplier_notes?: string | null
+          updated_at?: string
+          virtual_machines_count?: number | null
+          windows_endpoints_count?: number | null
+        }
+        Update: {
+          accesses_customer_systems?: boolean | null
+          cloud_workloads_count?: number | null
+          completed_at?: string | null
+          created_at?: string
+          edr_xdr_product?: string | null
+          employees_count?: number | null
+          handles_sensitive_data?: boolean | null
+          has_central_patch_management?: boolean | null
+          has_dark_web_monitoring?: boolean | null
+          has_edr_xdr?: boolean | null
+          has_email_security?: boolean | null
+          has_external_exposure_monitoring?: boolean | null
+          has_infrastructure_monitoring?: boolean | null
+          has_managed_backup?: boolean | null
+          has_managed_firewall?: boolean | null
+          has_mdm_uem?: boolean | null
+          has_mfa?: boolean | null
+          has_siem_log_management?: boolean | null
+          has_soc_mdr?: boolean | null
+          has_vulnerability_management?: boolean | null
+          id?: string
+          it_management_model?: string | null
+          it_provider_name?: string | null
+          linux_endpoints_count?: number | null
+          locations_count?: number | null
+          macos_endpoints_count?: number | null
+          mdm_uem_product?: string | null
+          mobile_devices_count?: number | null
+          physical_servers_count?: number | null
+          remote_users_count?: number | null
+          restore_tests_performed?: boolean | null
+          supplier_id?: string
+          supplier_notes?: string | null
+          updated_at?: string
+          virtual_machines_count?: number | null
+          windows_endpoints_count?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supplier_technology_profiles_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: true
+            referencedRelation: "supplier_directory"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      supply_chain_audit_log: {
+        Row: {
+          action: string
+          actor_kind: string
+          actor_user_id: string | null
+          created_at: string
+          id: string
+          metadata: Json
+          organization_id: string | null
+          supplier_id: string | null
+        }
+        Insert: {
+          action: string
+          actor_kind?: string
+          actor_user_id?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json
+          organization_id?: string | null
+          supplier_id?: string | null
+        }
+        Update: {
+          action?: string
+          actor_kind?: string
+          actor_user_id?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json
+          organization_id?: string | null
+          supplier_id?: string | null
+        }
+        Relationships: []
+      }
+      supply_chain_questions: {
+        Row: {
+          category_code: string
+          category_label: string
+          code: string
+          created_at: string
+          help_text: string | null
+          id: string
+          is_active: boolean
+          is_critical: boolean
+          order_index: number
+          question_text: string
+          updated_at: string
+          weight: number
+        }
+        Insert: {
+          category_code: string
+          category_label: string
+          code: string
+          created_at?: string
+          help_text?: string | null
+          id?: string
+          is_active?: boolean
+          is_critical?: boolean
+          order_index: number
+          question_text: string
+          updated_at?: string
+          weight?: number
+        }
+        Update: {
+          category_code?: string
+          category_label?: string
+          code?: string
+          created_at?: string
+          help_text?: string | null
+          id?: string
+          is_active?: boolean
+          is_critical?: boolean
+          order_index?: number
+          question_text?: string
+          updated_at?: string
+          weight?: number
+        }
+        Relationships: []
+      }
+      supply_chain_recommendations: {
+        Row: {
+          assessment_id: string
+          commercial_status: string
+          created_at: string
+          gap_title: string
+          id: string
+          neutral_action: string
+          priority: string
+          rationale: string | null
+          rule_code: string
+          service_code: string | null
+          service_name: string | null
+          supplier_id: string
+          updated_at: string
+        }
+        Insert: {
+          assessment_id: string
+          commercial_status?: string
+          created_at?: string
+          gap_title: string
+          id?: string
+          neutral_action: string
+          priority?: string
+          rationale?: string | null
+          rule_code: string
+          service_code?: string | null
+          service_name?: string | null
+          supplier_id: string
+          updated_at?: string
+        }
+        Update: {
+          assessment_id?: string
+          commercial_status?: string
+          created_at?: string
+          gap_title?: string
+          id?: string
+          neutral_action?: string
+          priority?: string
+          rationale?: string | null
+          rule_code?: string
+          service_code?: string | null
+          service_name?: string | null
+          supplier_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supply_chain_recommendations_assessment_id_fkey"
+            columns: ["assessment_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_assessments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supply_chain_recommendations_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "supplier_directory"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -7427,6 +7948,38 @@ export type Database = {
         }[]
       }
       platform_managed_cron_jobs: { Args: never; Returns: string[] }
+      sc_activate_supplier_account: { Args: never; Returns: Json }
+      sc_assessment_editable_by_me: { Args: { _a: string }; Returns: boolean }
+      sc_assessment_supplier: { Args: { _a: string }; Returns: string }
+      sc_can_access_org: { Args: { _org: string }; Returns: boolean }
+      sc_compute_assessment: { Args: { _a: string }; Returns: Json }
+      sc_my_supplier_id: { Args: never; Returns: string }
+      sc_org_gaps: {
+        Args: { _org: string }
+        Returns: {
+          gap_title: string
+          neutral_action: string
+          priority: string
+          rule_code: string
+          supplier_id: string
+        }[]
+      }
+      sc_portal_context: { Args: never; Returns: Json }
+      sc_reopen_assessment: { Args: { _supplier: string }; Returns: string }
+      sc_start_assessment: { Args: never; Returns: string }
+      sc_submit_assessment: { Args: { _a: string }; Returns: Json }
+      sc_supplier_gaps: {
+        Args: { _supplier: string }
+        Returns: {
+          gap_title: string
+          neutral_action: string
+          priority: string
+          rationale: string
+          rule_code: string
+        }[]
+      }
+      sc_supplier_org: { Args: { _supplier: string }; Returns: string }
+      sc_update_progress: { Args: { _a: string }; Returns: number }
       set_cron_job_active: {
         Args: { _active: boolean; _jobname: string }
         Returns: Json
