@@ -186,7 +186,11 @@ export function useOrganizationProfile() {
 		  phone: data.phone || null,
 		  email: data.email || null,
 		  business_sector: data.business_sector || null,
-		  nis2_classification: data.nis2_classification === 'nessuna' ? 'none' : data.nis2_classification,
+		  nis2_classification: data.nis2_classification === 'soggetto_essenziale'
+			? 'essential'
+			: data.nis2_classification === 'soggetto_importante'
+				? 'important'
+				: 'none',
 		  ciso_substitute: data.ciso_substitute || null,
 		}, { onConflict: 'organization_id' })
 		.select('*')
