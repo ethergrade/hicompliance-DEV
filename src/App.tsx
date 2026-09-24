@@ -36,6 +36,8 @@ import CyberNews from "./pages/CyberNews";
 // import AdminReporting from "./pages/AdminReporting";
 import Consistenze from "./pages/Consistenze";
 import SupplyChain from "./pages/SupplyChain";
+import BusinessImpactAnalysis from "./pages/BusinessImpactAnalysis";
+import BusinessImpactServiceDetail from "./pages/BusinessImpactServiceDetail";
 import SupplierPortal from "./pages/SupplierPortal";
 import AdminCompanies from "./pages/AdminCompanies";
 import AssessmentGanttTest from "./pages/AssessmentGanttTest";
@@ -324,6 +326,9 @@ const App = () => (
 									</ClientSelectionGuard>
 								}
 							/>
+							<Route path="/business-impact-analysis" element={<ClientSelectionGuard><BusinessImpactAnalysis /></ClientSelectionGuard>} />
+							<Route path="/business-impact-analysis/services/:serviceId" element={<ClientSelectionGuard><BusinessImpactServiceDetail /></ClientSelectionGuard>} />
+							<Route path="/business-impact-analysis/services/:serviceId/bia/:biaId" element={<ClientSelectionGuard><BusinessImpactServiceDetail /></ClientSelectionGuard>} />
 							<Route path="/supplier-portal" element={<SupplierPortal />} />
 							<Route path="/supplier-portal/:step" element={<SupplierPortal />} />
 							{/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

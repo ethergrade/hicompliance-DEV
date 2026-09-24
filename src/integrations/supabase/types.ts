@@ -436,6 +436,710 @@ export type Database = {
           },
         ]
       }
+      bia_assessments: {
+        Row: {
+          annual_frequency: number | null
+          annual_frequency_source: string | null
+          approved_at: string | null
+          approved_by: string | null
+          approved_snapshot: Json | null
+          assumptions: string | null
+          business_impact_score: number | null
+          business_service_id: string
+          calculated_at: string | null
+          confidence: string | null
+          created_at: string
+          created_by: string | null
+          criticality_class: string | null
+          currency: string
+          data_coverage_percent: number | null
+          degraded_mode: string | null
+          dependency_score: number | null
+          dependency_spof: boolean
+          dependency_workaround: boolean
+          economic_level: number | null
+          economic_score: number | null
+          id: string
+          minimum_capacity_percent: number | null
+          model_version: string
+          mtpd_minutes: number | null
+          no_dependency_reason: string | null
+          operational_score: number | null
+          organization_id: string
+          recovery_rank: number | null
+          regulatory_score: number | null
+          regulatory_source: string | null
+          reputational_score: number | null
+          result: Json
+          review_comment: string | null
+          review_due_at: string | null
+          rpo_target_minutes: number | null
+          rto_target_minutes: number | null
+          status: string
+          submitted_at: string | null
+          submitted_by: string | null
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          annual_frequency?: number | null
+          annual_frequency_source?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          approved_snapshot?: Json | null
+          assumptions?: string | null
+          business_impact_score?: number | null
+          business_service_id: string
+          calculated_at?: string | null
+          confidence?: string | null
+          created_at?: string
+          created_by?: string | null
+          criticality_class?: string | null
+          currency?: string
+          data_coverage_percent?: number | null
+          degraded_mode?: string | null
+          dependency_score?: number | null
+          dependency_spof?: boolean
+          dependency_workaround?: boolean
+          economic_level?: number | null
+          economic_score?: number | null
+          id?: string
+          minimum_capacity_percent?: number | null
+          model_version?: string
+          mtpd_minutes?: number | null
+          no_dependency_reason?: string | null
+          operational_score?: number | null
+          organization_id: string
+          recovery_rank?: number | null
+          regulatory_score?: number | null
+          regulatory_source?: string | null
+          reputational_score?: number | null
+          result?: Json
+          review_comment?: string | null
+          review_due_at?: string | null
+          rpo_target_minutes?: number | null
+          rto_target_minutes?: number | null
+          status?: string
+          submitted_at?: string | null
+          submitted_by?: string | null
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          annual_frequency?: number | null
+          annual_frequency_source?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
+          approved_snapshot?: Json | null
+          assumptions?: string | null
+          business_impact_score?: number | null
+          business_service_id?: string
+          calculated_at?: string | null
+          confidence?: string | null
+          created_at?: string
+          created_by?: string | null
+          criticality_class?: string | null
+          currency?: string
+          data_coverage_percent?: number | null
+          degraded_mode?: string | null
+          dependency_score?: number | null
+          dependency_spof?: boolean
+          dependency_workaround?: boolean
+          economic_level?: number | null
+          economic_score?: number | null
+          id?: string
+          minimum_capacity_percent?: number | null
+          model_version?: string
+          mtpd_minutes?: number | null
+          no_dependency_reason?: string | null
+          operational_score?: number | null
+          organization_id?: string
+          recovery_rank?: number | null
+          regulatory_score?: number | null
+          regulatory_source?: string | null
+          reputational_score?: number | null
+          result?: Json
+          review_comment?: string | null
+          review_due_at?: string | null
+          rpo_target_minutes?: number | null
+          rto_target_minutes?: number | null
+          status?: string
+          submitted_at?: string | null
+          submitted_by?: string | null
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bia_assessments_business_service_id_fkey"
+            columns: ["business_service_id"]
+            isOneToOne: false
+            referencedRelation: "business_services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bia_assessments_model_version_fkey"
+            columns: ["model_version"]
+            isOneToOne: false
+            referencedRelation: "bia_model_configurations"
+            referencedColumns: ["model_version"]
+          },
+          {
+            foreignKeyName: "bia_assessments_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bia_assessments_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+        ]
+      }
+      bia_audit_events: {
+        Row: {
+          actor_id: string | null
+          after_json: Json | null
+          before_json: Json | null
+          created_at: string
+          entity_id: string
+          entity_type: string
+          event_type: string
+          id: string
+          model_version: string | null
+          organization_id: string
+          reason: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          after_json?: Json | null
+          before_json?: Json | null
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          event_type: string
+          id?: string
+          model_version?: string | null
+          organization_id: string
+          reason?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          after_json?: Json | null
+          before_json?: Json | null
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          event_type?: string
+          id?: string
+          model_version?: string | null
+          organization_id?: string
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bia_audit_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bia_audit_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+        ]
+      }
+      bia_impact_values: {
+        Row: {
+          bia_assessment_id: string
+          calculated_total: number
+          confidence: string
+          contractual_penalties: number
+          created_at: string
+          customer_reputation_cost: number
+          effective_total: number
+          extra_operating_cost: number
+          horizon_minutes: number
+          id: string
+          idle_labor_cost: number
+          lost_contribution_margin: number
+          manual_total: number | null
+          other_cost: number
+          override_reason: string | null
+          recovery_response_cost: number
+          regulatory_legal_cost: number
+          source_notes: string
+          updated_at: string
+        }
+        Insert: {
+          bia_assessment_id: string
+          calculated_total?: number
+          confidence?: string
+          contractual_penalties?: number
+          created_at?: string
+          customer_reputation_cost?: number
+          effective_total?: number
+          extra_operating_cost?: number
+          horizon_minutes: number
+          id?: string
+          idle_labor_cost?: number
+          lost_contribution_margin?: number
+          manual_total?: number | null
+          other_cost?: number
+          override_reason?: string | null
+          recovery_response_cost?: number
+          regulatory_legal_cost?: number
+          source_notes?: string
+          updated_at?: string
+        }
+        Update: {
+          bia_assessment_id?: string
+          calculated_total?: number
+          confidence?: string
+          contractual_penalties?: number
+          created_at?: string
+          customer_reputation_cost?: number
+          effective_total?: number
+          extra_operating_cost?: number
+          horizon_minutes?: number
+          id?: string
+          idle_labor_cost?: number
+          lost_contribution_margin?: number
+          manual_total?: number | null
+          other_cost?: number
+          override_reason?: string | null
+          recovery_response_cost?: number
+          regulatory_legal_cost?: number
+          source_notes?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bia_impact_values_bia_assessment_id_fkey"
+            columns: ["bia_assessment_id"]
+            isOneToOne: false
+            referencedRelation: "bia_assessments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bia_model_configurations: {
+        Row: {
+          class_thresholds: Json
+          created_at: string
+          default_horizons: number[]
+          economic_buckets: Json
+          model_version: string
+          resilience_weights: Json
+          weights: Json
+        }
+        Insert: {
+          class_thresholds: Json
+          created_at?: string
+          default_horizons: number[]
+          economic_buckets: Json
+          model_version: string
+          resilience_weights: Json
+          weights: Json
+        }
+        Update: {
+          class_thresholds?: Json
+          created_at?: string
+          default_horizons?: number[]
+          economic_buckets?: Json
+          model_version?: string
+          resilience_weights?: Json
+          weights?: Json
+        }
+        Relationships: []
+      }
+      bia_remediation_links: {
+        Row: {
+          bia_assessment_id: string | null
+          business_service_id: string
+          created_at: string
+          created_by: string | null
+          estimated_risk_reduction_percent: number | null
+          id: string
+          impact_horizon_minutes: number | null
+          organization_id: string
+          recurring_annual_cost: number | null
+          reduction_source: string | null
+          remediation_task_id: string
+          risk_link_id: string | null
+          useful_life_years: number | null
+        }
+        Insert: {
+          bia_assessment_id?: string | null
+          business_service_id: string
+          created_at?: string
+          created_by?: string | null
+          estimated_risk_reduction_percent?: number | null
+          id?: string
+          impact_horizon_minutes?: number | null
+          organization_id: string
+          recurring_annual_cost?: number | null
+          reduction_source?: string | null
+          remediation_task_id: string
+          risk_link_id?: string | null
+          useful_life_years?: number | null
+        }
+        Update: {
+          bia_assessment_id?: string | null
+          business_service_id?: string
+          created_at?: string
+          created_by?: string | null
+          estimated_risk_reduction_percent?: number | null
+          id?: string
+          impact_horizon_minutes?: number | null
+          organization_id?: string
+          recurring_annual_cost?: number | null
+          reduction_source?: string | null
+          remediation_task_id?: string
+          risk_link_id?: string | null
+          useful_life_years?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bia_remediation_links_bia_assessment_id_fkey"
+            columns: ["bia_assessment_id"]
+            isOneToOne: false
+            referencedRelation: "bia_assessments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bia_remediation_links_business_service_id_fkey"
+            columns: ["business_service_id"]
+            isOneToOne: false
+            referencedRelation: "business_services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bia_remediation_links_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bia_remediation_links_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "bia_remediation_links_remediation_task_id_fkey"
+            columns: ["remediation_task_id"]
+            isOneToOne: false
+            referencedRelation: "remediation_tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bia_remediation_links_risk_link_id_fkey"
+            columns: ["risk_link_id"]
+            isOneToOne: false
+            referencedRelation: "bia_risk_links"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bia_risk_links: {
+        Row: {
+          business_service_id: string
+          created_at: string
+          id: string
+          is_confirmed: boolean
+          normalization_method: string | null
+          normalized_residual_risk: number | null
+          organization_id: string
+          source_id: string
+          source_label: string | null
+          source_type: string
+          source_updated_at: string | null
+        }
+        Insert: {
+          business_service_id: string
+          created_at?: string
+          id?: string
+          is_confirmed?: boolean
+          normalization_method?: string | null
+          normalized_residual_risk?: number | null
+          organization_id: string
+          source_id: string
+          source_label?: string | null
+          source_type: string
+          source_updated_at?: string | null
+        }
+        Update: {
+          business_service_id?: string
+          created_at?: string
+          id?: string
+          is_confirmed?: boolean
+          normalization_method?: string | null
+          normalized_residual_risk?: number | null
+          organization_id?: string
+          source_id?: string
+          source_label?: string | null
+          source_type?: string
+          source_updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bia_risk_links_business_service_id_fkey"
+            columns: ["business_service_id"]
+            isOneToOne: false
+            referencedRelation: "business_services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bia_risk_links_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bia_risk_links_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+        ]
+      }
+      bia_service_dependencies: {
+        Row: {
+          created_at: string
+          dependency_strength: string
+          depends_on_service_id: string
+          id: string
+          notes: string | null
+          organization_id: string
+          service_id: string
+          single_point_of_failure: boolean
+          workaround_available: boolean
+        }
+        Insert: {
+          created_at?: string
+          dependency_strength?: string
+          depends_on_service_id: string
+          id?: string
+          notes?: string | null
+          organization_id: string
+          service_id: string
+          single_point_of_failure?: boolean
+          workaround_available?: boolean
+        }
+        Update: {
+          created_at?: string
+          dependency_strength?: string
+          depends_on_service_id?: string
+          id?: string
+          notes?: string | null
+          organization_id?: string
+          service_id?: string
+          single_point_of_failure?: boolean
+          workaround_available?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bia_service_dependencies_depends_on_service_id_fkey"
+            columns: ["depends_on_service_id"]
+            isOneToOne: false
+            referencedRelation: "business_services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bia_service_dependencies_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bia_service_dependencies_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "bia_service_dependencies_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "business_services"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bia_technical_asset_links: {
+        Row: {
+          business_service_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          is_confirmed: boolean
+          organization_id: string
+          role: string
+          source_id: string
+          source_label: string | null
+          source_type: string
+          source_updated_at: string | null
+        }
+        Insert: {
+          business_service_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_confirmed?: boolean
+          organization_id: string
+          role?: string
+          source_id: string
+          source_label?: string | null
+          source_type: string
+          source_updated_at?: string | null
+        }
+        Update: {
+          business_service_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_confirmed?: boolean
+          organization_id?: string
+          role?: string
+          source_id?: string
+          source_label?: string | null
+          source_type?: string
+          source_updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bia_technical_asset_links_business_service_id_fkey"
+            columns: ["business_service_id"]
+            isOneToOne: false
+            referencedRelation: "business_services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bia_technical_asset_links_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bia_technical_asset_links_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+        ]
+      }
+      business_services: {
+        Row: {
+          business_owner_contact_id: string | null
+          business_unit: string | null
+          code: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          it_owner_contact_id: string | null
+          last_reviewed_at: string | null
+          name: string
+          operating_schedule: Json
+          organization_id: string
+          peak_periods: Json
+          served_population: Json
+          service_type: string
+          source: string
+          source_ref: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          business_owner_contact_id?: string | null
+          business_unit?: string | null
+          code: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          it_owner_contact_id?: string | null
+          last_reviewed_at?: string | null
+          name: string
+          operating_schedule?: Json
+          organization_id: string
+          peak_periods?: Json
+          served_population?: Json
+          service_type?: string
+          source?: string
+          source_ref?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          business_owner_contact_id?: string | null
+          business_unit?: string | null
+          code?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          it_owner_contact_id?: string | null
+          last_reviewed_at?: string | null
+          name?: string
+          operating_schedule?: Json
+          organization_id?: string
+          peak_periods?: Json
+          served_population?: Json
+          service_type?: string
+          source?: string
+          source_ref?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "business_services_business_owner_contact_id_fkey"
+            columns: ["business_owner_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contact_directory"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "business_services_it_owner_contact_id_fkey"
+            columns: ["it_owner_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contact_directory"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "business_services_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "business_services_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+        ]
+      }
       cisa_kev_catalog: {
         Row: {
           cve_id: string
@@ -7882,6 +8586,37 @@ export type Database = {
         Args: { _actor_id?: string; _organization_id: string }
         Returns: Json
       }
+      bia_approve: {
+        Args: { _bia_id: string; _review_months?: number }
+        Returns: Json
+      }
+      bia_audit: {
+        Args: {
+          _after: Json
+          _before: Json
+          _eid: string
+          _etype: string
+          _event: string
+          _org: string
+          _reason: string
+        }
+        Returns: undefined
+      }
+      bia_backup_minutes: { Args: { _txt: string }; Returns: number }
+      bia_can_approve: { Args: { _org: string }; Returns: boolean }
+      bia_can_edit: { Args: { _org: string }; Returns: boolean }
+      bia_clone_revision: {
+        Args: { _bia_id: string; _reason?: string }
+        Returns: string
+      }
+      bia_compute: { Args: { _bia_id: string }; Returns: Json }
+      bia_dashboard: { Args: { _org: string }; Returns: Json }
+      bia_request_changes: {
+        Args: { _bia_id: string; _comment: string }
+        Returns: Json
+      }
+      bia_sales_only: { Args: { _org: string }; Returns: boolean }
+      bia_submit: { Args: { _bia_id: string }; Returns: Json }
       calc_risk_intrinseco: {
         Args: { criticita: number; esposizione: number; superficie: number }
         Returns: number
