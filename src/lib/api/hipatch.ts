@@ -4,9 +4,15 @@ import { tenantServicesApi } from "./tenant-services";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface HipatchSummary {
-	last_updated: string;
-	avg_risk_score: number;
-	max_risk_score: number;
+	/**
+	 * HipatchReportController restituisce null su questi campi quando il dato
+	 * non c'e': un tenant senza run, o con run ma senza i CSV degli asset.
+	 * Zero sarebbe un'affermazione falsa su un dato mancante, non un valore.
+	 */
+	has_data?: boolean;
+	last_updated: string | null;
+	avg_risk_score: number | null;
+	max_risk_score: number | null;
 	cve_by_severity: {
 		critical: number;
 		high: number;
@@ -17,7 +23,7 @@ export interface HipatchSummary {
 	total_cves: number;
 	total_assets: number;
 	pending_os_patches: number;
-	patch_risk_percent: number;
+	patch_risk_percent: number | null;
 }
 
 export interface HipatchAsset {

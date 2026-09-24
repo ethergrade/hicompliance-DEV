@@ -6,7 +6,8 @@ import { cn } from '@/lib/utils';
 interface RiskScoreCardProps {
   title: string;
   level: string;
-  levelColor: 'green' | 'yellow' | 'orange' | 'red';
+  /** 'neutral' per un dato non disponibile: non e' un livello di rischio. */
+  levelColor: 'green' | 'yellow' | 'orange' | 'red' | 'neutral';
   score: number;
   ringColor: string;
   className?: string;
@@ -17,6 +18,7 @@ const levelColorMap = {
   yellow: 'bg-yellow-500/20 text-yellow-500',
   orange: 'bg-orange-500/20 text-orange-500',
   red: 'bg-red-500/20 text-red-500',
+  neutral: 'bg-muted text-muted-foreground',
 };
 
 export const RiskScoreCard: React.FC<RiskScoreCardProps> = ({

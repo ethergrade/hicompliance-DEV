@@ -38,8 +38,40 @@ const riskScoreLabel = (score: number): string => {
   return 'Basso';
 };
 
-const ringForColor = (c: 'green' | 'yellow' | 'orange' | 'red') =>
-  ({ green: '#10b981', yellow: '#eab308', orange: '#f59e0b', red: '#ef4444' }[c]);
+const ringForColor = (c: 'green' | 'yellow' | 'orange' | 'red' | 'neutral') =>
+  ({ green: '#10b981', yellow: '#eab308', orange: '#f59e0b', red: '#ef4444', neutral: '#64748b' }[c]);
+
+/**
+ * Il backend distingue "zero" da "non lo so": restituisce null sui punteggi
+ * quando mancano i dati (un tenant senza run, o con run ma senza i CSV degli
+ * asset). Mostrare 0 renderebbe quei casi come "rischio Basso", verde — cioe'
+ * un'affermazione falsa proprio dove non abbiamo il dato.
+ */
+const NOT_AVAILABLE = 'n/d';
+
+const scoreCardProps = (
+  value: number | null | undefined,
+  /** Porta il valore sulla scala 0-10 usata da riskScoreColor/Label. */
+  toScale: (v: number) => number,
+  /** Porta il valore sulla scala 0-100 dell'anello. */
+  toRing: (v: number) => number,
+) => {
+  if (value == null) {
+    return {
+      level: NOT_AVAILABLE,
+      levelColor: 'neutral' as const,
+      score: 0,
+      ringColor: ringForColor('neutral'),
+    };
+  }
+  const color = riskScoreColor(toScale(value));
+  return {
+    level: riskScoreLabel(toScale(value)),
+    levelColor: color,
+    score: Math.round(toRing(value)),
+    ringColor: ringForColor(color),
+  };
+};
 
 // ─── Summary cards ────────────────────────────────────────────────────────────
 
@@ -140,12 +172,9 @@ export const HiPatchDashboard: React.FC = () => {
   [softwarePatchesInstalled]);
 
   // Risk score values from summary
-  const avgRisk = summary?.avg_risk_score ?? 0;
-  const maxRisk = summary?.max_risk_score ?? 0;
-  const avgColor = riskScoreColor(avgRisk);
-  const maxColor = riskScoreColor(maxRisk);
-  const patchRiskPct = summary?.patch_risk_percent ?? 0;
-  const patchRiskColor = riskScoreColor(patchRiskPct / 10);
+  const avgRisk = summary?.avg_risk_score ?? null;
+  const maxRisk = summary?.max_risk_score ?? null;
+  const patchRiskPct = summary?.patch_risk_percent ?? null;
 
   if (isLoading) {
     return (
@@ -205,7 +234,9 @@ export const HiPatchDashboard: React.FC = () => {
             </Card>
             <Card className="border-border">
               <CardContent className="pt-6 text-center">
-                <p className="text-3xl font-bold">{summary.patch_risk_percent.toFixed(1)}%</p>
+                <p className="text-3xl font-bold">
+                  {patchRiskPct == null ? NOT_AVAILABLE : `${patchRiskPct.toFixed(1)}%`}
+                </p>
                 <p className="text-sm text-muted-foreground mt-1">Patch Risk</p>
               </CardContent>
             </Card>
@@ -235,24 +266,15 @@ export const HiPatchDashboard: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <RiskScoreCard
             title="Avg CVSS Score"
-            level={riskScoreLabel(avgRisk)}
-            levelColor={avgColor}
-            score={Math.round(avgRisk * 10)}
-            ringColor={ringForColor(avgColor)}
+            {...scoreCardProps(avgRisk, (v) => v, (v) => v * 10)}
           />
           <RiskScoreCard
             title="Max CVSS Score"
-            level={riskScoreLabel(maxRisk)}
-            levelColor={maxColor}
-            score={Math.round(maxRisk * 10)}
-            ringColor={ringForColor(maxColor)}
+            {...scoreCardProps(maxRisk, (v) => v, (v) => v * 10)}
           />
           <RiskScoreCard
             title="Patch Risk"
-            level={riskScoreLabel(patchRiskPct / 10)}
-            levelColor={patchRiskColor}
-            score={Math.round(patchRiskPct)}
-            ringColor={ringForColor(patchRiskColor)}
+            {...scoreCardProps(patchRiskPct, (v) => v / 10, (v) => v)}
           />
         </div>
       </section>
