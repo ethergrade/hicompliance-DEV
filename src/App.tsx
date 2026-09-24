@@ -35,6 +35,8 @@ import ClientSelection from "./pages/ClientSelection";
 import CyberNews from "./pages/CyberNews";
 // import AdminReporting from "./pages/AdminReporting";
 import Consistenze from "./pages/Consistenze";
+import SupplyChain from "./pages/SupplyChain";
+import SupplierPortal from "./pages/SupplierPortal";
 import AdminCompanies from "./pages/AdminCompanies";
 import AssessmentGanttTest from "./pages/AssessmentGanttTest";
 // import AICiso from "./pages/AICiso";
@@ -314,6 +316,16 @@ const App = () => (
 									</ClientSelectionGuard>
 								}
 							/>
+							<Route
+								path="/supply-chain"
+								element={
+									<ClientSelectionGuard>
+										<SupplyChain />
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route path="/supplier-portal" element={<SupplierPortal />} />
+							<Route path="/supplier-portal/:step" element={<SupplierPortal />} />
 							{/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
 							<Route path="*" element={<NotFound />} />
 						</Routes>
