@@ -99,6 +99,9 @@ export const VulnerabilitiesTable: React.FC<VulnerabilitiesTableProps> = ({
   const [page, setPage] = useState(0);
   const [modalVuln, setModalVuln] = useState<Vulnerability | null>(null);
   const [assetFilter, setAssetFilter] = useState<string>('all');
+  const [sevFilter, setSevFilter] = useState<string>('all');
+  const [groupBy, setGroupBy] = useState<'none' | 'asset'>('none');
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
   // Build unique asset list from all CVEs that have assets
   const assetOptions = useMemo(() => {
@@ -114,13 +117,32 @@ export const VulnerabilitiesTable: React.FC<VulnerabilitiesTableProps> = ({
   }, [vulnerabilities]);
 
   const filtered = useMemo(() =>
-    assetFilter === 'all'
-      ? vulnerabilities
-      : vulnerabilities.filter(v => (v.assets ?? []).some(a => a['data.id'] === assetFilter)),
-  [vulnerabilities, assetFilter]);
+    vulnerabilities
+      .filter(v => assetFilter === 'all' || (v.assets ?? []).some(a => a['data.id'] === assetFilter))
+      .filter(v => sevFilter === 'all' || v.severity === sevFilter),
+  [vulnerabilities, assetFilter, sevFilter]);
+
+  const groups = useMemo(() => {
+    if (groupBy !== 'asset') return [];
+    const map = new Map<string, { id: string; name: string; ip: string; vulns: Vulnerability[] }>();
+    filtered.forEach(v => (v.assets ?? []).forEach(a => {
+      const id = a['data.id'];
+      if (assetFilter !== 'all' && id !== assetFilter) return;
+      if (!map.has(id)) map.set(id, { id, name: a['data.name'] || a['data.ip'] || id, ip: a['data.ip'], vulns: [] });
+      map.get(id)!.vulns.push(v);
+    }));
+    return Array.from(map.values())
+      .map(g => ({ ...g, maxEpss: Math.max(...g.vulns.map(v => v.score)), crit: g.vulns.filter(v => v.severity === 'Critical').length }))
+      .sort((a, b) => b.maxEpss - a.maxEpss);
+  }, [filtered, groupBy, assetFilter]);
 
   const totalPages = Math.ceil(filtered.length / pageSize);
   const slice = filtered.slice(page * pageSize, (page + 1) * pageSize);
+
+  const groupPages = Math.ceil(groups.length / pageSize);
+  const groupSlice = groups.slice(page * pageSize, (page + 1) * pageSize);
+  const effPages = groupBy === 'asset' ? groupPages : totalPages;
+  const effTotal = groupBy === 'asset' ? groups.length : filtered.length;
 
   const handleFilterChange = (val: string) => {
     setAssetFilter(val);
@@ -129,13 +151,18 @@ export const VulnerabilitiesTable: React.FC<VulnerabilitiesTableProps> = ({
 
   return (
     <div className="space-y-3">
-      {assetOptions.length > 0 && (
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground shrink-0">Filtra per asset:</span>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-muted-foreground shrink-0">Raggruppa:</span>
+        <Select value={groupBy} onValueChange={(v) => { setGroupBy(v as 'none' | 'asset'); setPage(0); }}>
+          <SelectTrigger className="w-40 h-8 text-sm"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Per CVE</SelectItem>
+            <SelectItem value="asset">Per asset</SelectItem>
+          </SelectContent>
+        </Select>
+        {assetOptions.length > 0 && (
           <Select value={assetFilter} onValueChange={handleFilterChange}>
-            <SelectTrigger className="w-64 h-8 text-sm">
-              <SelectValue placeholder="Tutti gli asset" />
-            </SelectTrigger>
+            <SelectTrigger className="w-56 h-8 text-sm"><SelectValue placeholder="Tutti gli asset" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Tutti gli asset</SelectItem>
               {assetOptions.map(([id, name]) => (
@@ -143,12 +170,59 @@ export const VulnerabilitiesTable: React.FC<VulnerabilitiesTableProps> = ({
               ))}
             </SelectContent>
           </Select>
-          {assetFilter !== 'all' && (
-            <span className="text-xs text-muted-foreground">{filtered.length} CVE</span>
-          )}
-        </div>
-      )}
+        )}
+        <Select value={sevFilter} onValueChange={(v) => { setSevFilter(v); setPage(0); }}>
+          <SelectTrigger className="w-40 h-8 text-sm"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Tutte le severità</SelectItem>
+            <SelectItem value="Critical">Critical</SelectItem>
+            <SelectItem value="High">High</SelectItem>
+            <SelectItem value="Medium">Medium</SelectItem>
+            <SelectItem value="Low">Low</SelectItem>
+          </SelectContent>
+        </Select>
+        <span className="text-xs text-muted-foreground">{filtered.length} CVE{groupBy === 'asset' ? ` su ${groups.length} asset` : ''}</span>
+      </div>
 
+      {groupBy === 'asset' ? (
+        <div className="space-y-2">
+          {groupSlice.map(g => {
+            const open = !!openGroups[g.id];
+            return (
+              <div key={g.id} className="rounded-lg border border-border">
+                <button type="button" onClick={() => setOpenGroups(o => ({ ...o, [g.id]: !o[g.id] }))}
+                  className="w-full flex items-center justify-between gap-3 p-3 text-left hover:bg-muted/30">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <ChevronRight className={cn('h-4 w-4 shrink-0 transition-transform', open && 'rotate-90')} />
+                    <span className="font-medium truncate">{g.name}</span>
+                    <span className="text-xs text-muted-foreground">{g.ip}</span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 text-xs">
+                    {g.crit > 0 && <Badge className={severityColors.Critical}>{g.crit} Critical</Badge>}
+                    <Badge variant="outline">{g.vulns.length} CVE</Badge>
+                    <span className="text-muted-foreground">EPSS max {g.maxEpss.toFixed(4)}</span>
+                  </div>
+                </button>
+                {open && (
+                  <Table>
+                    <TableBody>
+                      {[...g.vulns].sort((a, b) => b.score - a.score).map(v => (
+                        <TableRow key={v.id}>
+                          <TableCell className="font-medium w-[40%]">{v.id}</TableCell>
+                          <TableCell className="text-muted-foreground text-xs">{v.description}</TableCell>
+                          <TableCell>{v.score.toFixed(4)}</TableCell>
+                          <TableCell><Badge className={cn('font-medium', severityColors[v.severity])}>{v.severity}</Badge></TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
+            );
+          })}
+          {groupSlice.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Nessuna CVE associata ad asset</p>}
+        </div>
+      ) : (
       <Table>
         <TableHeader>
           <TableRow>
@@ -195,16 +269,17 @@ export const VulnerabilitiesTable: React.FC<VulnerabilitiesTableProps> = ({
           ))}
         </TableBody>
       </Table>
+      )}
 
-      {totalPages > 1 && (
+      {effPages > 1 && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>{page * pageSize + 1}–{Math.min((page + 1) * pageSize, filtered.length)} di {filtered.length}</span>
+          <span>{page * pageSize + 1}–{Math.min((page + 1) * pageSize, effTotal)} di {effTotal}</span>
           <div className="flex items-center gap-1">
             <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setPage(p => p - 1)} disabled={page === 0}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <span className="px-2">{page + 1} / {totalPages}</span>
-            <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setPage(p => p + 1)} disabled={page === totalPages - 1}>
+            <span className="px-2">{page + 1} / {effPages}</span>
+            <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setPage(p => p + 1)} disabled={page >= effPages - 1}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>

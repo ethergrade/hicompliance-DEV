@@ -9,6 +9,7 @@ import { VulnerabilitiesTable } from './VulnerabilitiesTable';
 import { OsPatchesTable } from './OsPatchesTable';
 import { SoftwarePatchesTable } from './SoftwarePatchesTable';
 import { useHipatchDashboard } from '@/hooks/useHipatch';
+import { EpssGlobalIndicator } from './EpssGlobalIndicator';
 
 // ─── Severity helpers ─────────────────────────────────────────────────────────
 
@@ -72,7 +73,7 @@ export const HiPatchDashboard: React.FC = () => {
       .map((c) => ({
         id: c.problem_name,
         description: c.description,
-        score: Number(c.epss_score) ?? 0,
+        score: Number(c.epss_score) || 0,
         severity: normalizeSeverity(c.severity),
         assets: c.assets,
       })),
@@ -256,6 +257,8 @@ export const HiPatchDashboard: React.FC = () => {
           />
         </div>
       </section>
+
+      {mappedCves.length > 0 && <EpssGlobalIndicator cves={mappedCves} />}
 
       {/* CVE / Vulnerabilities */}
       <section className="space-y-4">
