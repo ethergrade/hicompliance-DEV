@@ -329,6 +329,14 @@ export const AppSidebar: React.FC = () => {
 					<SidebarGroupContent>
 						<SidebarMenu>
 							{filteredNavigation.map((item) => renderNavItem(item))}
+							{/* HiTrack in Generale, subito dopo le voci principali */}
+							{isFeatureAllowed("/dashboard/service/hitrack") &&
+								isUserAllowed("/dashboard/service/hitrack") &&
+								renderNavItem({
+									title: "HiTrack",
+									href: "/dashboard/service/hitrack",
+									icon: Activity,
+								})}
 							{servicesStandalone.map((item) => renderNavItem(item))}
 							{hipatchOn &&
 								isUserAllowed("/dashboard/service/hipatch") &&
