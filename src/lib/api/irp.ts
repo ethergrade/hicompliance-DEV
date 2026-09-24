@@ -1,4 +1,8 @@
 import { apiClient as complianceApiClient } from "@/lib/api-client";
+import { supabase } from "@/integrations/supabase/client";
+const sb = supabase as any;
+const ec = (r: any) => ({ ...r, tenant_id: r.organization_id, group_id: r.organization_id });
+const uid = async () => (await supabase.auth.getUser()).data.user?.id;
 import type {
   ApiResponse,
   Group,
@@ -67,88 +71,53 @@ export const irpApi = {
     return res.data;
   },
 
-  // ─── IRP Emergency Contacts ────────────────────────────────────────────────
-
-  /** List all emergency contacts for a company */
+  // ─── IRP Emergency Contacts (Supabase) ─────────────────────────────────────
   async emergencyContacts(companyId: string, _g?: string | null): Promise<IrpEmergencyContactResource[]> {
-    const res = await complianceApiClient.get<ApiResponse<IrpEmergencyContactResource[]>>(
-      `/companies/${companyId}/irp/emergency-contacts`,
-      undefined,
-      _h(companyId, _g)
-    );
-    return res.data;
+    const { data, error } = await sb.from("emergency_contacts").select("*").eq("organization_id", companyId).order("created_at");
+    if (error) throw error;
+    return (data ?? []).map(ec);
   },
-
-  /** Create an emergency contact */
   async createEmergencyContact(companyId: string, payload: StoreIrpEmergencyContactRequest, _g?: string | null): Promise<IrpEmergencyContactResource> {
-    const res = await complianceApiClient.post<ApiResponse<IrpEmergencyContactResource>>(
-      `/companies/${companyId}/irp/emergency-contacts`,
-      payload,
-      _h(companyId, _g)
-    );
-    return res.data;
+    const { data, error } = await sb.from("emergency_contacts").insert({ role: "", category: "interno", ...payload, organization_id: companyId }).select("*").single();
+    if (error) throw error;
+    return ec(data);
   },
-
-  /** Update an emergency contact */
   async updateEmergencyContact(companyId: string, contactId: string, payload: Partial<StoreIrpEmergencyContactRequest>, _g?: string | null): Promise<IrpEmergencyContactResource> {
-    const res = await complianceApiClient.put<ApiResponse<IrpEmergencyContactResource>>(
-      `/companies/${companyId}/irp/emergency-contacts/${contactId}`,
-      payload,
-      _h(companyId, _g)
-    );
-    return res.data;
+    const { data, error } = await sb.from("emergency_contacts").update(payload).eq("id", contactId).eq("organization_id", companyId).select("*").single();
+    if (error) throw error;
+    return ec(data);
   },
-
-  /** Delete an emergency contact */
   async deleteEmergencyContact(companyId: string, contactId: string, _g?: string | null): Promise<void> {
-    await complianceApiClient.delete(
-      `/companies/${companyId}/irp/emergency-contacts/${contactId}`,
-      _h(companyId, _g)
-    );
+    const { error } = await sb.from("emergency_contacts").delete().eq("id", contactId).eq("organization_id", companyId);
+    if (error) throw error;
   },
 
-  // ─── IRP Document ────────────────────────────────────────────────────────
-
-  /** Get the IRP document for a company */
+  // ─── IRP Document (Supabase) ──────────────────────────────────────────────
   async document(companyId: string, _g?: string | null): Promise<Record<string, unknown> | null> {
-    const res = await complianceApiClient.get<ApiResponse<Record<string, unknown> | null>>(
-      `/companies/${companyId}/irp/document`,
-      undefined,
-      _h(companyId, _g)
-    );
-    return res.data;
+    const { data, error } = await sb.from("irp_documents").select("document_data").eq("organization_id", companyId).order("updated_at", { ascending: false }).limit(1).maybeSingle();
+    if (error) throw error;
+    return data?.document_data ?? null;
   },
-
-  /** Save/update the IRP document for a company */
   async saveDocument(companyId: string, payload: Record<string, unknown>, _g?: string | null): Promise<Record<string, unknown>> {
-    const res = await complianceApiClient.post<ApiResponse<Record<string, unknown>>>(
-      `/companies/${companyId}/irp/document`,
-      payload,
-      _h(companyId, _g)
-    );
-    return res.data;
+    const { data: existing } = await sb.from("irp_documents").select("id").eq("organization_id", companyId).order("updated_at", { ascending: false }).limit(1).maybeSingle();
+    const q = existing
+      ? sb.from("irp_documents").update({ document_data: payload }).eq("id", existing.id)
+      : sb.from("irp_documents").insert({ organization_id: companyId, user_id: await uid(), document_data: payload });
+    const { data, error } = await q.select("*").single();
+    if (error) throw error;
+    return data;
   },
 
-  // ─── IRP History ────────────────────────────────────────────────────────
-
-  /** Get IRP document history for a company */
+  // ─── IRP History (Supabase) ───────────────────────────────────────────────
   async history(companyId: string, _g?: string | null): Promise<Record<string, unknown>[]> {
-    const res = await complianceApiClient.get<ApiResponse<Record<string, unknown>[]>>(
-      `/companies/${companyId}/irp/history`,
-      undefined,
-      _h(companyId, _g)
-    );
-    return res.data;
+    const { data, error } = await sb.from("irp_history").select("*").eq("organization_id", companyId).order("snapshot_date", { ascending: false });
+    if (error) throw error;
+    return data ?? [];
   },
-
-  /** Save a new IRP history entry (snapshot) */
   async saveHistory(companyId: string, payload: Record<string, unknown>, _g?: string | null): Promise<Record<string, unknown>> {
-    const res = await complianceApiClient.post<ApiResponse<Record<string, unknown>>>(
-      `/companies/${companyId}/irp/history`,
-      payload,
-      _h(companyId, _g)
-    );
-    return res.data;
+    const { data, error } = await sb.from("irp_history").insert({ irp_score: payload.irp_score, area_scores_json: payload.area_scores_json ?? payload.area_scores, organization_id: companyId }).select("*").single();
+    if (error) throw error;
+    return data;
   },
 
   // ─── IRP Document Publish ────────────────────────────────────────────────
