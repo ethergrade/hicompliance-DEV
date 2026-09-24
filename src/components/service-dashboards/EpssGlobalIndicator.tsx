@@ -34,7 +34,7 @@ export const EpssGlobalIndicator: React.FC<{ cves: Item[] }> = ({ cves }) => {
   const pct = Math.round(stats.index * 100);
 
   return (
-    <section className="space-y-4">
+    <section id="hp-epss" className="scroll-mt-20 space-y-4">
       <h2 className="text-2xl font-bold">Indicatore globale rischio EPSS</h2>
       <Card className="border-border">
         <CardHeader className="pb-2">

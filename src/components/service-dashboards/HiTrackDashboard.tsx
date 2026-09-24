@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { SectionNav } from "@/components/layout/SectionNav";
 import {
   Activity,
   Database,
@@ -145,7 +146,11 @@ export const HiTrackDashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+      <SectionNav items={[
+        { id: "ht-kpi", label: "Indicatori" }, { id: "ht-overview", label: "Monitoring Overview" },
+        { id: "ht-devices", label: "Dispositivi" }, { id: "ht-disks", label: "Dischi" }, { id: "ht-ram", label: "RAM" },
+      ]} />
+      <div id="ht-kpi" className="scroll-mt-20 grid grid-cols-1 gap-4 md:grid-cols-4">
         <Card className="border-border">
           <CardContent className="p-5">
             <div className="mb-3 flex items-center justify-between">
@@ -202,7 +207,7 @@ export const HiTrackDashboard: React.FC = () => {
         </Card>
       </div>
 
-      <Card className="border-border">
+      <Card id="ht-overview" className="scroll-mt-20 border-border">
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between gap-4">
             <div>
@@ -292,7 +297,7 @@ export const HiTrackDashboard: React.FC = () => {
         </CardContent>
       </Card>
 
-      <Card className="border-border">
+      <Card id="ht-devices" className="scroll-mt-20 border-border">
         <CardHeader>
           <CardTitle className="text-lg">Monitored Devices</CardTitle>
         </CardHeader>
@@ -351,7 +356,7 @@ export const HiTrackDashboard: React.FC = () => {
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="border-border">
+        <Card id="ht-disks" className="scroll-mt-20 border-border">
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg">Logical Disks & Disk Space</CardTitle>
@@ -422,7 +427,7 @@ export const HiTrackDashboard: React.FC = () => {
           </CardContent>
         </Card>
 
-        <Card className="border-border">
+        <Card id="ht-ram" className="scroll-mt-20 border-border">
           <CardHeader className="pb-4">
             <CardTitle className="text-lg">RAM Monitoring</CardTitle>
           </CardHeader>

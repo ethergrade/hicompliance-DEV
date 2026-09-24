@@ -10,6 +10,7 @@ import { OsPatchesTable } from './OsPatchesTable';
 import { SoftwarePatchesTable } from './SoftwarePatchesTable';
 import { useHipatchDashboard } from '@/hooks/useHipatch';
 import { EpssGlobalIndicator } from './EpssGlobalIndicator';
+import { SectionNav } from '@/components/layout/SectionNav';
 
 // ─── Severity helpers ─────────────────────────────────────────────────────────
 
@@ -168,10 +169,14 @@ export const HiPatchDashboard: React.FC = () => {
 
   return (
     <div className="space-y-8">
+      <SectionNav items={[
+        { id: 'hp-riepilogo', label: 'Riepilogo' }, { id: 'hp-risk', label: 'Risk Score' }, { id: 'hp-epss', label: 'Rischio EPSS' },
+        { id: 'hp-cve', label: 'CVE' }, { id: 'hp-asset', label: 'Asset' }, { id: 'hp-os', label: 'Patch OS' }, { id: 'hp-sw', label: 'Patch Software' },
+      ]} />
 
       {/* Summary KPI strip */}
       {summary && (
-        <section className="space-y-4">
+        <section id="hp-riepilogo" className="scroll-mt-20 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold">Riepilogo</h2>
             {summary.last_updated && (
@@ -231,7 +236,7 @@ export const HiPatchDashboard: React.FC = () => {
       )}
 
       {/* Risk Scores */}
-      <section className="space-y-4">
+      <section id="hp-risk" className="scroll-mt-20 space-y-4">
         <h2 className="text-2xl font-bold">Risk Score</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <RiskScoreCard
@@ -261,7 +266,7 @@ export const HiPatchDashboard: React.FC = () => {
       {mappedCves.length > 0 && <EpssGlobalIndicator cves={mappedCves} />}
 
       {/* CVE / Vulnerabilities */}
-      <section className="space-y-4">
+      <section id="hp-cve" className="scroll-mt-20 space-y-4">
         <h2 className="text-2xl font-bold">CVE rilevate</h2>
         <Card className="border-border">
           <CardHeader>
@@ -293,7 +298,7 @@ export const HiPatchDashboard: React.FC = () => {
 
       {/* Assets monitorati */}
       {assets.length > 0 && (
-        <section className="space-y-4">
+        <section id="hp-asset" className="scroll-mt-20 space-y-4">
           <h2 className="text-2xl font-bold">Asset monitorati</h2>
           <Card className="border-border">
             <CardHeader>
@@ -358,7 +363,7 @@ export const HiPatchDashboard: React.FC = () => {
       )}
 
       {/* OS Patches */}
-      <section className="space-y-4">
+      <section id="hp-os" className="scroll-mt-20 space-y-4">
         <h2 className="text-2xl font-bold">OS Patches</h2>
         <Card className="border-border">
           <CardContent className="space-y-8 pt-6">
@@ -379,7 +384,7 @@ export const HiPatchDashboard: React.FC = () => {
       </section>
 
       {/* Software Patches */}
-      <section className="space-y-4">
+      <section id="hp-sw" className="scroll-mt-20 space-y-4">
         <h2 className="text-2xl font-bold">Software Patches</h2>
         <Card className="border-border">
           <CardContent className="space-y-8 pt-6">
