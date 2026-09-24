@@ -432,10 +432,10 @@ const IncidentResponse: React.FC = () => {
         </div>
 
         <Tabs defaultValue="procedures" className="space-y-6">
-          <TabsList className={`grid w-full ${isIrpExtended ? 'grid-cols-8' : 'grid-cols-5'}`}>
-            <TabsTrigger value="procedures">Procedure Operative</TabsTrigger>
-            <TabsTrigger value="contacts">Contatti e Informazioni</TabsTrigger>
-            <TabsTrigger value="directory">Rubrica Contatti</TabsTrigger>
+          <TabsList className="flex w-full flex-wrap h-auto gap-1 p-1">
+            <TabsTrigger value="procedures" className="text-xs whitespace-nowrap">Procedure Operative</TabsTrigger>
+            <TabsTrigger value="contacts" className="text-xs whitespace-nowrap">Contatti e Informazioni</TabsTrigger>
+            <TabsTrigger value="directory" className="text-xs whitespace-nowrap">Rubrica Contatti</TabsTrigger>
             <TabsTrigger value="suppliers" className="flex items-center gap-1">
               <Truck className="h-3.5 w-3.5" />
               Fornitori
