@@ -15,6 +15,7 @@ import {
 	Lock,
 	Cloud,
 	Network,
+	Scale,
 	LogOut,
 	Globe,
 	Building,
@@ -84,6 +85,7 @@ const hiComplianceModules = [
 	{ title: "Remediation", href: "/remediation", icon: Wrench },
 	{ title: "Consistenze", href: "/consistenze", icon: Package },
 	{ title: "Supply Chain", href: "/supply-chain", icon: Network },
+	{ title: "Business Impact Analysis", href: "/business-impact-analysis", icon: Scale },
 ];
 
 const hiComplianceServices = [

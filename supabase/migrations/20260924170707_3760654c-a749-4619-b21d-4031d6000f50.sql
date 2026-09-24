@@ -1,0 +1,2 @@
+REVOKE EXECUTE ON FUNCTION public.bia_audit(uuid, text, uuid, text, jsonb, jsonb, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.bia_audit(uuid, text, uuid, text, jsonb, jsonb, text) TO service_role;

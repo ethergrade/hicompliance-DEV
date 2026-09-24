@@ -27,12 +27,13 @@ export const PERMISSION_CATALOG: ModuleDef[] = [
   {
     key: 'hicompliance',
     label: 'HiCompliance',
-    routes: ['/assessment', '/analytics', '/remediation', '/compliance-events', '/supply-chain'],
+    routes: ['/assessment', '/analytics', '/remediation', '/compliance-events', '/supply-chain', '/business-impact-analysis'],
     subsections: [
       { key: 'assessment', label: 'Assessment' },
       { key: 'analytics', label: 'Analisi' },
       { key: 'remediation', label: 'Remediation' },
       { key: 'compliance_events', label: 'Eventi Compliance' },
+      { key: 'bia', label: 'Business Impact Analysis' },
       { key: 'supply_chain', label: 'Supply Chain' },
     ],
   },
@@ -117,6 +118,7 @@ export const ROUTE_TO_MODULE: Record<string, { module: string; subsection: strin
   map['/analytics'] = { module: 'hicompliance', subsection: 'analytics' };
   map['/remediation'] = { module: 'hicompliance', subsection: 'remediation' };
   map['/supply-chain'] = { module: 'hicompliance', subsection: 'supply_chain' };
+  map['/business-impact-analysis'] = { module: 'hicompliance', subsection: 'bia' };
   map['/compliance-events'] = { module: 'hicompliance', subsection: 'compliance_events' };
   map['/asset-inventory'] = { module: 'asset_inventory', subsection: 'inventory' };
   map['/consistenze'] = { module: 'asset_inventory', subsection: 'consistenze' };
