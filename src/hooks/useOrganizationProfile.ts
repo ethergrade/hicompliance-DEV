@@ -3,6 +3,7 @@ import { useToast } from '@/hooks/use-toast';
 import { OrganizationProfile, NIS2Classification } from '@/types/organization';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { companyProfileApi, tenantsApi } from '@/lib/api/tenants';
+import { supabase } from '@/integrations/supabase/client';
 import type {
   CompanyProfileResource,
   TenantResource,
@@ -160,11 +161,14 @@ export function useOrganizationProfile() {
 
     setLoading(true);
     try {
-      const [tenant, companyProfile] = await Promise.all([
-        tenantsApi.get(organizationId, groupId ?? undefined),
-        // Il profilo può non esistere ancora: l'endpoint risponde data null.
-        companyProfileApi.get(organizationId, groupId).catch(() => null),
-      ]);
+	  const tenant = selectedOrganization;
+	  if (!tenant) throw new Error('Azienda non selezionata');
+	  const { data: companyProfile, error } = await supabase
+		.from('organization_profiles')
+		.select('*')
+		.eq('organization_id', organizationId)
+		.maybeSingle();
+	  if (error) throw error;
       const nextFormData = toFormData(tenant, companyProfile);
       const prof = toProfile(tenant, companyProfile);
 
@@ -191,16 +195,29 @@ export function useOrganizationProfile() {
 
     setSaving(true);
     try {
-      const groupId = selectedOrganization?.group_id ?? organizationId;
-
-      // Due risorse distinte, due chiamate: i campi anagrafici estesi non sono
-      // accettati da PUT /companies/{id} e verrebbero scartati in silenzio.
-      const [, updatedProfile] = await Promise.all([
-        tenantsApi.update(organizationId, formDataToUpdatePayload(data), groupId),
-        companyProfileApi.update(organizationId, formDataToProfilePayload(data), groupId),
-      ]);
-
-      const updatedTenant = await tenantsApi.get(organizationId, groupId);
+	  const { data: authData, error: authError } = await supabase.auth.getUser();
+	  if (authError || !authData.user) throw authError ?? new Error('Non autenticato');
+	  const { data: updatedProfile, error } = await supabase
+		.from('organization_profiles')
+		.upsert({
+		  organization_id: organizationId,
+		  legal_name: data.legal_name || null,
+		  vat_number: data.vat_number || null,
+		  fiscal_code: data.fiscal_code || null,
+		  legal_address: data.legal_address || null,
+		  operational_address: data.operational_address || null,
+		  pec: data.pec || null,
+		  phone: data.phone || null,
+		  email: data.email || null,
+		  business_sector: data.business_sector || null,
+		  nis2_classification: data.nis2_classification,
+		  ciso_substitute: data.ciso_substitute || null,
+		}, { onConflict: 'organization_id' })
+		.select('*')
+		.single();
+	  if (error) throw error;
+	  const updatedTenant = selectedOrganization;
+	  if (!updatedTenant) throw new Error('Azienda non selezionata');
 
       setProfile(toProfile(updatedTenant, updatedProfile));
       lastPersistedHashRef.current = JSON.stringify(data);

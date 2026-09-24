@@ -99,7 +99,6 @@ export const assessmentV2Api = {
 			question_id: response.question_id,
 			status: response.status,
 			notes: response.notes ?? null,
-			last_updated_by: authData.user.id,
 		}));
 		const { data, error } = await supabase.from("assessment_responses").upsert(rows, { onConflict: "organization_id,question_id" }).select("*");
 		if (error) throw error;
