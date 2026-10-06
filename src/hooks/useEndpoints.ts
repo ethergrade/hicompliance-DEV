@@ -1,5 +1,7 @@
 // @ts-nocheck -- type drift vs API contract, da riallineare
 import { useApiWithFallback } from './useApiWithFallback';
+import { useClientOrganization } from './useClientOrganization';
+import { isInnovatechDemo } from '@/data/innovatechSecurityDemo';
 import { endpointsApi } from '@/lib/api/endpoints';
 
 // Extended types matching the actual dashboard mock data
@@ -84,10 +86,33 @@ const mockEndpointData: EndpointDashboardData = {
   ],
 };
 
+const extraEndpoints: EndpointDevice[] = Array.from({ length: 32 }, (_, i) => {
+  const n = i + 9;
+  const types = ['Workstation', 'Laptop', 'Server', 'Mobile'] as const;
+  const type = types[i % 4];
+  const prot = (['Protected', 'Protected', 'Protected', 'At Risk', 'Outdated'] as const)[i % 5];
+  return {
+    id: `EP-${String(n).padStart(3, '0')}`,
+    name: `${type === 'Server' ? 'SRV' : type === 'Laptop' ? 'NB' : type === 'Mobile' ? 'MB' : 'WS'}-DEMO-${String(n).padStart(2, '0')}`,
+    type,
+    os: type === 'Server' ? 'Windows Server 2022' : type === 'Mobile' ? 'Android 14' : 'Windows 11 Pro',
+    lastSeen: `2025-01-28 0${(i % 9) + 1}:${String((i * 7) % 60).padStart(2, '0')}:00`,
+    status: i % 6 === 0 ? 'Offline' : 'Online',
+    protection: prot,
+    threats: prot === 'At Risk' ? 1 + (i % 3) : 0,
+    compliance: prot === 'Protected' ? 90 + (i % 10) : prot === 'At Risk' ? 65 + (i % 10) : 50,
+  };
+});
+mockEndpointData.endpoints = [...mockEndpointData.endpoints, ...extraEndpoints];
+mockEndpointData.stats.totalEndpoints = mockEndpointData.endpoints.length;
+
 export function useEndpointDashboard(tenantId?: string) {
+  const { selectedOrganization } = useClientOrganization();
+  const demo = isInnovatechDemo(selectedOrganization?.name);
   return useApiWithFallback<EndpointDashboardData>(
     () => endpointsApi.dashboard(tenantId) as Promise<EndpointDashboardData>,
     mockEndpointData,
     [tenantId],
+    demo,
   );
 }

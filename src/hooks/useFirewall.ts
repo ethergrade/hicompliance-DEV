@@ -1,4 +1,6 @@
 import { useApiWithFallback } from './useApiWithFallback';
+import { useClientOrganization } from './useClientOrganization';
+import { isInnovatechDemo } from '@/data/innovatechSecurityDemo';
 import { firewallApi, type FirewallDashboardData } from '@/lib/api/firewall';
 
 const mockFirewallData: FirewallDashboardData = {
@@ -37,9 +39,12 @@ const mockFirewallData: FirewallDashboardData = {
 };
 
 export function useFirewallDashboard(tenantId?: string) {
+  const { selectedOrganization } = useClientOrganization();
+  const demo = isInnovatechDemo(selectedOrganization?.name);
   return useApiWithFallback(
     () => firewallApi.dashboard(tenantId),
     mockFirewallData,
     [tenantId],
+    demo,
   );
 }

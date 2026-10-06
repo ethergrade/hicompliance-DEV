@@ -1,5 +1,7 @@
 // @ts-nocheck -- type drift vs API contract, da riallineare
 import { useApiWithFallback } from './useApiWithFallback';
+import { useClientOrganization } from './useClientOrganization';
+import { isInnovatechDemo } from '@/data/innovatechSecurityDemo';
 import { mobileApi } from '@/lib/api/mobile';
 
 export interface MobileOverviewData {
@@ -122,9 +124,12 @@ const mockMobileData: MobileDashboardData = {
 };
 
 export function useMobileDashboard(tenantId?: string) {
+  const { selectedOrganization } = useClientOrganization();
+  const demo = isInnovatechDemo(selectedOrganization?.name);
   return useApiWithFallback<MobileDashboardData>(
     () => mobileApi.dashboard(tenantId) as Promise<MobileDashboardData>,
     mockMobileData,
     [tenantId],
+    demo,
   );
 }

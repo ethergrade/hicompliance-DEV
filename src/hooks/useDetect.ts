@@ -1,5 +1,7 @@
 // @ts-nocheck -- type drift vs API contract, da riallineare
 import { useApiWithFallback } from './useApiWithFallback';
+import { useClientOrganization } from './useClientOrganization';
+import { isInnovatechDemo } from '@/data/innovatechSecurityDemo';
 import { detectApi } from '@/lib/api/detect';
 
 export interface DetectOverviewData {
@@ -129,9 +131,12 @@ const mockDetectData: DetectDashboardData = {
 };
 
 export function useDetectDashboard(tenantId?: string) {
+  const { selectedOrganization } = useClientOrganization();
+  const demo = isInnovatechDemo(selectedOrganization?.name);
   return useApiWithFallback<DetectDashboardData>(
     () => detectApi.dashboard(tenantId) as Promise<DetectDashboardData>,
     mockDetectData,
     [tenantId],
+    demo,
   );
 }
