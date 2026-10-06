@@ -1,3 +1,4 @@
+import { IdsSection } from './power/IdsSection';
 import { SectionNav } from '@/components/layout/SectionNav';
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -294,7 +295,7 @@ export const HiDetectDashboard: React.FC = () => {
   return (
     <div className="space-y-6">
       <div id="dt-top" className="scroll-mt-28" />
-      <SectionNav items={[{ id: 'dt-top', label: 'Riepilogo' }, { id: 'dt-s1', label: 'Severità' }, { id: 'dt-s2', label: 'Trend' }, { id: 'dt-s3', label: 'Categorie' }, { id: 'dt-s4', label: 'Attività 24h' }, { id: 'dt-s5', label: 'Alert' }, { id: 'dt-s6', label: 'Protezione' }, { id: 'dt-s7', label: 'Attività SOC' }, { id: 'dt-s8', label: 'Regole' }]} />
+      <SectionNav items={[{ id: 'dt-top', label: 'Riepilogo' }, { id: 'dt-s1', label: 'Severità' }, { id: 'dt-s2', label: 'Trend' }, { id: 'dt-s3', label: 'Categorie' }, { id: 'dt-s4', label: 'Attività 24h' }, { id: 'dt-s5', label: 'Alert' }, { id: 'dt-s6', label: 'Protezione' }, { id: 'dt-s7', label: 'Attività SOC' }, { id: 'dt-s8', label: 'Regole' }, { id: 'dt-ids', label: 'IDS/IPS' }]} />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -700,6 +701,7 @@ export const HiDetectDashboard: React.FC = () => {
           </div>
         </CardContent>
       </Card>
+      <IdsSection product="detect" id="dt-ids" />
     </div>
   );
 };

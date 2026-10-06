@@ -1,3 +1,4 @@
+import { IdsSection } from './power/IdsSection';
 import { SectionNav } from '@/components/layout/SectionNav';
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -86,7 +87,7 @@ export const HiEndpointDashboard: React.FC = () => {
   return (
     <div className="space-y-8">
       <div id="ep-top" className="scroll-mt-28" />
-      <SectionNav items={[{ id: 'ep-top', label: 'Riepilogo' }, { id: 'ep-s1', label: 'Endpoint' }, { id: 'ep-s2', label: 'Minacce' }, { id: 'ep-s3', label: 'Aggiornamenti' }]} />
+      <SectionNav items={[{ id: 'ep-top', label: 'Riepilogo' }, { id: 'ep-s1', label: 'Endpoint' }, { id: 'ep-s2', label: 'Minacce' }, { id: 'ep-s3', label: 'Aggiornamenti' }, { id: 'ep-ids', label: 'IDS/IPS' }]} />
       {/* Overview Section */}
       <section className="space-y-4">
         <div className="flex items-center gap-3">
@@ -379,6 +380,7 @@ export const HiEndpointDashboard: React.FC = () => {
           </CardContent>
         </Card>
       </section>
+      <IdsSection product="endpoint" id="ep-ids" />
     </div>
   );
 };

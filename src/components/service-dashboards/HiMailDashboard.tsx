@@ -1,3 +1,4 @@
+import { IdsSection } from './power/IdsSection';
 import { SectionNav } from '@/components/layout/SectionNav';
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -63,7 +64,7 @@ export const HiMailDashboard: React.FC = () => {
   return (
     <div className="space-y-8">
       <div id="ml-top" className="scroll-mt-28" />
-      <SectionNav items={[{ id: 'ml-top', label: 'Riepilogo' }, { id: 'ml-s1', label: 'Minacce' }, { id: 'ml-s2', label: 'Quarantena' }, { id: 'ml-s3', label: 'Policy DLP' }, { id: 'ml-s4', label: 'Top domini' }]} />
+      <SectionNav items={[{ id: 'ml-top', label: 'Riepilogo' }, { id: 'ml-s1', label: 'Minacce' }, { id: 'ml-s2', label: 'Quarantena' }, { id: 'ml-s3', label: 'Policy DLP' }, { id: 'ml-s4', label: 'Top domini' }, { id: 'ml-ids', label: 'IDS/IPS' }]} />
       {/* Overview Section */}
       <section className="space-y-4">
         <div className="flex items-center gap-3">
@@ -365,6 +366,7 @@ export const HiMailDashboard: React.FC = () => {
           </CardContent>
         </Card>
       </section>
+      <IdsSection product="mail" id="ml-ids" />
     </div>
   );
 };

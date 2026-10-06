@@ -1,3 +1,4 @@
+import { IdsSection } from './power/IdsSection';
 import { SectionNav } from '@/components/layout/SectionNav';
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -42,7 +43,7 @@ export const HiFirewallDashboard: React.FC = () => {
   return (
     <div className="space-y-8">
       <div id="fw-top" className="scroll-mt-28" />
-      <SectionNav items={[{ id: 'fw-top', label: 'Riepilogo' }, { id: 'fw-s1', label: 'Minacce' }, { id: 'fw-s2', label: 'Regole' }, { id: 'fw-s3', label: 'Connessioni' }]} />
+      <SectionNav items={[{ id: 'fw-top', label: 'Riepilogo' }, { id: 'fw-s1', label: 'Minacce' }, { id: 'fw-s2', label: 'Regole' }, { id: 'fw-s3', label: 'Connessioni' }, { id: 'fw-ids', label: 'IDS/IPS' }]} />
       {/* Overview Section */}
       <section className="space-y-4">
         <div className="flex items-center gap-3">
@@ -282,6 +283,7 @@ export const HiFirewallDashboard: React.FC = () => {
           </CardContent>
         </Card>
       </section>
+      <IdsSection product="firewall" id="fw-ids" />
     </div>
   );
 };
