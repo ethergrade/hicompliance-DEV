@@ -190,6 +190,7 @@ export const HiEndpointDashboard: React.FC = () => {
           </CardHeader>
           <CardContent>
             <PowerFilter rows={filtered ?? []}>{(__rows) => (
+<>
 <Table>
               <TableHeader>
                 <TableRow>
@@ -204,7 +205,7 @@ export const HiEndpointDashboard: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {__rows.slice(page * PAGE, page * PAGE + PAGE).map((endpoint, index) => {
+                {__rows.slice(Math.min(page, Math.max(0, Math.ceil(__rows.length / PAGE) - 1)) * PAGE, (Math.min(page, Math.max(0, Math.ceil(__rows.length / PAGE) - 1)) + 1) * PAGE).map((endpoint, index) => {
                   const TypeIcon = typeIcons[endpoint.type];
                   return (
                     <TableRow key={index}>
@@ -261,7 +262,11 @@ export const HiEndpointDashboard: React.FC = () => {
                 })}
               </TableBody>
             </Table>
-)}</PowerFilter>
+            {(() => {
+              const tot = __rows.length;
+              const np = Math.max(1, Math.ceil(tot / PAGE));
+              const cur = Math.min(page, np - 1);
+              return (
             <div className="flex flex-wrap items-center justify-between gap-2 pt-4">
               <div className="flex flex-wrap gap-1">
                 {['all', 'Protected', 'At Risk', 'Outdated', 'Unknown'].map((f) => (
@@ -271,11 +276,15 @@ export const HiEndpointDashboard: React.FC = () => {
                 ))}
               </div>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Button size="sm" variant="outline" disabled={page === 0} onClick={() => setPage(page - 1)}>Prec.</Button>
-                <span>{page + 1} / {pages} ({filtered.length})</span>
-                <Button size="sm" variant="outline" disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>Succ.</Button>
+                <Button size="sm" variant="outline" disabled={cur === 0} onClick={() => setPage(cur - 1)}>Prec.</Button>
+                <span>{cur + 1} / {np} ({tot})</span>
+                <Button size="sm" variant="outline" disabled={cur >= np - 1} onClick={() => setPage(cur + 1)}>Succ.</Button>
               </div>
             </div>
+              );
+            })()}
+</>
+)}</PowerFilter>
           </CardContent>
         </Card>
       </section>

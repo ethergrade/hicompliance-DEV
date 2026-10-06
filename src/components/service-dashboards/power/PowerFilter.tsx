@@ -14,6 +14,28 @@ interface Props<T> {
 
 const humanize = (k: string) => k.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ').replace(/^./, c => c.toUpperCase());
 
+const LEVEL: Record<string, number> = {
+  critical: 4, critico: 4, critica: 4, high: 3, alto: 3, alta: 3, medium: 2, medio: 2, media: 2, low: 1, basso: 1, bassa: 1,
+  'at risk': 3, compromised: 4, 'non compliant': 3, noncompliant: 3, outdated: 2, unknown: 1.5, offline: 1,
+};
+/** Punteggio di rischio generico: severità/priorità, stato, minacce, conformità bassa. */
+function riskScore(r: Record<string, any>): number {
+  let s = 0;
+  for (const k of ['severity', 'priority', 'risk', 'riskLevel', 'level']) {
+    const v = r[k];
+    if (typeof v === 'string' && LEVEL[v.toLowerCase()]) s = Math.max(s, LEVEL[v.toLowerCase()] * 1000);
+    if (typeof v === 'number' && k !== 'priority') s = Math.max(s, v * 10);
+  }
+  for (const k of ['protection', 'status', 'health', 'compliance_status', 'complianceStatus']) {
+    const v = r[k];
+    if (typeof v === 'string' && LEVEL[v.toLowerCase()]) s += LEVEL[v.toLowerCase()] * 300;
+  }
+  if (typeof r.threats === 'number') s += r.threats * 100;
+  if (typeof r.compliance === 'number') s += (100 - r.compliance);
+  if (typeof r.daysOutdated === 'number') s += r.daysOutdated;
+  return s;
+}
+
 /** Filtri stile Power Query per tabelle esistenti: filtro per campo + query E/O HiLog. */
 export function PowerFilter<T extends Record<string, any>>({ rows, labels = {}, children }: Props<T>) {
   const [colFilters, setColFilters] = useState<Record<string, string>>({});
@@ -36,7 +58,10 @@ export function PowerFilter<T extends Record<string, any>>({ rows, labels = {}, 
       const q = (colFilters[k] || '').trim().toLowerCase();
       return !q || String(r[k] ?? '').toLowerCase().includes(q);
     }));
-    return evalAdvancedFilter(out, adv);
+    return evalAdvancedFilter(out, adv)
+      .map((r, i) => ({ r, i, s: riskScore(r) }))
+      .sort((a, b) => b.s - a.s || a.i - b.i)
+      .map(x => x.r);
   }, [rows, keys, colFilters, adv]);
 
   const activeCount = Object.values(colFilters).filter(v => v.trim()).length + adv.groups.reduce((n, g) => n + g.conditions.filter(c => c.value.trim()).length, 0);
