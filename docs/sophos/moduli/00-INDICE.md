@@ -15,6 +15,7 @@ con **le API Sophos** documentate in:
 | 04 | [HiMail](04-HIMAIL.md) | Sophos Email | Media |
 | 05 | [HiMobile](05-HIMOBILE.md) | Sophos Mobile | Media-bassa: da verificare |
 | 06 | [Comune](06-COMUNE-AUTH-SIEM-HEALTH.md) | Auth, tenant, SIEM, Health score | — |
+| 07 | [Criteri di accettazione](07-CRITERI-ACCETTAZIONE.md) | Pilota, IDS/IPS, punteggio unificato | — |
 
 Legenda colonne "Stato": **API** = campo diretto; **Calc** = calcolato da noi; **Verif** = non confermato in doc pubblica; **No** = non disponibile su Central.
 
