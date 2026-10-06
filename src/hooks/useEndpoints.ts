@@ -104,7 +104,17 @@ const extraEndpoints: EndpointDevice[] = Array.from({ length: 32 }, (_, i) => {
   };
 });
 mockEndpointData.endpoints = [...mockEndpointData.endpoints, ...extraEndpoints];
-mockEndpointData.stats.totalEndpoints = mockEndpointData.endpoints.length;
+{
+  const e = mockEndpointData.endpoints;
+  mockEndpointData.stats = {
+    totalEndpoints: e.length,
+    protectedEndpoints: e.filter((d) => d.protection === 'Protected').length,
+    atRiskEndpoints: e.filter((d) => d.protection !== 'Protected').length,
+    onlineEndpoints: e.filter((d) => d.status === 'Online').length,
+    offlineEndpoints: e.filter((d) => d.status === 'Offline').length,
+    pendingUpdates: e.filter((d) => d.protection === 'Outdated').length + 4,
+  };
+}
 
 export function useEndpointDashboard(tenantId?: string) {
   const { selectedOrganization } = useClientOrganization();
