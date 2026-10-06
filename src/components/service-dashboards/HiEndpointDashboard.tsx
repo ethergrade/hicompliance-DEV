@@ -205,7 +205,7 @@ export const HiEndpointDashboard: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {__rows.slice(page * PAGE, page * PAGE + PAGE).map((endpoint, index) => {
+                {__rows.slice(Math.min(page, Math.max(0, Math.ceil(__rows.length / PAGE) - 1)) * PAGE, (Math.min(page, Math.max(0, Math.ceil(__rows.length / PAGE) - 1)) + 1) * PAGE).map((endpoint, index) => {
                   const TypeIcon = typeIcons[endpoint.type];
                   return (
                     <TableRow key={index}>
