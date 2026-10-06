@@ -36,7 +36,9 @@ import {
 	Radar,
 	SlidersHorizontal,
 	Activity,
+	Laptop as LaptopIcon,
 } from "lucide-react";
+import { Flame, Radar, Mail, Smartphone } from "lucide-react";
 import { SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import {
 	Sidebar,
@@ -351,6 +353,28 @@ export const AppSidebar: React.FC = () => {
 									href: "/dashboard/service/hipatch",
 									icon: Download,
 								})}
+							{/* Moduli Sophos (dati mock per Innovatech) */}
+							{[
+								{ code: "hiendpoint", title: "HiEndpoint", icon: LaptopIcon },
+								{ code: "hifirewall", title: "HiFirewall", icon: Flame },
+								{ code: "hidetect", title: "HiDetect", icon: Radar },
+								{ code: "himail", title: "HiMail", icon: Mail },
+								{ code: "himobile", title: "HiMobile", icon: Smartphone },
+							]
+								.filter(
+									(m) =>
+										(isSuperAdmin ||
+											!!orgFlags?.[`${m.code}_enabled`] ||
+											isInnovatechDemo(selectedOrganization?.name)) &&
+										isUserAllowed(`/dashboard/service/${m.code}`),
+								)
+								.map((m) =>
+									renderNavItem({
+										title: m.title,
+										href: `/dashboard/service/${m.code}`,
+										icon: m.icon,
+									}),
+								)}
 							{/* HIDDEN: Threat Management page removed per client request (2026-06-05) */}
 							{/* {isModuleEnabled('/threat-management') && renderNavItem({ title: 'Threat Management', href: '/threat-management', icon: Shield })} */}
 						</SidebarMenu>

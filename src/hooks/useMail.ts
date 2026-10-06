@@ -1,5 +1,7 @@
 // @ts-nocheck -- type drift vs API contract, da riallineare
 import { useApiWithFallback } from './useApiWithFallback';
+import { useClientOrganization } from './useClientOrganization';
+import { isInnovatechDemo } from '@/data/innovatechSecurityDemo';
 import { mailApi } from '@/lib/api/mail';
 
 export interface EmailStats {
@@ -97,9 +99,12 @@ const mockMailData: MailDashboardData = {
 };
 
 export function useMailDashboard(tenantId?: string) {
+  const { selectedOrganization } = useClientOrganization();
+  const demo = isInnovatechDemo(selectedOrganization?.name);
   return useApiWithFallback<MailDashboardData>(
     () => mailApi.dashboard(tenantId) as Promise<MailDashboardData>,
     mockMailData,
     [tenantId],
+    demo,
   );
 }

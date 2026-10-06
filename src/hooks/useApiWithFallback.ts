@@ -12,6 +12,7 @@ export function useApiWithFallback<T>(
   fetcher: () => Promise<T>,
   mockData: T,
   deps: readonly unknown[] = [],
+  demo = false,
 ) {
   const [data, setData] = useState<T>(mockData);
   const [loading, setLoading] = useState(true);
@@ -21,6 +22,13 @@ export function useApiWithFallback<T>(
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
+    if (demo) {
+      // Demo (Innovatech): dati mock modellati sulle API Sophos Central, nessuna chiamata
+      setData(mockData);
+      setIsMock(true);
+      setLoading(false);
+      return;
+    }
     try {
       const result = await fetcher();
       setData(result);
@@ -34,7 +42,7 @@ export function useApiWithFallback<T>(
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+  }, [...deps, demo]);
 
   useEffect(() => {
     fetchData();
