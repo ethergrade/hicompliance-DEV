@@ -1,3 +1,4 @@
+import { PowerFilter } from './power/PowerFilter';
 import { IdsSection } from './power/IdsSection';
 import { SectionNav } from '@/components/layout/SectionNav';
 import React from 'react';
@@ -188,7 +189,8 @@ export const HiEndpointDashboard: React.FC = () => {
             <p className="text-sm text-muted-foreground">Stato e protezione di tutti gli endpoint</p>
           </CardHeader>
           <CardContent>
-            <Table>
+            <PowerFilter rows={filtered ?? []}>{(__rows) => (
+<Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Tipo</TableHead>
@@ -202,7 +204,7 @@ export const HiEndpointDashboard: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {endpoints.map((endpoint, index) => {
+                {__rows.slice(page * PAGE, page * PAGE + PAGE).map((endpoint, index) => {
                   const TypeIcon = typeIcons[endpoint.type];
                   return (
                     <TableRow key={index}>
@@ -259,6 +261,7 @@ export const HiEndpointDashboard: React.FC = () => {
                 })}
               </TableBody>
             </Table>
+)}</PowerFilter>
             <div className="flex flex-wrap items-center justify-between gap-2 pt-4">
               <div className="flex flex-wrap gap-1">
                 {['all', 'Protected', 'At Risk', 'Outdated', 'Unknown'].map((f) => (
@@ -290,7 +293,8 @@ export const HiEndpointDashboard: React.FC = () => {
             <p className="text-sm text-muted-foreground">Minacce identificate sugli endpoint</p>
           </CardHeader>
           <CardContent>
-            <Table>
+            <PowerFilter rows={detectedThreats ?? []}>{(__rows) => (
+<Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>ID</TableHead>
@@ -303,7 +307,7 @@ export const HiEndpointDashboard: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {detectedThreats.map((threat, index) => (
+                {__rows.map((threat, index) => (
                   <TableRow key={index}>
                     <TableCell className="font-mono text-sm">{threat.id}</TableCell>
                     <TableCell className="font-medium">{threat.endpoint}</TableCell>
@@ -324,6 +328,7 @@ export const HiEndpointDashboard: React.FC = () => {
                 ))}
               </TableBody>
             </Table>
+)}</PowerFilter>
           </CardContent>
         </Card>
       </section>
@@ -341,7 +346,8 @@ export const HiEndpointDashboard: React.FC = () => {
             <p className="text-sm text-muted-foreground">Endpoint con definizioni o software obsoleti</p>
           </CardHeader>
           <CardContent>
-            <Table>
+            <PowerFilter rows={pendingUpdates ?? []}>{(__rows) => (
+<Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Endpoint</TableHead>
@@ -353,7 +359,7 @@ export const HiEndpointDashboard: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pendingUpdates.map((update, index) => (
+                {__rows.map((update, index) => (
                   <TableRow key={index}>
                     <TableCell className="font-medium">{update.endpoint}</TableCell>
                     <TableCell>{update.component}</TableCell>
@@ -377,6 +383,7 @@ export const HiEndpointDashboard: React.FC = () => {
                 ))}
               </TableBody>
             </Table>
+)}</PowerFilter>
           </CardContent>
         </Card>
       </section>

@@ -1,3 +1,4 @@
+import { PowerFilter } from './power/PowerFilter';
 import { IdsSection } from './power/IdsSection';
 import { SectionNav } from '@/components/layout/SectionNav';
 import React from 'react';
@@ -165,7 +166,8 @@ export const HiMailDashboard: React.FC = () => {
             <p className="text-sm text-muted-foreground">Email malevole bloccate o in quarantena</p>
           </CardHeader>
           <CardContent>
-            <Table>
+            <PowerFilter rows={recentThreats ?? []}>{(__rows) => (
+<Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Da</TableHead>
@@ -178,7 +180,7 @@ export const HiMailDashboard: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {recentThreats.map((threat, index) => (
+                {__rows.map((threat, index) => (
                   <TableRow key={index}>
                     <TableCell className="text-sm max-w-[150px] truncate">
                       <Tooltip>
@@ -221,6 +223,7 @@ export const HiMailDashboard: React.FC = () => {
                 ))}
               </TableBody>
             </Table>
+)}</PowerFilter>
           </CardContent>
         </Card>
       </section>
@@ -238,7 +241,8 @@ export const HiMailDashboard: React.FC = () => {
             <p className="text-sm text-muted-foreground">Email bloccate che richiedono azione manuale</p>
           </CardHeader>
           <CardContent>
-            <Table>
+            <PowerFilter rows={quarantinedEmails ?? []}>{(__rows) => (
+<Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Da</TableHead>
@@ -250,7 +254,7 @@ export const HiMailDashboard: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {quarantinedEmails.map((email, index) => (
+                {__rows.map((email, index) => (
                   <TableRow key={index}>
                     <TableCell className="text-sm max-w-[150px] truncate">{email.from}</TableCell>
                     <TableCell className="text-sm">{email.to}</TableCell>
@@ -266,6 +270,7 @@ export const HiMailDashboard: React.FC = () => {
                 ))}
               </TableBody>
             </Table>
+)}</PowerFilter>
           </CardContent>
         </Card>
       </section>
@@ -283,7 +288,8 @@ export const HiMailDashboard: React.FC = () => {
             <p className="text-sm text-muted-foreground">Violazioni delle policy email aziendali</p>
           </CardHeader>
           <CardContent>
-            <Table>
+            <PowerFilter rows={policyViolations ?? []}>{(__rows) => (
+<Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Policy</TableHead>
@@ -293,7 +299,7 @@ export const HiMailDashboard: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {policyViolations.map((violation, index) => (
+                {__rows.map((violation, index) => (
                   <TableRow key={index}>
                     <TableCell className="font-medium">{violation.policy}</TableCell>
                     <TableCell>
@@ -315,6 +321,7 @@ export const HiMailDashboard: React.FC = () => {
                 ))}
               </TableBody>
             </Table>
+)}</PowerFilter>
           </CardContent>
         </Card>
       </section>
@@ -332,7 +339,8 @@ export const HiMailDashboard: React.FC = () => {
             <p className="text-sm text-muted-foreground">Statistiche per dominio mittente</p>
           </CardHeader>
           <CardContent>
-            <Table>
+            <PowerFilter rows={topSenders ?? []}>{(__rows) => (
+<Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Dominio</TableHead>
@@ -342,7 +350,7 @@ export const HiMailDashboard: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {topSenders.map((sender, index) => (
+                {__rows.map((sender, index) => (
                   <TableRow key={index}>
                     <TableCell className="font-mono">{sender.domain}</TableCell>
                     <TableCell>{sender.emails.toLocaleString()}</TableCell>
@@ -363,6 +371,7 @@ export const HiMailDashboard: React.FC = () => {
                 ))}
               </TableBody>
             </Table>
+)}</PowerFilter>
           </CardContent>
         </Card>
       </section>

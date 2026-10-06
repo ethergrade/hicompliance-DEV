@@ -1,3 +1,4 @@
+import { PowerFilter } from './power/PowerFilter';
 import { IdsSection } from './power/IdsSection';
 import { SectionNav } from '@/components/layout/SectionNav';
 import React from 'react';
@@ -140,7 +141,8 @@ export const HiFirewallDashboard: React.FC = () => {
             <p className="text-sm text-muted-foreground">Ordinate per data e severità</p>
           </CardHeader>
           <CardContent>
-            <Table>
+            <PowerFilter rows={blockedThreats ?? []}>{(__rows) => (
+<Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>ID</TableHead>
@@ -152,7 +154,7 @@ export const HiFirewallDashboard: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {blockedThreats.map((threat, index) => (
+                {__rows.map((threat, index) => (
                   <TableRow key={index}>
                     <TableCell className="font-mono text-sm">
                       <div className="flex items-center gap-2">
@@ -180,6 +182,7 @@ export const HiFirewallDashboard: React.FC = () => {
                 ))}
               </TableBody>
             </Table>
+)}</PowerFilter>
           </CardContent>
         </Card>
       </section>
@@ -197,7 +200,8 @@ export const HiFirewallDashboard: React.FC = () => {
             <p className="text-sm text-muted-foreground">Configurazione delle regole del firewall</p>
           </CardHeader>
           <CardContent>
-            <Table>
+            <PowerFilter rows={firewallRules ?? []}>{(__rows) => (
+<Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>ID</TableHead>
@@ -211,7 +215,7 @@ export const HiFirewallDashboard: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {firewallRules.map((rule, index) => (
+                {__rows.map((rule, index) => (
                   <TableRow key={index}>
                     <TableCell className="font-mono text-sm">{rule.id}</TableCell>
                     <TableCell className="font-medium">{rule.name}</TableCell>
@@ -233,6 +237,7 @@ export const HiFirewallDashboard: React.FC = () => {
                 ))}
               </TableBody>
             </Table>
+)}</PowerFilter>
           </CardContent>
         </Card>
       </section>
@@ -250,7 +255,8 @@ export const HiFirewallDashboard: React.FC = () => {
             <p className="text-sm text-muted-foreground">Log delle connessioni in tempo reale</p>
           </CardHeader>
           <CardContent>
-            <Table>
+            <PowerFilter rows={connectionLogs ?? []}>{(__rows) => (
+<Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Timestamp</TableHead>
@@ -263,7 +269,7 @@ export const HiFirewallDashboard: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {connectionLogs.map((log, index) => (
+                {__rows.map((log, index) => (
                   <TableRow key={index}>
                     <TableCell className="text-muted-foreground text-sm">{log.timestamp}</TableCell>
                     <TableCell className="font-mono text-sm">{log.source}</TableCell>
@@ -280,6 +286,7 @@ export const HiFirewallDashboard: React.FC = () => {
                 ))}
               </TableBody>
             </Table>
+)}</PowerFilter>
           </CardContent>
         </Card>
       </section>

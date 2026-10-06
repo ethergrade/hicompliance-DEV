@@ -1,3 +1,4 @@
+import { PowerFilter } from './power/PowerFilter';
 import { IdsSection } from './power/IdsSection';
 import { SectionNav } from '@/components/layout/SectionNav';
 import React from 'react';
@@ -581,7 +582,8 @@ export const HiDetectDashboard: React.FC = () => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
+          <PowerFilter rows={realtimeAlerts ?? []}>{(__rows) => (
+<Table>
             <TableHeader>
               <TableRow>
                 <TableHead>ID</TableHead>
@@ -594,7 +596,7 @@ export const HiDetectDashboard: React.FC = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {realtimeAlerts.map((alert) => (
+              {__rows.map((alert) => (
                 <TableRow key={alert.id}>
                   <TableCell className="font-mono text-xs">{alert.id}</TableCell>
                   <TableCell className="text-muted-foreground">{alert.timestamp}</TableCell>
@@ -607,6 +609,7 @@ export const HiDetectDashboard: React.FC = () => {
               ))}
             </TableBody>
           </Table>
+)}</PowerFilter>
         </CardContent>
       </Card>
 
@@ -621,7 +624,8 @@ export const HiDetectDashboard: React.FC = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
+            <PowerFilter rows={endpointStatusData ?? []}>{(__rows) => (
+<Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Hostname</TableHead>
@@ -631,7 +635,7 @@ export const HiDetectDashboard: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {endpointStatusData.map((endpoint, index) => (
+                {__rows.map((endpoint, index) => (
                   <TableRow key={index}>
                     <TableCell className="font-mono text-xs">{endpoint.hostname}</TableCell>
                     <TableCell className="text-muted-foreground text-xs">{endpoint.ip}</TableCell>
@@ -641,6 +645,7 @@ export const HiDetectDashboard: React.FC = () => {
                 ))}
               </TableBody>
             </Table>
+)}</PowerFilter>
           </CardContent>
         </Card>
 
