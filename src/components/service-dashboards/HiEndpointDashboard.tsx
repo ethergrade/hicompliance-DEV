@@ -1,6 +1,7 @@
 import { SectionNav } from '@/components/layout/SectionNav';
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { 
   Info, 
@@ -74,7 +75,13 @@ const priorityColors = {
 
 export const HiEndpointDashboard: React.FC = () => {
   const { data, loading, isMock } = useEndpointDashboard();
-  const { stats: endpointStats, endpoints, detectedThreats, pendingUpdates } = data;
+  const { stats: endpointStats, endpoints: allEndpoints, detectedThreats, pendingUpdates } = data;
+  const [protFilter, setProtFilter] = React.useState<string>('all');
+  const [page, setPage] = React.useState(0);
+  const PAGE = 10;
+  const filtered = allEndpoints.filter((e) => protFilter === 'all' || e.protection === protFilter);
+  const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
+  const endpoints = filtered.slice(page * PAGE, page * PAGE + PAGE);
 
   return (
     <div className="space-y-8">
@@ -251,6 +258,20 @@ export const HiEndpointDashboard: React.FC = () => {
                 })}
               </TableBody>
             </Table>
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-4">
+              <div className="flex flex-wrap gap-1">
+                {['all', 'Protected', 'At Risk', 'Outdated', 'Unknown'].map((f) => (
+                  <Button key={f} size="sm" variant={protFilter === f ? 'default' : 'outline'} onClick={() => { setProtFilter(f); setPage(0); }}>
+                    {f === 'all' ? 'Tutti' : f}
+                  </Button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Button size="sm" variant="outline" disabled={page === 0} onClick={() => setPage(page - 1)}>Prec.</Button>
+                <span>{page + 1} / {pages} ({filtered.length})</span>
+                <Button size="sm" variant="outline" disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>Succ.</Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </section>
