@@ -14,7 +14,15 @@ import {
   createEmptyCondition, createEmptyGroup, createEmptyFilter, uid,
 } from './filterEngine';
 
+export type FieldOption = { value: string; label: string };
+const FieldsCtx = React.createContext<readonly FieldOption[]>(FILTER_FIELDS);
+const FieldOptions: React.FC = () => {
+  const fields = React.useContext(FieldsCtx);
+  return <>{fields.map(f => (<SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>))}</>;
+};
+
 interface Props {
+  fields?: readonly FieldOption[];
   filter: AdvancedFilter;
   onChange: (filter: AdvancedFilter) => void;
   onClose?: () => void;
@@ -60,9 +68,7 @@ const ConditionRow: React.FC<{
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {FILTER_FIELDS.map(f => (
-          <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
-        ))}
+        <FieldOptions />
       </SelectContent>
     </Select>
 
@@ -170,7 +176,7 @@ const GroupCard: React.FC<{
   );
 };
 
-export const AdvancedFilterBuilder: React.FC<Props> = ({ filter, onChange, onClose }) => {
+export const AdvancedFilterBuilder: React.FC<Props> = ({ filter, onChange, onClose, fields = FILTER_FIELDS }) => {
   const updateGroup = (idx: number, g: FilterGroup) => {
     const next = [...filter.groups];
     next[idx] = g;
@@ -192,6 +198,7 @@ export const AdvancedFilterBuilder: React.FC<Props> = ({ filter, onChange, onClo
   const conditionCount = filter.groups.reduce((sum, g) => sum + g.conditions.filter(c => c.value.trim()).length, 0);
 
   return (
+    <FieldsCtx.Provider value={fields}>
     <Card className="border-primary/30 bg-card/80 backdrop-blur">
       <CardContent className="pt-4 pb-3 space-y-3">
         {/* Header */}
@@ -254,7 +261,7 @@ export const AdvancedFilterBuilder: React.FC<Props> = ({ filter, onChange, onClo
                 const parts = g.conditions
                   .filter(c => c.value.trim())
                   .map(c => {
-                    const fieldLabel = FILTER_FIELDS.find(f => f.value === c.field)?.label || c.field;
+                    const fieldLabel = fields.find(f => f.value === c.field)?.label || c.field;
                     const opLabel = FILTER_OPERATORS.find(o => o.value === c.operator)?.label || c.operator;
                     return `${fieldLabel} ${opLabel} "${c.value}"`;
                   });
@@ -269,5 +276,6 @@ export const AdvancedFilterBuilder: React.FC<Props> = ({ filter, onChange, onClo
         )}
       </CardContent>
     </Card>
+    </FieldsCtx.Provider>
   );
 };
