@@ -38,7 +38,7 @@ import {
 	Activity,
 	Laptop as LaptopIcon,
 } from "lucide-react";
-import { Flame, Radar, Mail, Smartphone } from "lucide-react";
+import { Flame, Mail, Smartphone } from "lucide-react";
 import { SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import {
 	Sidebar,
