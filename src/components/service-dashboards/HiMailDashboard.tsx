@@ -1,3 +1,4 @@
+import { SectionNav } from '@/components/layout/SectionNav';
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -61,6 +62,8 @@ export const HiMailDashboard: React.FC = () => {
 
   return (
     <div className="space-y-8">
+      <div id="ml-top" className="scroll-mt-28" />
+      <SectionNav items={[{ id: 'ml-top', label: 'Riepilogo' }, { id: 'ml-s1', label: 'Ultime minacce rilevate' }, { id: 'ml-s2', label: 'Email sospese in attesa di r' }, { id: 'ml-s3', label: 'Policy DLP e sicurezza' }, { id: 'ml-s4', label: 'Domini con più email ricevut' }]} />
       {/* Overview Section */}
       <section className="space-y-4">
         <div className="flex items-center gap-3">
@@ -152,7 +155,7 @@ export const HiMailDashboard: React.FC = () => {
       <section className="space-y-4">
         <h2 className="text-2xl font-bold">Minacce Email Recenti</h2>
         
-        <Card className="border-border">
+        <Card id="ml-s1" className="border-border scroll-mt-28">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-orange-500" />
@@ -225,7 +228,7 @@ export const HiMailDashboard: React.FC = () => {
       <section className="space-y-4">
         <h2 className="text-2xl font-bold">Email in Quarantena</h2>
         
-        <Card className="border-border">
+        <Card id="ml-s2" className="border-border scroll-mt-28">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Ban className="w-5 h-5 text-orange-500" />
@@ -270,7 +273,7 @@ export const HiMailDashboard: React.FC = () => {
       <section className="space-y-4">
         <h2 className="text-2xl font-bold">Violazioni Policy</h2>
         
-        <Card className="border-border">
+        <Card id="ml-s3" className="border-border scroll-mt-28">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <MailX className="w-5 h-5 text-red-500" />
@@ -319,7 +322,7 @@ export const HiMailDashboard: React.FC = () => {
       <section className="space-y-4">
         <h2 className="text-2xl font-bold">Top Domini Mittenti</h2>
         
-        <Card className="border-border">
+        <Card id="ml-s4" className="border-border scroll-mt-28">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Inbox className="w-5 h-5 text-primary" />

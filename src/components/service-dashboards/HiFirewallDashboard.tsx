@@ -1,3 +1,4 @@
+import { SectionNav } from '@/components/layout/SectionNav';
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -40,6 +41,8 @@ export const HiFirewallDashboard: React.FC = () => {
 
   return (
     <div className="space-y-8">
+      <div id="fw-top" className="scroll-mt-28" />
+      <SectionNav items={[{ id: 'fw-top', label: 'Riepilogo' }, { id: 'fw-s1', label: 'Ultime minacce rilevate' }, { id: 'fw-s2', label: 'Regole attive' }, { id: 'fw-s3', label: 'Ultime connessioni' }]} />
       {/* Overview Section */}
       <section className="space-y-4">
         <div className="flex items-center gap-3">
@@ -127,7 +130,7 @@ export const HiFirewallDashboard: React.FC = () => {
       <section className="space-y-4">
         <h2 className="text-2xl font-bold">Minacce Bloccate</h2>
         
-        <Card className="border-border">
+        <Card id="fw-s1" className="border-border scroll-mt-28">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-orange-500" />
@@ -184,7 +187,7 @@ export const HiFirewallDashboard: React.FC = () => {
       <section className="space-y-4">
         <h2 className="text-2xl font-bold">Regole Firewall</h2>
         
-        <Card className="border-border">
+        <Card id="fw-s2" className="border-border scroll-mt-28">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Shield className="w-5 h-5 text-primary" />
@@ -237,7 +240,7 @@ export const HiFirewallDashboard: React.FC = () => {
       <section className="space-y-4">
         <h2 className="text-2xl font-bold">Log Connessioni</h2>
         
-        <Card className="border-border">
+        <Card id="fw-s3" className="border-border scroll-mt-28">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Activity className="w-5 h-5 text-blue-500" />

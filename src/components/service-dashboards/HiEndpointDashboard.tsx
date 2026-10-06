@@ -1,3 +1,4 @@
+import { SectionNav } from '@/components/layout/SectionNav';
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -77,6 +78,8 @@ export const HiEndpointDashboard: React.FC = () => {
 
   return (
     <div className="space-y-8">
+      <div id="ep-top" className="scroll-mt-28" />
+      <SectionNav items={[{ id: 'ep-top', label: 'Riepilogo' }, { id: 'ep-s1', label: 'Endpoint monitorati' }, { id: 'ep-s2', label: 'Ultime minacce rilevate' }, { id: 'ep-s3', label: 'Aggiornamenti da installare' }]} />
       {/* Overview Section */}
       <section className="space-y-4">
         <div className="flex items-center gap-3">
@@ -168,7 +171,7 @@ export const HiEndpointDashboard: React.FC = () => {
       <section className="space-y-4">
         <h2 className="text-2xl font-bold">Elenco Endpoint</h2>
         
-        <Card className="border-border">
+        <Card id="ep-s1" className="border-border scroll-mt-28">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Laptop className="w-5 h-5 text-primary" />
@@ -256,7 +259,7 @@ export const HiEndpointDashboard: React.FC = () => {
       <section className="space-y-4">
         <h2 className="text-2xl font-bold">Minacce Rilevate</h2>
         
-        <Card className="border-border">
+        <Card id="ep-s2" className="border-border scroll-mt-28">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-orange-500" />
@@ -307,7 +310,7 @@ export const HiEndpointDashboard: React.FC = () => {
       <section className="space-y-4">
         <h2 className="text-2xl font-bold">Aggiornamenti Pendenti</h2>
         
-        <Card className="border-border">
+        <Card id="ep-s3" className="border-border scroll-mt-28">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Clock className="w-5 h-5 text-yellow-500" />

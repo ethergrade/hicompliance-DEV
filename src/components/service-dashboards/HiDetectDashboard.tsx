@@ -1,3 +1,4 @@
+import { SectionNav } from '@/components/layout/SectionNav';
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -292,6 +293,8 @@ const getStatusBadge = (status: string) => {
 export const HiDetectDashboard: React.FC = () => {
   return (
     <div className="space-y-6">
+      <div id="dt-top" className="scroll-mt-28" />
+      <SectionNav items={[{ id: 'dt-top', label: 'Riepilogo' }, { id: 'dt-s1', label: 'Distribuzione Severità Minac' }, { id: 'dt-s2', label: 'Trend Minacce Settimanale' }, { id: 'dt-s3', label: 'Categorie di Rilevamento' }, { id: 'dt-s4', label: 'Attività Rilevamento (24h)' }, { id: 'dt-s5', label: 'Alert in Tempo Reale' }, { id: 'dt-s6', label: 'Stato Protezione Endpoint' }, { id: 'dt-s7', label: 'Attività SOC' }, { id: 'dt-s8', label: 'Regole di Rilevamento Attive' }]} />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -416,7 +419,7 @@ export const HiDetectDashboard: React.FC = () => {
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Threat Severity Distribution */}
-        <Card className="border-border">
+        <Card id="dt-s1" className="border-border scroll-mt-28">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <AlertTriangle className="w-4 h-4" />
@@ -449,7 +452,7 @@ export const HiDetectDashboard: React.FC = () => {
         </Card>
 
         {/* Weekly Threat Trend */}
-        <Card className="border-border">
+        <Card id="dt-s2" className="border-border scroll-mt-28">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <TrendingUp className="w-4 h-4" />
@@ -498,7 +501,7 @@ export const HiDetectDashboard: React.FC = () => {
 
       {/* Detection Categories & Hourly Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="border-border">
+        <Card id="dt-s3" className="border-border scroll-mt-28">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Target className="w-4 h-4" />
@@ -532,7 +535,7 @@ export const HiDetectDashboard: React.FC = () => {
           </CardContent>
         </Card>
 
-        <Card className="border-border">
+        <Card id="dt-s4" className="border-border scroll-mt-28">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Activity className="w-4 h-4" />
@@ -569,7 +572,7 @@ export const HiDetectDashboard: React.FC = () => {
       </div>
 
       {/* Real-time Alerts */}
-      <Card className="border-border">
+      <Card id="dt-s5" className="border-border scroll-mt-28">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <Bell className="w-4 h-4" />
@@ -609,7 +612,7 @@ export const HiDetectDashboard: React.FC = () => {
       {/* Endpoint Status & SOC Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Endpoint Protection Status */}
-        <Card className="border-border">
+        <Card id="dt-s6" className="border-border scroll-mt-28">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Monitor className="w-4 h-4" />
@@ -641,7 +644,7 @@ export const HiDetectDashboard: React.FC = () => {
         </Card>
 
         {/* SOC Activity Log */}
-        <Card className="border-border">
+        <Card id="dt-s7" className="border-border scroll-mt-28">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Activity className="w-4 h-4" />
@@ -673,7 +676,7 @@ export const HiDetectDashboard: React.FC = () => {
       </div>
 
       {/* Detection Rules Status */}
-      <Card className="border-border">
+      <Card id="dt-s8" className="border-border scroll-mt-28">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <Shield className="w-4 h-4" />
