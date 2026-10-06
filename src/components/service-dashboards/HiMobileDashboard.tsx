@@ -1,3 +1,4 @@
+import { PowerFilter } from './power/PowerFilter';
 import { IdsSection } from './power/IdsSection';
 import { SectionNav } from '@/components/layout/SectionNav';
 import React from 'react';
@@ -386,7 +387,8 @@ export const HiMobileDashboard: React.FC = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <Table>
+              <PowerFilter rows={deviceInventory ?? []}>{(__rows) => (
+<Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Dispositivo</TableHead>
@@ -400,7 +402,7 @@ export const HiMobileDashboard: React.FC = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {deviceInventory.map((device) => (
+                  {__rows.map((device) => (
                     <TableRow key={device.id}>
                       <TableCell className="font-medium">{device.deviceName}</TableCell>
                       <TableCell>{device.user}</TableCell>
@@ -425,6 +427,7 @@ export const HiMobileDashboard: React.FC = () => {
                   ))}
                 </TableBody>
               </Table>
+)}</PowerFilter>
             </CardContent>
           </Card>
         </TabsContent>
@@ -483,7 +486,8 @@ export const HiMobileDashboard: React.FC = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <Table>
+              <PowerFilter rows={appInventory ?? []}>{(__rows) => (
+<Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Applicazione</TableHead>
@@ -493,7 +497,7 @@ export const HiMobileDashboard: React.FC = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {appInventory.map((app, index) => (
+                  {__rows.map((app, index) => (
                     <TableRow key={index}>
                       <TableCell className="font-medium">{app.name}</TableCell>
                       <TableCell className="text-muted-foreground">{app.category}</TableCell>
@@ -503,6 +507,7 @@ export const HiMobileDashboard: React.FC = () => {
                   ))}
                 </TableBody>
               </Table>
+)}</PowerFilter>
             </CardContent>
           </Card>
         </TabsContent>
