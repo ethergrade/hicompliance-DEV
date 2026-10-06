@@ -189,7 +189,7 @@ export const HiEndpointDashboard: React.FC = () => {
             <p className="text-sm text-muted-foreground">Stato e protezione di tutti gli endpoint</p>
           </CardHeader>
           <CardContent>
-            <PowerFilter rows={endpoints ?? []}>{(__rows) => (
+            <PowerFilter rows={filtered ?? []}>{(__rows) => (
 <Table>
               <TableHeader>
                 <TableRow>
@@ -204,7 +204,7 @@ export const HiEndpointDashboard: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {__rows.map((endpoint, index) => {
+                {__rows.slice(page * PAGE, page * PAGE + PAGE).map((endpoint, index) => {
                   const TypeIcon = typeIcons[endpoint.type];
                   return (
                     <TableRow key={index}>
