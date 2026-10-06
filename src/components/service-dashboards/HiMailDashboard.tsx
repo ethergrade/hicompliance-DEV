@@ -63,7 +63,7 @@ export const HiMailDashboard: React.FC = () => {
   return (
     <div className="space-y-8">
       <div id="ml-top" className="scroll-mt-28" />
-      <SectionNav items={[{ id: 'ml-top', label: 'Riepilogo' }, { id: 'ml-s1', label: 'Ultime minacce rilevate' }, { id: 'ml-s2', label: 'Email sospese in attesa di r' }, { id: 'ml-s3', label: 'Policy DLP e sicurezza' }, { id: 'ml-s4', label: 'Domini con più email ricevut' }]} />
+      <SectionNav items={[{ id: 'ml-top', label: 'Riepilogo' }, { id: 'ml-s1', label: 'Minacce' }, { id: 'ml-s2', label: 'Quarantena' }, { id: 'ml-s3', label: 'Policy DLP' }, { id: 'ml-s4', label: 'Top domini' }]} />
       {/* Overview Section */}
       <section className="space-y-4">
         <div className="flex items-center gap-3">

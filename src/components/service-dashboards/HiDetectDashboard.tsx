@@ -294,7 +294,7 @@ export const HiDetectDashboard: React.FC = () => {
   return (
     <div className="space-y-6">
       <div id="dt-top" className="scroll-mt-28" />
-      <SectionNav items={[{ id: 'dt-top', label: 'Riepilogo' }, { id: 'dt-s1', label: 'Distribuzione Severità Minac' }, { id: 'dt-s2', label: 'Trend Minacce Settimanale' }, { id: 'dt-s3', label: 'Categorie di Rilevamento' }, { id: 'dt-s4', label: 'Attività Rilevamento (24h)' }, { id: 'dt-s5', label: 'Alert in Tempo Reale' }, { id: 'dt-s6', label: 'Stato Protezione Endpoint' }, { id: 'dt-s7', label: 'Attività SOC' }, { id: 'dt-s8', label: 'Regole di Rilevamento Attive' }]} />
+      <SectionNav items={[{ id: 'dt-top', label: 'Riepilogo' }, { id: 'dt-s1', label: 'Severità' }, { id: 'dt-s2', label: 'Trend' }, { id: 'dt-s3', label: 'Categorie' }, { id: 'dt-s4', label: 'Attività 24h' }, { id: 'dt-s5', label: 'Alert' }, { id: 'dt-s6', label: 'Protezione' }, { id: 'dt-s7', label: 'Attività SOC' }, { id: 'dt-s8', label: 'Regole' }]} />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

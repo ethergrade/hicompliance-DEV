@@ -79,7 +79,7 @@ export const HiEndpointDashboard: React.FC = () => {
   return (
     <div className="space-y-8">
       <div id="ep-top" className="scroll-mt-28" />
-      <SectionNav items={[{ id: 'ep-top', label: 'Riepilogo' }, { id: 'ep-s1', label: 'Endpoint monitorati' }, { id: 'ep-s2', label: 'Ultime minacce rilevate' }, { id: 'ep-s3', label: 'Aggiornamenti da installare' }]} />
+      <SectionNav items={[{ id: 'ep-top', label: 'Riepilogo' }, { id: 'ep-s1', label: 'Endpoint' }, { id: 'ep-s2', label: 'Minacce' }, { id: 'ep-s3', label: 'Aggiornamenti' }]} />
       {/* Overview Section */}
       <section className="space-y-4">
         <div className="flex items-center gap-3">

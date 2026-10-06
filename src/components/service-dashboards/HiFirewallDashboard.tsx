@@ -42,7 +42,7 @@ export const HiFirewallDashboard: React.FC = () => {
   return (
     <div className="space-y-8">
       <div id="fw-top" className="scroll-mt-28" />
-      <SectionNav items={[{ id: 'fw-top', label: 'Riepilogo' }, { id: 'fw-s1', label: 'Ultime minacce rilevate' }, { id: 'fw-s2', label: 'Regole attive' }, { id: 'fw-s3', label: 'Ultime connessioni' }]} />
+      <SectionNav items={[{ id: 'fw-top', label: 'Riepilogo' }, { id: 'fw-s1', label: 'Minacce' }, { id: 'fw-s2', label: 'Regole' }, { id: 'fw-s3', label: 'Connessioni' }]} />
       {/* Overview Section */}
       <section className="space-y-4">
         <div className="flex items-center gap-3">

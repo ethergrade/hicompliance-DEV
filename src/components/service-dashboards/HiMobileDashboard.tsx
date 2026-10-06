@@ -87,7 +87,7 @@ export const HiMobileDashboard: React.FC = () => {
   return (
     <div className="space-y-6">
       <div id="mb-top" className="scroll-mt-28" />
-      <SectionNav items={[{ id: 'mb-top', label: 'Riepilogo' }, { id: 'mb-s1', label: 'Distribuzione Sistemi Operat' }, { id: 'mb-s2', label: 'Trend Registrazioni' }, { id: 'mb-s3', label: 'Stato Compliance per Categor' }, { id: 'mb-s4', label: 'Eventi di Sicurezza Recenti' }, { id: 'mb-s5', label: 'Inventario Dispositivi' }, { id: 'mb-s6', label: 'Policy di Sicurezza Attive' }, { id: 'mb-s7', label: 'App Aziendali Gestite' }]} />
+      <SectionNav items={[{ id: 'mb-top', label: 'Riepilogo' }, { id: 'mb-s1', label: 'Sistemi operativi' }, { id: 'mb-s2', label: 'Trend' }, { id: 'mb-s3', label: 'Compliance' }, { id: 'mb-s4', label: 'Eventi' }, { id: 'mb-s5', label: 'Dispositivi' }, { id: 'mb-s6', label: 'Policy' }, { id: 'mb-s7', label: 'App' }]} />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
