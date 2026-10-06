@@ -1,5 +1,7 @@
+import { SectionNav } from '@/components/layout/SectionNav';
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { 
   Info, 
@@ -73,10 +75,18 @@ const priorityColors = {
 
 export const HiEndpointDashboard: React.FC = () => {
   const { data, loading, isMock } = useEndpointDashboard();
-  const { stats: endpointStats, endpoints, detectedThreats, pendingUpdates } = data;
+  const { stats: endpointStats, endpoints: allEndpoints, detectedThreats, pendingUpdates } = data;
+  const [protFilter, setProtFilter] = React.useState<string>('all');
+  const [page, setPage] = React.useState(0);
+  const PAGE = 10;
+  const filtered = allEndpoints.filter((e) => protFilter === 'all' || e.protection === protFilter);
+  const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
+  const endpoints = filtered.slice(page * PAGE, page * PAGE + PAGE);
 
   return (
     <div className="space-y-8">
+      <div id="ep-top" className="scroll-mt-28" />
+      <SectionNav items={[{ id: 'ep-top', label: 'Riepilogo' }, { id: 'ep-s1', label: 'Endpoint' }, { id: 'ep-s2', label: 'Minacce' }, { id: 'ep-s3', label: 'Aggiornamenti' }]} />
       {/* Overview Section */}
       <section className="space-y-4">
         <div className="flex items-center gap-3">
@@ -168,7 +178,7 @@ export const HiEndpointDashboard: React.FC = () => {
       <section className="space-y-4">
         <h2 className="text-2xl font-bold">Elenco Endpoint</h2>
         
-        <Card className="border-border">
+        <Card id="ep-s1" className="border-border scroll-mt-28">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Laptop className="w-5 h-5 text-primary" />
@@ -248,6 +258,20 @@ export const HiEndpointDashboard: React.FC = () => {
                 })}
               </TableBody>
             </Table>
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-4">
+              <div className="flex flex-wrap gap-1">
+                {['all', 'Protected', 'At Risk', 'Outdated', 'Unknown'].map((f) => (
+                  <Button key={f} size="sm" variant={protFilter === f ? 'default' : 'outline'} onClick={() => { setProtFilter(f); setPage(0); }}>
+                    {f === 'all' ? 'Tutti' : f}
+                  </Button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Button size="sm" variant="outline" disabled={page === 0} onClick={() => setPage(page - 1)}>Prec.</Button>
+                <span>{page + 1} / {pages} ({filtered.length})</span>
+                <Button size="sm" variant="outline" disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>Succ.</Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </section>
@@ -256,7 +280,7 @@ export const HiEndpointDashboard: React.FC = () => {
       <section className="space-y-4">
         <h2 className="text-2xl font-bold">Minacce Rilevate</h2>
         
-        <Card className="border-border">
+        <Card id="ep-s2" className="border-border scroll-mt-28">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-orange-500" />
@@ -307,7 +331,7 @@ export const HiEndpointDashboard: React.FC = () => {
       <section className="space-y-4">
         <h2 className="text-2xl font-bold">Aggiornamenti Pendenti</h2>
         
-        <Card className="border-border">
+        <Card id="ep-s3" className="border-border scroll-mt-28">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Clock className="w-5 h-5 text-yellow-500" />

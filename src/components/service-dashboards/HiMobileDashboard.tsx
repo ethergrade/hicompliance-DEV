@@ -1,3 +1,4 @@
+import { SectionNav } from '@/components/layout/SectionNav';
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -85,6 +86,8 @@ export const HiMobileDashboard: React.FC = () => {
   const { overview: overviewData, osDistribution: osDistributionData, complianceData, enrollmentTrend, deviceInventory, securityPolicies, appInventory, securityEvents } = mobileData;
   return (
     <div className="space-y-6">
+      <div id="mb-top" className="scroll-mt-28" />
+      <SectionNav items={[{ id: 'mb-top', label: 'Riepilogo' }, { id: 'mb-s1', label: 'Sistemi operativi' }, { id: 'mb-s2', label: 'Trend' }, { id: 'mb-s3', label: 'Compliance' }, { id: 'mb-s4', label: 'Eventi' }, { id: 'mb-s5', label: 'Dispositivi' }, { id: 'mb-s6', label: 'Policy' }, { id: 'mb-s7', label: 'App' }]} />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -223,7 +226,7 @@ export const HiMobileDashboard: React.FC = () => {
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* OS Distribution */}
-        <Card className="border-border">
+        <Card id="mb-s1" className="border-border scroll-mt-28">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Smartphone className="w-4 h-4" />
@@ -256,7 +259,7 @@ export const HiMobileDashboard: React.FC = () => {
         </Card>
 
         {/* Enrollment Trend */}
-        <Card className="border-border">
+        <Card id="mb-s2" className="border-border scroll-mt-28">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Users className="w-4 h-4" />
@@ -300,7 +303,7 @@ export const HiMobileDashboard: React.FC = () => {
       </div>
 
       {/* Compliance Chart */}
-      <Card className="border-border">
+      <Card id="mb-s3" className="border-border scroll-mt-28">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <Shield className="w-4 h-4" />
@@ -337,7 +340,7 @@ export const HiMobileDashboard: React.FC = () => {
       </Card>
 
       {/* Security Events */}
-      <Card className="border-border">
+      <Card id="mb-s4" className="border-border scroll-mt-28">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <AlertTriangle className="w-4 h-4" />
@@ -374,7 +377,7 @@ export const HiMobileDashboard: React.FC = () => {
         </TabsList>
 
         <TabsContent value="devices">
-          <Card className="border-border">
+          <Card id="mb-s5" className="border-border scroll-mt-28">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Smartphone className="w-4 h-4" />
@@ -426,7 +429,7 @@ export const HiMobileDashboard: React.FC = () => {
         </TabsContent>
 
         <TabsContent value="policies">
-          <Card className="border-border">
+          <Card id="mb-s6" className="border-border scroll-mt-28">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Settings className="w-4 h-4" />
@@ -471,7 +474,7 @@ export const HiMobileDashboard: React.FC = () => {
         </TabsContent>
 
         <TabsContent value="apps">
-          <Card className="border-border">
+          <Card id="mb-s7" className="border-border scroll-mt-28">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <AppWindow className="w-4 h-4" />
