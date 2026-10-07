@@ -76,6 +76,20 @@ export interface StandardOverview {
 	snapshot: DarkRiskWeeklySnapshot | null;
 	/** Contatore aggregato delle credenziali esposte: visibile anche in Standard. */
 	credentialLeaks: number;
+	monitoringCoverage: MonitoringCoverage | null;
+}
+
+/** Quanto è coperto il monitoraggio DarkRisk (backend overview.monitoring_coverage). */
+export interface MonitoringCoverage {
+	status: "sufficient" | "insufficient";
+	reasons: string[];
+	scopeEntries: number;
+	scopeByKind: Record<string, number>;
+	selectors: number;
+	runsLast30Days: number;
+	lastRunAt: string | null;
+	daysSinceLastRun: number | null;
+	monthly: Array<{ period: string; status: string | null; riskLevel: string | null; findings: number | null }>;
 }
 
 export interface DarkRiskReport {

@@ -30,6 +30,7 @@ import { DarkRiskSourcePieChart } from "../components/DarkRiskSourcePieChart";
 import { exportCredentialLeaksXlsx, exportRunRecordsXlsx } from "../shared/exportCredentialsXlsx";
 import { ReportList } from "../shared/ReportList";
 import { DarkRiskFindingsList } from "../components/DarkRiskFindingsList";
+import { DarkRiskMonitoringCoverage } from "../components/DarkRiskMonitoringCoverage";
 import { ScopeEditor } from "../shared/ScopeEditor";
 import { useDarkRiskEntitlements } from "../shared/useDarkRiskEntitlements";
 
@@ -414,6 +415,7 @@ export default function ExtendedDarkRiskPage() {
 								</div>
 							</CardContent>
 						</Card>
+						<DarkRiskMonitoringCoverage coverage={overviewQuery.data?.monitoringCoverage} />
 						{organizationId && <DarkRiskFindingsList companyId={organizationId} groupId={groupId} />}
 
 						<ReportList

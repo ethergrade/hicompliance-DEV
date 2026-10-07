@@ -27,6 +27,7 @@ import { DarkRiskFiletypePieChart } from "../components/DarkRiskFiletypePieChart
 import { DarkRiskSourcePieChart } from "../components/DarkRiskSourcePieChart";
 import { ReportList } from "../shared/ReportList";
 import { DarkRiskFindingsList } from "../components/DarkRiskFindingsList";
+import { DarkRiskMonitoringCoverage } from "../components/DarkRiskMonitoringCoverage";
 import { ScopeEditor } from "../shared/ScopeEditor";
 import { useDarkRiskEntitlements } from "../shared/useDarkRiskEntitlements";
 
@@ -355,6 +356,7 @@ export default function StandardDarkRiskPage() {
 							</Card>
 						)}
 
+						<DarkRiskMonitoringCoverage coverage={overview?.monitoringCoverage} />
 						{organizationId && <DarkRiskFindingsList companyId={organizationId} groupId={groupId} />}
 
 						<ReportList

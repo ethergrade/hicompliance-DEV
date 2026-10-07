@@ -47,6 +47,7 @@ import SurfaceScanExposureSection from '@/components/surface-scan/SurfaceScanExp
 import { SubdomainDepthTree } from '@/components/surface-scan/SubdomainDepthTree';
 import { SurfaceScanTrendline } from '@/components/surface-scan/SurfaceScanTrendline';
 import { SurfaceScanAlertBanner } from '@/components/surface-scan/SurfaceScanAlertBanner';
+import { SurfaceScanPerimeterOverview } from "@/components/surface-scan/SurfaceScanPerimeterOverview";
 import { SurfaceScanActionItems } from '@/components/surface-scan/SurfaceScanActionItems';
 import { SurfaceScanMailSecurity } from '@/components/surface-scan/SurfaceScanMailSecurity';
 import { SurfaceScanNotificationConfigCard } from '@/components/surface-scan/SurfaceScanNotificationConfigCard';
@@ -1013,6 +1014,8 @@ const SurfaceScan360: React.FC = () => {
               </CardContent>
             </Card>
           </div>
+
+          {canViewSurfaceScan && <SurfaceScanPerimeterOverview />}
 
           <SurfaceScanAlertBanner />
           <SurfaceScanActionItems />

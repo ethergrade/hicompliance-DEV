@@ -172,6 +172,44 @@ export interface VulnerabilityMatch {
 	canonical: boolean;
 }
 
+/** Copertura e stato del perimetro (ultimi 30 giorni) e andamento dai report mensili. */
+export interface PerimeterOverview {
+	window: { from: string; to: string; days: number };
+	perimeter: { scope_entries: number; domains: number; subdomains: number; ips: number; monitored_ips: number };
+	coverage: {
+		status: "sufficient" | "insufficient";
+		scope_total: number;
+		scope_covered: number;
+		ratio: number;
+		uncovered: string[];
+		last_usable_scan_at: string | null;
+		days_since_last_scan: number | null;
+		reasons: string[];
+	};
+	score: { determinable: boolean; posture_score: number | null; risk_level: string | null; reason: string | null };
+	open_findings: { total: number; by_severity: Record<string, number> };
+	scans: { usable: number; partial: number; failed: number; last_usable_at: string | null };
+	trend: Array<{
+		month_key: string;
+		partial: boolean;
+		coverage: string | null;
+		posture_score: number | null;
+		risk_level: string | null;
+		open_findings: number;
+		by_severity: Record<string, number>;
+	}>;
+	last_month: {
+		month_key: string;
+		comparison: {
+			available: boolean;
+			previous_month_key: string | null;
+			score_delta: number | null;
+			open_findings_delta: number | null;
+			by_severity_delta: Record<string, number> | null;
+		} | null;
+	} | null;
+}
+
 export interface VulnerabilityIntelligencePage {
 	rows: VulnerabilityMatch[];
 	total: number;
@@ -575,6 +613,15 @@ export const surfaceScan360Api = {
 			page: page?.current_page ?? 1,
 			lastPage: page?.last_page ?? 1,
 		};
+	},
+
+	async getPerimeterOverview(companyId: string, groupId?: string | null): Promise<PerimeterOverview> {
+		const res = await complianceApiClient.get<ApiResponse<PerimeterOverview>>(
+			`/companies/${companyId}/surface-scan360/perimeter-overview`,
+			undefined,
+			groupId ? groupHeader(groupId) : undefined,
+		);
+		return res.data;
 	},
 
 	async getEpssBuckets(

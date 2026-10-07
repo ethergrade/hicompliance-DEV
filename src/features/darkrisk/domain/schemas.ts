@@ -10,6 +10,7 @@ import type {
 	DarkRiskScope,
 	DarkRiskWeeklySnapshot,
 	ExtendedLeakRecord,
+	MonitoringCoverage,
 	ExtendedRunResult,
 	StandardOverview,
 } from "./contracts";
@@ -227,6 +228,32 @@ export const parseStandardOverview = (value: unknown): StandardOverview => {
 		credentialLeaks: numberValue(
 			objectValue(objectValue(item.dti).sensitive_totals).passwords ?? credentials.value,
 		),
+		monitoringCoverage: parseMonitoringCoverage(item.monitoring_coverage),
+	};
+};
+
+const parseMonitoringCoverage = (value: unknown): MonitoringCoverage | null => {
+	if (!value || typeof value !== "object") return null;
+	const item = objectValue(value);
+	const byKind = objectValue(item.scope_by_kind);
+	return {
+		status: item.status === "sufficient" ? "sufficient" : "insufficient",
+		reasons: (Array.isArray(item.reasons) ? item.reasons : []).map((r) => stringValue(r)),
+		scopeEntries: numberValue(item.scope_entries),
+		scopeByKind: Object.fromEntries(Object.entries(byKind).map(([k, v]) => [k, numberValue(v)])),
+		selectors: numberValue(item.selectors),
+		runsLast30Days: numberValue(item.runs_last_30_days),
+		lastRunAt: nullableString(item.last_run_at),
+		daysSinceLastRun: item.days_since_last_run === null || item.days_since_last_run === undefined ? null : numberValue(item.days_since_last_run),
+		monthly: (Array.isArray(item.monthly) ? item.monthly : []).map((row) => {
+			const m = objectValue(row);
+			return {
+				period: stringValue(m.period),
+				status: nullableString(m.status),
+				riskLevel: nullableString(m.risk_level),
+				findings: m.findings === null || m.findings === undefined ? null : numberValue(m.findings),
+			};
+		}),
 	};
 };
 
