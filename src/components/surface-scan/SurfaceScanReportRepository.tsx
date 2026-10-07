@@ -38,6 +38,8 @@ interface MonthlyReport {
     findings_summary?: { total?: number; critical?: number; high?: number; resolved?: number };
     breach_intel?: { creds_found?: number; hashes_found?: number };
     ai?: { executive_summary?: string | null };
+    coverage?: { status?: 'sufficient' | 'insufficient'; reasons?: string[] };
+    meta?: { partial?: boolean };
   };
 }
 
@@ -73,13 +75,13 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
     void loadMonthlyReports();
   }, [organizationId, groupId]);
 
-  const handleGenerateMonthly = async (monthKey?: string) => {
+  const handleGenerateMonthly = async (monthKey?: string, force = false) => {
     if (!organizationId) return;
     setGeneratingMonthly(true);
     try {
       const result = await surfaceScan360Api.generateMonthlyReport(
         organizationId,
-        { month_key: monthKey, trigger_source: 'manual' },
+        { month_key: monthKey, trigger_source: 'manual', force_regenerate: force },
         groupId,
       );
       const r = result as { month_key?: string };
@@ -111,23 +113,31 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
     generateReport,
     deleteReport,
     generateMissingReports,
+    loadFullReport,
   } = useSurfaceScanReportRepository(scanJobs);
+  const [exportingId, setExportingId] = useState<string | null>(null);
 
-  const downloadPdf = (payload: SurfaceScan360Report) => {
+  // La lista contiene solo un riepilogo: l'export parte sempre dal report
+  // intero. Generare il PDF dal riepilogo dava un documento vuoto, con
+  // "Invalid Date" e un 100/100 calcolato su zero finding.
+  const exportReport = async (reportId: string, format: 'pdf' | 'docx') => {
+    setExportingId(reportId);
     try {
-      generateSurfaceScan360Pdf(payload);
+      const full = (await loadFullReport(reportId)) as SurfaceScan360Report | null;
+      if (!full || !full.generated_at) {
+        toast.error('Il report non contiene dati da esportare: rigeneralo');
+        return;
+      }
+      if (format === 'pdf') {
+        generateSurfaceScan360Pdf(full);
+      } else {
+        await generateSurfaceScan360Docx(full);
+      }
     } catch (error) {
-      console.error('Error exporting SurfaceScan report PDF:', error);
-      toast.error('Export PDF non riuscito');
-    }
-  };
-
-  const downloadDocx = async (payload: SurfaceScan360Report) => {
-    try {
-      await generateSurfaceScan360Docx(payload);
-    } catch (error) {
-      console.error('Error exporting SurfaceScan report DOCX:', error);
-      toast.error('Export DOCX non riuscito');
+      console.error(`Error exporting SurfaceScan report ${format.toUpperCase()}:`, error);
+      toast.error(`Export ${format.toUpperCase()} non riuscito`);
+    } finally {
+      setExportingId(null);
     }
   };
 
@@ -274,8 +284,8 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => downloadPdf(payload)}
-                            disabled={deletingReportId === row.id}
+                            onClick={() => void exportReport(row.id, 'pdf')}
+                            disabled={deletingReportId === row.id || exportingId === row.id}
                           >
                             <Download className="w-4 h-4 mr-2" />
                             PDF
@@ -283,8 +293,8 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => void downloadDocx(payload)}
-                            disabled={deletingReportId === row.id}
+                            onClick={() => void exportReport(row.id, 'docx')}
+                            disabled={deletingReportId === row.id || exportingId === row.id}
                           >
                             <Download className="w-4 h-4 mr-2" />
                             DOCX
@@ -348,9 +358,9 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
                 <TableHeader>
                   <TableRow>
                     <TableHead>Mese</TableHead>
-                    <TableHead>Snapshot</TableHead>
-                    <TableHead>Score (start→end)</TableHead>
-                    <TableHead>Findings</TableHead>
+                    <TableHead>Scansioni</TableHead>
+                    <TableHead>Score (mese prec.→mese)</TableHead>
+                    <TableHead>Finding aperti</TableHead>
                     <TableHead>Breach</TableHead>
                     <TableHead>Generato</TableHead>
                     <TableHead>Azioni</TableHead>
@@ -373,16 +383,31 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
                   )}
                   {!monthlyLoading && monthlyReports.map(r => {
                     const p = r.payload;
-                    const delta = p.trend?.score_delta ?? 0;
-                    const deltaStr = delta > 0 ? `+${delta}` : String(delta);
-                    const deltaClass = delta > 0 ? 'text-emerald-400' : delta < 0 ? 'text-red-400' : 'text-muted-foreground';
+                    const delta = p.trend?.score_delta ?? null;
+                    const deltaStr = delta === null ? '' : delta > 0 ? `+${delta}` : String(delta);
+                    const deltaClass = delta && delta > 0 ? 'text-emerald-400' : delta && delta < 0 ? 'text-red-400' : 'text-muted-foreground';
+                    const insufficient = p.coverage?.status === 'insufficient';
                     return (
                       <TableRow key={r.id}>
-                        <TableCell className="font-medium">{r.month_key}</TableCell>
+                        <TableCell className="font-medium">
+                          {r.month_key}
+                          {p.meta?.partial && <Badge variant="outline" className="ml-2 text-[10px]">mese in corso</Badge>}
+                        </TableCell>
                         <TableCell className="text-sm">{p.weekly_snapshots ?? '-'}</TableCell>
                         <TableCell className="text-sm">
-                          {p.trend?.score_start ?? '-'} → {p.trend?.score_end ?? '-'}
-                          <span className={`ml-1.5 text-xs ${deltaClass}`}>({deltaStr})</span>
+                          {insufficient ? (
+                            <Badge
+                              className="bg-amber-500/20 text-amber-500 border-amber-500/30 text-[10px]"
+                              title={(p.coverage?.reasons || []).join(' ')}
+                            >
+                              Copertura insufficiente
+                            </Badge>
+                          ) : (
+                            <>
+                              {p.trend?.score_start ?? '-'} → {p.trend?.score_end ?? '-'}
+                              {deltaStr && <span className={`ml-1.5 text-xs ${deltaClass}`}>({deltaStr})</span>}
+                            </>
+                          )}
                         </TableCell>
                         <TableCell className="text-sm">
                           <span className="text-red-400">{p.findings_summary?.critical ?? 0} crit</span>
@@ -400,7 +425,7 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
                               <Download className="w-4 h-4 mr-1" />PDF
                             </Button>
                             {canManage && (
-                              <Button size="sm" variant="ghost" onClick={() => handleGenerateMonthly(r.month_key)} disabled={generatingMonthly}>
+                              <Button size="sm" variant="ghost" onClick={() => handleGenerateMonthly(r.month_key, true)} disabled={generatingMonthly}>
                                 Rigenera
                               </Button>
                             )}

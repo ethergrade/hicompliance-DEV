@@ -34,7 +34,13 @@ const mapApiReportToRow = (report: SurfaceScanAiReport, organizationId: string):
   organization_id: organizationId,
   scan_job_id: report.scan_job_id || null,
   title: report.title || null,
-  payload: report.ai_summary ? { ai_summary: report.ai_summary } : {},
+  // La lista porta solo un riepilogo: basta per la tabella. Il report intero,
+  // quello da cui si genera il PDF, si carica con loadFullReport().
+  payload: {
+    ai: report.ai_summary ?? undefined,
+    exposure_score: (report as any).exposure_score ?? undefined,
+    findings_by_severity: (report as any).findings_by_severity ?? undefined,
+  },
   created_by: null,
   created_at: report.created_at,
 });
@@ -49,6 +55,7 @@ interface UseSurfaceScanReportRepositoryResult {
   generateReport: (options?: { jobId?: string; forceRegenerate?: boolean; silent?: boolean }) => Promise<boolean>;
   deleteReport: (reportId: string, options?: { silent?: boolean }) => Promise<boolean>;
   generateMissingReports: () => Promise<{ created: number; skipped: number }>;
+  loadFullReport: (reportId: string) => Promise<any | null>;
 }
 
 export const useSurfaceScanReportRepository = (
@@ -195,6 +202,15 @@ export const useSurfaceScanReportRepository = (
     return ok ? { created: 1, skipped: 0 } : { created: 0, skipped: 1 };
   }, [missingCompletedJobs, generateReport, fetchReports]);
 
+  const loadFullReport = useCallback(
+    async (reportId: string): Promise<any | null> => {
+      if (!organizationId) return null;
+      const full = (await surfaceScan360Api.getAiReport(organizationId, reportId, groupId)) as { payload?: unknown } | null;
+      return full?.payload ?? null;
+    },
+    [organizationId, groupId],
+  );
+
   return {
     reports,
     loading,
@@ -205,5 +221,6 @@ export const useSurfaceScanReportRepository = (
     generateReport,
     deleteReport,
     generateMissingReports,
+    loadFullReport,
   };
 };

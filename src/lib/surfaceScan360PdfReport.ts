@@ -106,7 +106,7 @@ export interface SurfaceScan360Report {
 	kev_generation?: { created: number; total_kev: number; existing: number };
 	ai: {
 		executive_summary?: string;
-		risk_score?: number;
+		risk_score?: number | null;
 		risk_level?: string;
 		risk_points?: number;
 		score_method?: string;
@@ -336,7 +336,7 @@ const summarizeIntel = (
 		if (summary.recent.length === 0)
 			return `Nessuna scansione pubblica nota per ${target}`;
 		const r = summary.recent[0];
-		const d = r.date ? new Date(r.date).toLocaleDateString("it-IT") : "n/d";
+		const d = formatDateIt(r.date, false);
 		return `${summary.total} evidenz${summary.total === 1 ? "a" : "e"} pubblic${summary.total === 1 ? "a" : "he"} - ultimo aggiornamento ${d} - IP: ${r.ip || "n/d"}`;
 	}
 	if (provider === "hosting_context") {
@@ -485,10 +485,27 @@ const summarizeIntel = (
 	return "";
 };
 
-const computeFallbackRisk = (
+/**
+ * Data in formato italiano, "n/d" quando manca o non è valida: un report senza
+ * `generated_at` stampava "Invalid Date" in copertina.
+ */
+export const formatDateIt = (value: unknown, withTime = true): string => {
+	if (value === null || value === undefined || value === "") return "n/d";
+	const d = new Date(value as string);
+	if (Number.isNaN(d.getTime())) return "n/d";
+	return withTime ? d.toLocaleString("it-IT") : d.toLocaleDateString("it-IT");
+};
+
+export const computeFallbackRisk = (
 	report: SurfaceScan360Report,
-): { score: number; level: string } => {
+): { score: number | null; level: string } => {
 	const sev = report.findings_by_severity || {};
+	const observed =
+		(report.findings || []).length +
+		Object.values(sev).reduce((sum: number, v) => sum + (Number(v) || 0), 0);
+	// Zero finding su zero dati non è una postura perfetta: senza niente di
+	// osservato il punteggio non si dà.
+	if (observed === 0) return { score: null, level: "Non determinabile" };
 	const penalty =
 		Number(sev.critical || 0) * 22 +
 		Number(sev.high || 0) * 12 +
@@ -823,7 +840,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
 	doc.setFontSize(10);
 	doc.setTextColor(180, 200, 230);
 	doc.text(
-		`Generato: ${new Date(report.generated_at).toLocaleString("it-IT")}`,
+		`Generato: ${formatDateIt(report.generated_at)}`,
 		margin,
 		146,
 	);
@@ -902,7 +919,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
 	kv("Hosting", s.hosting_context || "n/d");
 	kv(
 		"Completata",
-		s.completed_at ? new Date(s.completed_at).toLocaleString("it-IT") : "n/d",
+		formatDateIt(s.completed_at),
 	);
 	if (s.overall_score != null) kv("Overall score", `${s.overall_score}/100`);
 	if (s.risk_level) kv("Risk level", String(s.risk_level));
@@ -1006,7 +1023,7 @@ export function generateSurfaceScan360Pdf(report: SurfaceScan360Report): void {
 				depth: depthFromRoot(host, dump.root_domain),
 				evidence:
 					[r.ip, r.country, r.asn_name].filter(Boolean).join(" · ") ||
-					`rilevato ${dump.created_at ? new Date(dump.created_at).toLocaleString("it-IT") : ""}`,
+					`rilevato ${dump.created_at ? formatDateIt(dump.created_at) : ""}`,
 			});
 		});
 	});

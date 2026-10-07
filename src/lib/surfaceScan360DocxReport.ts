@@ -351,7 +351,7 @@ export async function generateSurfaceScan360Docx(
 			["Servizi da fingerprintare", asText(exposureScore.vulnerability_summary?.fingerprint_unknown ?? 0, "0")],
 			["Interpretazione", asText(exposureScore.vulnerability_summary?.explanation)],
 		]
-		: [["Indice postura exposure", `${report.ai?.risk_score ?? "n/d"}/100`], ["Livello di rischio", asText(report.ai?.risk_level)]];
+		: [["Indice postura exposure", report.ai?.risk_score == null ? "Non determinabile" : `${report.ai.risk_score}/100`], ["Livello di rischio", asText(report.ai?.risk_level)]];
 
 	const findingsRows = findings
 		.slice(0, 120)
