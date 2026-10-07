@@ -2,6 +2,7 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { DemoDataBadge } from './DemoDataBadge';
+import { ServiceNotConnected } from './ServiceNotConnected';
 import { useMobileDashboard } from '@/hooks/useMobile';
 import { RiskScoreCard } from './RiskScoreCard';
 import {
@@ -81,7 +82,8 @@ const getSeverityBadge = (severity: string) => {
 };
 
 export const HiMobileDashboard: React.FC = () => {
-  const { data: mobileData, isMock } = useMobileDashboard();
+  const { data: mobileData, loading, isMock } = useMobileDashboard();
+  if (!mobileData) return <ServiceNotConnected service="HiMobile" loading={loading} />;
   const { overview: overviewData, osDistribution: osDistributionData, complianceData, enrollmentTrend, deviceInventory, securityPolicies, appInventory, securityEvents } = mobileData;
   return (
     <div className="space-y-6">

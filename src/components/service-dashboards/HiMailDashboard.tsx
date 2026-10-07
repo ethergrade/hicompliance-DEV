@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { RiskScoreCard } from './RiskScoreCard';
 import { DemoDataBadge } from './DemoDataBadge';
+import { ServiceNotConnected } from './ServiceNotConnected';
 import { useMailDashboard } from '@/hooks/useMail';
 import {
   Table,
@@ -57,6 +58,7 @@ const severityColors = {
 
 export const HiMailDashboard: React.FC = () => {
   const { data, loading, isMock } = useMailDashboard();
+  if (!data) return <ServiceNotConnected service="HiMail" loading={loading} />;
   const { stats: emailStats, recentThreats, quarantinedEmails, topSenders, policyViolations } = data;
 
   return (

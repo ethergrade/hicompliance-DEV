@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Info, Shield, ShieldAlert, ShieldCheck, ShieldX, Activity, AlertTriangle } from 'lucide-react';
 import { RiskScoreCard } from './RiskScoreCard';
 import { DemoDataBadge } from './DemoDataBadge';
+import { ServiceNotConnected } from './ServiceNotConnected';
 import { useFirewallDashboard } from '@/hooks/useFirewall';
 import {
   Table,
@@ -36,6 +37,7 @@ const statusColors = {
 
 export const HiFirewallDashboard: React.FC = () => {
   const { data, loading, isMock } = useFirewallDashboard();
+  if (!data) return <ServiceNotConnected service="HiFirewall" loading={loading} />;
   const { stats: firewallStats, blockedThreats, firewallRules, connectionLogs } = data;
 
   return (

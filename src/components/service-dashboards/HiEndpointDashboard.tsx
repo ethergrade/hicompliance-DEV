@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { RiskScoreCard } from './RiskScoreCard';
 import { DemoDataBadge } from './DemoDataBadge';
+import { ServiceNotConnected } from './ServiceNotConnected';
 import { useEndpointDashboard } from '@/hooks/useEndpoints';
 import {
   Table,
@@ -73,6 +74,7 @@ const priorityColors = {
 
 export const HiEndpointDashboard: React.FC = () => {
   const { data, loading, isMock } = useEndpointDashboard();
+  if (!data) return <ServiceNotConnected service="HiEndpoint" loading={loading} />;
   const { stats: endpointStats, endpoints, detectedThreats, pendingUpdates } = data;
 
   return (

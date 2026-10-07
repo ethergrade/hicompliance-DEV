@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { RiskScoreCard } from './RiskScoreCard';
 import { DemoDataBadge } from './DemoDataBadge';
+import { ServiceNotConnected } from './ServiceNotConnected';
 import { useDetectDashboard } from '@/hooks/useDetect';
 import {
   Table,
@@ -253,7 +254,9 @@ const hourlyActivityData = [
   { hour: '22:00', detections: 2 },
 ];
 
-const isMock = true;
+// Dati d'esempio: ancora nessun endpoint reale per HiDetect. Si vedono solo
+// nella build demo; per i clienti veri la pagina dice che non è collegato.
+const isMock = import.meta.env.VITE_DEMO_MODE === 'true';
 
 const getSeverityBadge = (severity: string) => {
   switch (severity) {
@@ -290,6 +293,8 @@ const getStatusBadge = (status: string) => {
 };
 
 export const HiDetectDashboard: React.FC = () => {
+  if (!isMock) return <ServiceNotConnected service="HiDetect" />;
+
   return (
     <div className="space-y-6">
       {/* Header */}
