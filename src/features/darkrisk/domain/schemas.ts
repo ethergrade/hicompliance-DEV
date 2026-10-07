@@ -1,6 +1,9 @@
 import { z } from "zod";
 import type {
 	CredentialLeakPage,
+	DarkRiskFinding,
+	DarkRiskFindingEvent,
+	DarkRiskFindingPage,
 	DarkRiskReport,
 	DarkRiskRun,
 	DarkRiskRunStatus,
@@ -128,6 +131,11 @@ export const parseCredentialLeaks = (value: unknown): CredentialLeakPage => {
 				createdAt: nullableString(item.created_at),
 				evidenceId: nullableString(item.evidence_id),
 				findingId: nullableString(item.finding_id),
+				ackFindingId: nullableString(item.ack_finding_id),
+				acknowledged: item.acknowledged === true,
+				acknowledgedAt: nullableString(item.acknowledged_at),
+				acknowledgedBy: nullableString(item.acknowledged_by),
+				acknowledgementNote: nullableString(item.acknowledgement_note),
 			};
 		}),
 		total: numberValue(envelope.total, rows.length),
@@ -293,3 +301,45 @@ export const parseExtendedResults = (value: unknown): ExtendedRunResult => {
 		discardedBucketRecords: Math.max(0, rows.length - records.length),
 	};
 };
+
+export const parseFinding = (value: unknown): DarkRiskFinding => {
+	const item = objectValue(value);
+	const by = objectValue(item.acknowledged_by);
+	return {
+		id: stringValue(item.id),
+		title: stringValue(item.title, stringValue(item.finding_type)),
+		findingType: stringValue(item.finding_type),
+		severity: stringValue(item.severity, "info"),
+		status: stringValue(item.status, "new"),
+		asset: nullableString(item.affected_asset),
+		leakDate: nullableString(item.leak_date),
+		firstSeenAt: nullableString(item.first_seen_at),
+		lastSeenAt: nullableString(item.last_seen_at),
+		acknowledged: item.acknowledged === true,
+		acknowledgedAt: nullableString(item.acknowledged_at),
+		acknowledgedBy: nullableString(by.name),
+		acknowledgementNote: nullableString(item.acknowledgement_note),
+	};
+};
+
+export const parseFindingPage = (value: unknown): DarkRiskFindingPage => {
+	const envelope = objectValue(value);
+	const rows = Array.isArray(envelope.data) ? envelope.data : [];
+	return {
+		rows: rows.map(parseFinding),
+		total: numberValue(envelope.total, rows.length),
+		page: numberValue(envelope.current_page, 1),
+		lastPage: numberValue(envelope.last_page, 1),
+	};
+};
+
+export const parseFindingHistory = (value: unknown): DarkRiskFindingEvent[] =>
+	(Array.isArray(value) ? value : []).map((row) => {
+		const item = objectValue(row);
+		return {
+			action: stringValue(item.action),
+			actor: nullableString(objectValue(item.actor).name),
+			note: nullableString(item.note),
+			createdAt: nullableString(item.created_at),
+		};
+	});

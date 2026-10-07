@@ -29,6 +29,7 @@ import { DarkRiskFiletypePieChart } from "../components/DarkRiskFiletypePieChart
 import { DarkRiskSourcePieChart } from "../components/DarkRiskSourcePieChart";
 import { exportCredentialLeaksXlsx, exportRunRecordsXlsx } from "../shared/exportCredentialsXlsx";
 import { ReportList } from "../shared/ReportList";
+import { DarkRiskFindingsList } from "../components/DarkRiskFindingsList";
 import { ScopeEditor } from "../shared/ScopeEditor";
 import { useDarkRiskEntitlements } from "../shared/useDarkRiskEntitlements";
 
@@ -266,6 +267,9 @@ export default function ExtendedDarkRiskPage() {
 							<DarkRiskCredentialLeaks
 								records={credentialLeaks?.records ?? []}
 								total={credentialLeaks?.total}
+								companyId={organizationId ?? undefined}
+								groupId={groupId}
+								onChanged={() => void credentialLeaksQuery.refetch()}
 								onExport={handleExportCredentials}
 								limit={500}
 							/>
@@ -410,6 +414,8 @@ export default function ExtendedDarkRiskPage() {
 								</div>
 							</CardContent>
 						</Card>
+						{organizationId && <DarkRiskFindingsList companyId={organizationId} groupId={groupId} />}
+
 						<ReportList
 							title="Report per scansione"
 							reports={reportsQuery.data ?? []}

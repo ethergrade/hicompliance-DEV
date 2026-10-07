@@ -26,6 +26,7 @@ import { DarkRiskCalendarHeatmap } from "../components/DarkRiskCalendarHeatmap";
 import { DarkRiskFiletypePieChart } from "../components/DarkRiskFiletypePieChart";
 import { DarkRiskSourcePieChart } from "../components/DarkRiskSourcePieChart";
 import { ReportList } from "../shared/ReportList";
+import { DarkRiskFindingsList } from "../components/DarkRiskFindingsList";
 import { ScopeEditor } from "../shared/ScopeEditor";
 import { useDarkRiskEntitlements } from "../shared/useDarkRiskEntitlements";
 
@@ -353,6 +354,8 @@ export default function StandardDarkRiskPage() {
 								</CardContent>
 							</Card>
 						)}
+
+						{organizationId && <DarkRiskFindingsList companyId={organizationId} groupId={groupId} />}
 
 						<ReportList
 							title="Report mensili"

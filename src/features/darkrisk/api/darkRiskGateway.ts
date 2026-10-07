@@ -2,6 +2,9 @@ import { complianceApiClient } from "@/lib/api-client";
 import type { ApiResponse } from "@/types/api";
 import type {
 	CredentialLeakPage,
+	DarkRiskFinding,
+	DarkRiskFindingEvent,
+	DarkRiskFindingPage,
 	DarkRiskReport,
 	DarkRiskRun,
 	DarkRiskScope,
@@ -10,6 +13,9 @@ import type {
 } from "../domain/contracts";
 import {
 	parseCredentialLeaks,
+	parseFinding,
+	parseFindingHistory,
+	parseFindingPage,
 	parseExtendedResults,
 	parseReports,
 	parseRun,
@@ -39,6 +45,52 @@ const getData = async (
 };
 
 export const darkRiskGateway = {
+	/** Evidenze DarkRisk paginate, con data del leak e ACK del cliente. */
+	async getFindings(
+		companyId: string,
+		groupId?: string | null,
+		filters?: Record<string, string | number>,
+	): Promise<DarkRiskFindingPage> {
+		return parseFindingPage(await getData(`/companies/${companyId}/darkrisk/findings`, groupId, filters));
+	},
+
+	async acknowledgeFinding(
+		companyId: string,
+		groupId: string | null | undefined,
+		findingId: string,
+		note?: string,
+	): Promise<DarkRiskFinding> {
+		const response = await complianceApiClient.post<ApiResponse<unknown>>(
+			`/companies/${companyId}/darkrisk/findings/${findingId}/ack`,
+			{ note: note?.trim() || null },
+			requestOptions(groupId),
+		);
+		return parseFinding(response.data);
+	},
+
+	async revokeFindingAcknowledgement(
+		companyId: string,
+		groupId: string | null | undefined,
+		findingId: string,
+		note?: string,
+	): Promise<DarkRiskFinding> {
+		// delete non porta un corpo: la nota viaggia in query string.
+		const query = note?.trim() ? `?note=${encodeURIComponent(note.trim())}` : "";
+		const response = await complianceApiClient.delete<ApiResponse<unknown>>(
+			`/companies/${companyId}/darkrisk/findings/${findingId}/ack${query}`,
+			requestOptions(groupId),
+		);
+		return parseFinding(response.data);
+	},
+
+	async getFindingHistory(
+		companyId: string,
+		groupId: string | null | undefined,
+		findingId: string,
+	): Promise<DarkRiskFindingEvent[]> {
+		return parseFindingHistory(await getData(`/companies/${companyId}/darkrisk/findings/${findingId}/history`, groupId));
+	},
+
 	async getEntitlements(
 		companyId: string,
 		groupId?: string | null,

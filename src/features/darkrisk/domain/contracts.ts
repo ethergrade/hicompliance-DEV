@@ -135,6 +135,43 @@ export interface CredentialLeak {
 	createdAt: string | null;
 	evidenceId: string | null;
 	findingId: string | null;
+	/** Il finding che porta l'ACK; null se la credenziale non è agganciabile. */
+	ackFindingId: string | null;
+	acknowledged: boolean;
+	acknowledgedAt: string | null;
+	acknowledgedBy: string | null;
+	acknowledgementNote: string | null;
+}
+
+/** Un'evidenza DarkRisk, con l'eventuale riconoscimento (ACK) del cliente. */
+export interface DarkRiskFinding {
+	id: string;
+	title: string;
+	findingType: string;
+	severity: string;
+	status: string;
+	asset: string | null;
+	leakDate: string | null;
+	firstSeenAt: string | null;
+	lastSeenAt: string | null;
+	acknowledged: boolean;
+	acknowledgedAt: string | null;
+	acknowledgedBy: string | null;
+	acknowledgementNote: string | null;
+}
+
+export interface DarkRiskFindingPage {
+	rows: DarkRiskFinding[];
+	total: number;
+	page: number;
+	lastPage: number;
+}
+
+export interface DarkRiskFindingEvent {
+	action: string;
+	actor: string | null;
+	note: string | null;
+	createdAt: string | null;
 }
 
 export interface CredentialLeakPage {
