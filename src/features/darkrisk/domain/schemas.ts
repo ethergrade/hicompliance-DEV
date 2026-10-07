@@ -230,7 +230,8 @@ export const parseReports = (value: unknown): DarkRiskReport[] => {
 		const item = objectValue(raw);
 		const id = stringValue(item.id || item.report_id);
 		if (!id) return [];
-		const rawMode = stringValue(item.mode || item.report_mode || item.type).toLowerCase();
+		// Il backend manda il tipo in `tier`: senza, ogni report risultava "standard".
+		const rawMode = stringValue(item.tier || item.mode || item.report_mode || item.type).toLowerCase();
 		const rawDownloadUrl = nullableString(item.download_url || item.signed_url || item.url);
 		const downloadUrl = rawDownloadUrl && (
 			rawDownloadUrl.startsWith("/") || /^https:\/\//i.test(rawDownloadUrl)
