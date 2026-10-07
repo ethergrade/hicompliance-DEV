@@ -23,10 +23,9 @@ import {
 } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import { Loader2, ShieldAlert, Filter } from "lucide-react";
+import { Loader2, ShieldAlert } from "lucide-react";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
+import VulnerabilityIntelligenceCard from "./VulnerabilityIntelligenceCard";
 import {
 	surfaceScan360Api,
 	type RemediationWorkflowStatus,
@@ -51,7 +50,6 @@ const fmtEpss = (v: number | null) =>
 const ExternalScanIntelligenceSection: React.FC = () => {
 	const { organizationId, groupId } = useClientOrganization();
 	const [bucketFilter, setBucketFilter] = useState<string | undefined>();
-	const [kevOnly, setKevOnly] = useState(false);
 	const [remediationTab, setRemediationTab] =
 		useState<RemediationWorkflowStatus>("open");
 
@@ -62,17 +60,6 @@ const ExternalScanIntelligenceSection: React.FC = () => {
 		enabled,
 		queryFn: () =>
 			surfaceScan360Api.getEpssBuckets(organizationId!, {}, groupId),
-	});
-
-	const vulnQuery = useQuery({
-		queryKey: ["vuln-intel", organizationId, groupId, bucketFilter, kevOnly],
-		enabled,
-		queryFn: () =>
-			surfaceScan360Api.getVulnerabilityIntelligence(
-				organizationId!,
-				{ epss_bucket: bucketFilter, kev_only: kevOnly },
-				groupId,
-			),
 	});
 
 	const remediationQuery = useQuery({
@@ -89,7 +76,6 @@ const ExternalScanIntelligenceSection: React.FC = () => {
 	if (!organizationId) return null;
 
 	const buckets = epssQuery.data ?? [];
-	const vulns = vulnQuery.data ?? [];
 	const remediations = remediationQuery.data ?? [];
 
 	return (
@@ -147,80 +133,11 @@ const ExternalScanIntelligenceSection: React.FC = () => {
 			</Card>
 
 			{/* Vulnerability Intelligence */}
-			<Card>
-				<CardHeader>
-					<CardTitle className="flex items-center gap-2">
-						<Filter className="w-5 h-5" />
-						Vulnerability Intelligence
-					</CardTitle>
-					<CardDescription>
-						CVE correlate ai servizi esposti, con CVSS/EPSS/KEV canonici.
-						{bucketFilter && (
-							<>
-								{" "}
-								Filtro bucket: <strong>{bucketFilter}</strong>
-							</>
-						)}
-					</CardDescription>
-				</CardHeader>
-				<CardContent className="space-y-3">
-					<div className="flex items-center gap-2">
-						<Switch checked={kevOnly} onCheckedChange={setKevOnly} id="kev-only" />
-						<Label htmlFor="kev-only">Solo KEV (Known Exploited)</Label>
-					</div>
-
-					{vulnQuery.isLoading ? (
-						<Loader2 className="w-4 h-4 animate-spin" />
-					) : vulns.length === 0 ? (
-						<p className="text-sm text-muted-foreground">
-							Nessuna vulnerabilità corrispondente ai filtri.
-						</p>
-					) : (
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>CVE</TableHead>
-									<TableHead>Severity</TableHead>
-									<TableHead>CVSS</TableHead>
-									<TableHead>EPSS</TableHead>
-									<TableHead>Bucket</TableHead>
-									<TableHead>KEV</TableHead>
-									<TableHead>Asset</TableHead>
-									<TableHead>Stato</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{vulns.map((v) => (
-									<TableRow key={v.id}>
-										<TableCell className="font-mono text-xs">{v.cve_id}</TableCell>
-										<TableCell>
-											<Badge variant={severityBadge(v.severity)}>
-												{v.severity ?? "—"}
-											</Badge>
-										</TableCell>
-										<TableCell>{v.cvss ?? "—"}</TableCell>
-										<TableCell>{fmtEpss(v.epss)}</TableCell>
-										<TableCell className="text-xs">{v.epss_bucket}</TableCell>
-										<TableCell>
-											{v.kev ? (
-												<Badge variant="destructive">KEV</Badge>
-											) : (
-												"—"
-											)}
-										</TableCell>
-										<TableCell className="text-xs">
-											{v.asset_host ?? "—"}
-										</TableCell>
-										<TableCell className="capitalize text-xs">
-											{v.match_status}
-										</TableCell>
-									</TableRow>
-								))}
-							</TableBody>
-						</Table>
-					)}
-				</CardContent>
-			</Card>
+			<VulnerabilityIntelligenceCard
+				organizationId={organizationId}
+				groupId={groupId}
+				bucketFilter={bucketFilter}
+			/>
 
 			{/* Remediation Plan */}
 			<Card>

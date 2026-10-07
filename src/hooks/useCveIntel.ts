@@ -6,6 +6,9 @@ import { useClientOrganization } from '@/hooks/useClientOrganization';
 export interface CveIntel {
   cve_id: string;
   description: string | null;
+  /** Solo l'originale inglese NVD; null se NVD non lo fornisce. */
+  description_en?: string | null;
+  cvss_v2_severity?: string | null;
   cvss_v3_score: number | null;
   cvss_v3_vector: string | null;
   cvss_v3_severity: string | null;

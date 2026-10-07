@@ -122,9 +122,9 @@ export const CveDetailDialog: React.FC<CveDetailDialogProps> = ({ cveId, open, o
               )}
 
               <div>
-                <h4 className="font-semibold mb-1">Descrizione</h4>
+                <h4 className="font-semibold mb-1">Descrizione NVD (originale inglese)</h4>
                 <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                  {intel.description ?? 'Non disponibile'}
+                  {intel.description_en ?? 'Descrizione NVD non disponibile'}
                 </p>
               </div>
 

@@ -125,22 +125,58 @@ export interface UpsertExternalEndpointPayload {
 	enabled?: boolean;
 }
 
+export type CorrelationStatus = "confirmed" | "candidate" | "unknown" | "rejected";
+
+/** Un servizio (porta, sorgente, evidenza) su cui è stato visto il CVE. */
+export interface VulnerabilityDetail {
+	service_key: string | null;
+	port: number | null;
+	protocol: string | null;
+	source: string | null;
+	source_label: string;
+	match_status: CorrelationStatus;
+	exposure_severity: string | null;
+	finding_id: string | null;
+	finding_title: string | null;
+	finding_status: string | null;
+	evidence: Record<string, unknown> | null;
+	first_seen_at: string | null;
+	last_seen_at: string | null;
+}
+
+/**
+ * Una riga per asset (host|ip) e CVE. `cvss_severity` è quella del CVE secondo
+ * NVD (null se NVD non ne dà); `exposure_severity` quella del servizio esposto.
+ */
 export interface VulnerabilityMatch {
 	id: string;
 	cve_id: string;
-	match_status: "confirmed" | "candidate" | "hint" | "unknown" | "rejected";
-	severity: string | null;
 	asset_host: string | null;
-	service_key: string | null;
-	cvss: number | null;
+	asset_ip: string | null;
+	match_status: CorrelationStatus;
+	cvss_score: number | null;
+	cvss_severity: string | null;
+	cvss_version: "2" | "3" | null;
+	exposure_severity: string | null;
 	epss: number | null;
 	epss_percentile: number | null;
 	epss_bucket: string;
 	kev: boolean;
-	source: string | null;
-	description: string | null;
+	description_en: string | null;
+	description_available: boolean;
+	ports: number[];
+	sources: string[];
+	detail_count: number;
+	details: VulnerabilityDetail[];
+	last_seen_at: string | null;
 	canonical: boolean;
-	created_at?: string;
+}
+
+export interface VulnerabilityIntelligencePage {
+	rows: VulnerabilityMatch[];
+	total: number;
+	page: number;
+	lastPage: number;
 }
 
 export interface EpssBucketAgg {
@@ -188,13 +224,20 @@ export interface RemediationAction {
 
 export interface VulnerabilityIntelligenceFilters {
 	job_ids?: string;
+	/** Ricerca su CVE (anche parziale) e descrizione NVD. */
+	q?: string;
 	match_status?: string;
-	severity?: string;
+	cvss_severity?: string;
 	epss_bucket?: string;
+	epss_min?: number;
 	kev_only?: boolean;
 	source?: string;
 	cve?: string;
 	asset?: string;
+	port?: number;
+	status?: "open" | "remediated" | "suppressed" | "all";
+	page?: number;
+	per_page?: number;
 }
 
 /**
@@ -512,18 +555,26 @@ export const surfaceScan360Api = {
 		companyId: string,
 		filters: VulnerabilityIntelligenceFilters = {},
 		groupId?: string | null,
-	): Promise<VulnerabilityMatch[]> {
+	): Promise<VulnerabilityIntelligencePage> {
 		const params: Record<string, string> = {};
 		for (const [k, v] of Object.entries(filters)) {
 			if (v === undefined || v === "" || v === false) continue;
 			params[k] = v === true ? "1" : String(v);
 		}
-		const res = await complianceApiClient.get<ApiResponse<VulnerabilityMatch[]>>(
+		const res = await complianceApiClient.get<
+			ApiResponse<{ data: VulnerabilityMatch[]; total: number; current_page: number; last_page: number }>
+		>(
 			`/companies/${companyId}/surface-scan360/vulnerability-intelligence`,
 			params,
 			groupId ? groupHeader(groupId) : undefined,
 		);
-		return extractArray<VulnerabilityMatch>(res.data || []);
+		const page = res.data;
+		return {
+			rows: page?.data ?? [],
+			total: page?.total ?? 0,
+			page: page?.current_page ?? 1,
+			lastPage: page?.last_page ?? 1,
+		};
 	},
 
 	async getEpssBuckets(
