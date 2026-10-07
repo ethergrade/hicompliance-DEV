@@ -6,7 +6,6 @@ import {
   makeSupabaseClients,
 } from "../_shared/surface-scan-utils.ts";
 import { runSurfaceScanEnrichment } from "../_shared/surface-scan-engine.ts";
-import { isStageModePaused, stageModeResponse } from '../_shared/stage-mode.ts';
 
 interface RunEnrichmentRequest {
   job_id: string;
@@ -14,7 +13,6 @@ interface RunEnrichmentRequest {
 }
 
 serve(async (req: Request) => {
-  if (req.method !== "OPTIONS" && await isStageModePaused()) return stageModeResponse(corsHeaders);
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }

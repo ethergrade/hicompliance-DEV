@@ -1,7 +1,6 @@
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { buildTaskRows, parseOrchestrationRequest } from "./orchestration.ts";
-import { isStageModePaused, stageModeResponse } from '../_shared/stage-mode.ts';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -20,7 +19,6 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
-  if (await isStageModePaused()) return stageModeResponse(corsHeaders);
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   if (!envEnabled("DARKRISK_ORCHESTRATOR_V2")) {
     return json({ error: "darkrisk_orchestrator_v2_disabled" }, 503);
