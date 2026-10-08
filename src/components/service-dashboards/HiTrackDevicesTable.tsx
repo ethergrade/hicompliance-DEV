@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Search } from "lucide-react";
+import { ChevronRight, Search } from "lucide-react";
+import { HiTrackDeviceDetailSheet } from "./HiTrackDeviceDetailSheet";
 import { formatMillis, formatPercent } from "@/lib/hitrack/formatters";
 import type { HiTrackMonitoredDevice, HiTrackNetworkQuality } from "@/lib/hitrack/types";
 
@@ -58,6 +59,7 @@ export function HiTrackDevicesTable({ devices }: { devices: HiTrackMonitoredDevi
 	const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
 	const [pageSize, setPageSize] = useState(10);
 	const [page, setPage] = useState(1);
+	const [opened, setOpened] = useState<HiTrackMonitoredDevice | null>(null);
 
 	const filtered = useMemo(() => {
 		const q = search.trim().toLowerCase();
@@ -179,9 +181,22 @@ export function HiTrackDevicesTable({ devices }: { devices: HiTrackMonitoredDevi
 					{visible.map((device) => (
 						<TableRow key={device.id}>
 							<TableCell>
-								<p className="font-medium">{device.deviceName}</p>
+								{(device.interfaceCount ?? 0) + (device.inventoryCount ?? 0) > 0 ? (
+									<button
+										type="button"
+										className="flex items-center gap-1 text-left font-medium text-primary hover:underline"
+										onClick={() => setOpened(device)}
+										title="Apri interfacce e dettaglio"
+									>
+										{device.deviceName}
+										<ChevronRight className="h-3.5 w-3.5" />
+									</button>
+								) : (
+									<p className="font-medium">{device.deviceName}</p>
+								)}
 								<p className="text-xs text-muted-foreground">
 									{device.type} · {[device.vendor, device.model].filter(Boolean).join(" ") || "Vendor N/D"}
+									{(device.interfaceCount ?? 0) > 0 && ` · ${device.interfaceCount} interfacce`}
 								</p>
 							</TableCell>
 							<TableCell>{device.ipAddress || "Dato non disponibile"}</TableCell>
@@ -208,6 +223,8 @@ export function HiTrackDevicesTable({ devices }: { devices: HiTrackMonitoredDevi
 			</Table>
 
 			{filtered.length > pageSize && pager}
+
+			<HiTrackDeviceDetailSheet device={opened} onOpenChange={(open) => !open && setOpened(null)} />
 		</div>
 	);
 }

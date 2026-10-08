@@ -58,3 +58,16 @@ export function classifyUsageStatus(value: number | null) {
   if (value >= 75) return "warning" as const;
   return "success" as const;
 }
+
+/** Traffico o velocità in bit/s, con l'unità più leggibile. */
+export function formatBps(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  const units = ["b/s", "Kb/s", "Mb/s", "Gb/s", "Tb/s"];
+  let v = Math.max(0, value);
+  let u = 0;
+  while (v >= 1000 && u < units.length - 1) {
+    v /= 1000;
+    u += 1;
+  }
+  return `${v >= 100 || u === 0 ? Math.round(v) : v.toFixed(1)} ${units[u]}`;
+}

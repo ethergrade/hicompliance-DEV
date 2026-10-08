@@ -3,9 +3,11 @@ import { toast } from "sonner";
 import {
   fetchHiTrackCollectors,
   fetchHiTrackDashboard,
+  fetchHiTrackDeviceDetail,
+  fetchHiTrackInterfaceHistory,
   queueHiTrackSyncNow,
 } from "@/lib/hitrack/client";
-import { EMPTY_HITRACK_DASHBOARD } from "@/lib/hitrack/types";
+import { EMPTY_HITRACK_DASHBOARD, type HiTrackHistoryRange } from "@/lib/hitrack/types";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import { useOrganizationStore } from "@/stores/organizationStore";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -65,6 +67,34 @@ export function useHiTrackCollectors() {
     queryFn: () => fetchHiTrackCollectors(organizationId!, groupId),
     enabled: abilitato,
     staleTime: 60_000,
+  });
+}
+
+/** Interfacce e inventario di un device: si chiede solo quando si apre il dettaglio. */
+export function useHiTrackDeviceDetail(deviceId: string | null) {
+  const { organizationId, groupId, abilitato } = useHiTrackAbilitato();
+
+  return useQuery({
+    queryKey: ["hitrack-device", organizationId, groupId, deviceId],
+    queryFn: () => fetchHiTrackDeviceDetail(organizationId!, deviceId!, groupId),
+    enabled: abilitato && !!deviceId,
+    staleTime: 60_000,
+    refetchInterval: 5 * 60_000,
+  });
+}
+
+export function useHiTrackInterfaceHistory(
+  deviceId: string | null,
+  interfaceId: string | null,
+  range: HiTrackHistoryRange,
+) {
+  const { organizationId, groupId, abilitato } = useHiTrackAbilitato();
+
+  return useQuery({
+    queryKey: ["hitrack-interface-history", organizationId, groupId, deviceId, interfaceId, range],
+    queryFn: () => fetchHiTrackInterfaceHistory(organizationId!, deviceId!, interfaceId!, range, groupId),
+    enabled: abilitato && !!deviceId && !!interfaceId,
+    staleTime: 5 * 60_000,
   });
 }
 

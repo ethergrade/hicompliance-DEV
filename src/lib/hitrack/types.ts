@@ -44,6 +44,80 @@ export interface HiTrackMonitoredDevice {
   osVersion: string | null;
   lastStatusChangeAt: string | null;
   networkQuality?: HiTrackNetworkQuality;
+  /** Interfacce di rete note per il device: se > 0 c'è un dettaglio da aprire. */
+  interfaceCount?: number;
+  /** Host, datastore e VM letti dal device (vCenter). */
+  inventoryCount?: number;
+}
+
+/** Stato attuale di un'interfaccia di rete. Traffico in bit/s. */
+export interface HiTrackInterface {
+  id: string;
+  index: string;
+  name: string | null;
+  alias: string | null;
+  type: string | null;
+  physical: boolean;
+  macAddress: string | null;
+  mtu: number | null;
+  speedBps: number | null;
+  adminStatus: string | null;
+  operStatus: string | null;
+  operStatusSince: string | null;
+  inBps: number | null;
+  outBps: number | null;
+  inUsagePercent: number | null;
+  outUsagePercent: number | null;
+  inErrors: number | null;
+  outErrors: number | null;
+  inDiscards: number | null;
+  outDiscards: number | null;
+  sampledAt: string | null;
+  stale: boolean;
+}
+
+export interface HiTrackInventoryItem {
+  id: string;
+  key: string;
+  name: string;
+  attributes: Array<{ label: string; value: string }>;
+  sampledAt: string | null;
+}
+
+export interface HiTrackDeviceDetail {
+  deviceId: string;
+  deviceName: string;
+  interfaces: HiTrackInterface[];
+  inventory: {
+    hosts: HiTrackInventoryItem[];
+    datastores: HiTrackInventoryItem[];
+    vms: HiTrackInventoryItem[];
+  };
+}
+
+export type HiTrackHistoryRange = "24h" | "7d" | "30d";
+
+export interface HiTrackInterfacePoint {
+  at: string;
+  samples: number;
+  inBpsAvg: number | null;
+  inBpsMax: number | null;
+  outBpsAvg: number | null;
+  outBpsMax: number | null;
+  inUsageAvg: number | null;
+  inUsageMax: number | null;
+  outUsageAvg: number | null;
+  outUsageMax: number | null;
+  downMinutes: number;
+  inErrorsMax: number | null;
+  outErrorsMax: number | null;
+}
+
+export interface HiTrackInterfaceHistory {
+  interfaceId: string;
+  range: HiTrackHistoryRange;
+  granularity: "hour" | "day";
+  points: HiTrackInterfacePoint[];
 }
 
 /** Qualità rete dal collector verso il device (network-quality-v1). Non è una banda. */

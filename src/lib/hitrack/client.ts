@@ -4,6 +4,9 @@ import {
   EMPTY_HITRACK_DASHBOARD,
   type HiTrackCollector,
   type HiTrackDashboardPayload,
+  type HiTrackDeviceDetail,
+  type HiTrackHistoryRange,
+  type HiTrackInterfaceHistory,
 } from "@/lib/hitrack/types";
 
 /**
@@ -59,6 +62,36 @@ export async function queueHiTrackSyncNow(
   >(
     `/companies/${organizationId}/hitrack/sync`,
     { collector_ids: collectorIds ?? [] },
+    groupHeader(groupId),
+  );
+
+  return res.data;
+}
+
+export async function fetchHiTrackDeviceDetail(
+  organizationId: string,
+  deviceId: string,
+  groupId?: string | null,
+): Promise<HiTrackDeviceDetail> {
+  const res = await complianceApiClient.get<ApiResponse<HiTrackDeviceDetail>>(
+    `/companies/${organizationId}/hitrack/devices/${deviceId}`,
+    undefined,
+    groupHeader(groupId),
+  );
+
+  return res.data;
+}
+
+export async function fetchHiTrackInterfaceHistory(
+  organizationId: string,
+  deviceId: string,
+  interfaceId: string,
+  range: HiTrackHistoryRange,
+  groupId?: string | null,
+): Promise<HiTrackInterfaceHistory> {
+  const res = await complianceApiClient.get<ApiResponse<HiTrackInterfaceHistory>>(
+    `/companies/${organizationId}/hitrack/devices/${deviceId}/interfaces/${interfaceId}/history`,
+    { range },
     groupHeader(groupId),
   );
 
