@@ -12,6 +12,7 @@ import { RiskScoreMetricCard } from "@/components/dashboard/RiskScoreMetricCard"
 import { useServiceIntegrations } from "@/hooks/useServiceIntegrations";
 import { useUserRoles } from "@/hooks/useUserRoles";
 import { useDashboardMetrics } from "@/hooks/useDashboardMetrics";
+import { useOrganizationStore } from "@/stores/organizationStore";
 import { useAssessmentTrends } from "@/hooks/useAssessmentTrends";
 import { AssessmentRadarChart } from "@/components/assessment/AssessmentRadarChart";
 import { useAssessmentRadar } from "@/hooks/useAssessmentRadar";
@@ -90,16 +91,23 @@ const Dashboard: React.FC = () => {
 	const canManageIntegrationSettings = isSuperAdmin || isSales;
 	const [modulesDialogOpen, setModulesDialogOpen] = useState(false);
 
+	// Chi ha HiTrack senza HiCompliance (HiConsole) non ha assessment: i blocchi
+	// di conformità, rischio e trend sarebbero vuoti o fuorvianti. Si nascondono
+	// solo quando i servizi sono noti, per non farli sparire e ricomparire.
+	const orgFlags = useOrganizationStore((s) => s.orgFlags);
+	const hiTrackOnly = !!orgFlags?.hitrack_enabled && !orgFlags?.hicompliance_enabled;
+	const complianceOrgId = hiTrackOnly ? null : activeOrgId;
+
 	// Per-tenant assessment metrics + trends for dashboard widgets
 	const { completionScore, riskScore, assessmentId } = useDashboardMetrics(
-		activeOrgId,
+		complianceOrgId,
 		activeGroupId,
 	);
 	const { vulnerabilities, deltaHosts, deltaCves } =
 		useAssessmentTrends(assessmentId, activeGroupId);
 	// Radar allineato alla vista Assessment (score live dalle risposte, non il
 	// report mensile backend che usa una formula diversa → causava disallineamenti).
-	const { data: liveRadar } = useAssessmentRadar(activeOrgId, activeGroupId);
+	const { data: liveRadar } = useAssessmentRadar(complianceOrgId, activeGroupId);
 
 	// Mostra SOLO i servizi HiSolution attivi per questo tenant.
 	const hiSolutionServices = useMemo(() => {
@@ -283,14 +291,17 @@ const Dashboard: React.FC = () => {
 						</h1>
 						<p className="text-muted-foreground">{activeOrgName}</p>
 					</div>
-					<div className="text-right">
-						<div className="text-4xl font-bold text-red-500 mb-1">
-							{totalIssues}
+					{!hiTrackOnly && (
+						<div className="text-right">
+							<div className="text-4xl font-bold text-red-500 mb-1">
+								{totalIssues}
+							</div>
+							<p className="text-sm text-muted-foreground">Issues Attive</p>
 						</div>
-						<p className="text-sm text-muted-foreground">Issues Attive</p>
-					</div>
+					)}
 				</div>
 
+				{!hiTrackOnly && (
 				<div className="space-y-3">
 					<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 						<ComplianceMetricCard
@@ -343,6 +354,7 @@ const Dashboard: React.FC = () => {
 						</Card>
 					</div>
 				</div>
+				)}
 
 				<Card className="border-border">
 					<CardHeader className="pb-6">
@@ -440,6 +452,7 @@ const Dashboard: React.FC = () => {
 				</Card>
 
 				{/* Analisi e Trend — dati dal report mensile dell'assessment */}
+				{!hiTrackOnly && (
 				<Card className="border-border">
 					<CardHeader className="pb-3">
 						<CardTitle className="text-lg">Analisi e Trend</CardTitle>
@@ -522,6 +535,7 @@ const Dashboard: React.FC = () => {
 						)}
 					</CardContent>
 				</Card>
+				)}
 			</div>
 
 			{isSuperAdmin && activeOrgId && (

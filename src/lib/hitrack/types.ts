@@ -43,6 +43,17 @@ export interface HiTrackMonitoredDevice {
   osName: string | null;
   osVersion: string | null;
   lastStatusChangeAt: string | null;
+  networkQuality?: HiTrackNetworkQuality;
+}
+
+/** Qualità rete dal collector verso il device (network-quality-v1). Non è una banda. */
+export interface HiTrackNetworkQuality {
+  algorithmVersion: string;
+  score: number | null;
+  health: "green" | "amber" | "red" | "unknown";
+  dataQuality: "ok" | "provisional";
+  reasons: string[];
+  observedAt: string | null;
 }
 
 export interface HiTrackDiskMetric {

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import {
   Activity,
   Database,
+  Info,
   Monitor,
   RefreshCw,
   Server,
@@ -20,6 +21,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useHiTrackDashboard, useHiTrackSyncNow } from "@/hooks/useHiTrackDashboard";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { HiTrackDevicesTable } from "./HiTrackDevicesTable";
+import type { HiTrackDataCoverage } from "@/lib/hitrack/types";
 import {
   classifyUsageStatus,
   formatFreshness,
@@ -193,7 +197,9 @@ export const HiTrackDashboard: React.FC = () => {
                 {formatFreshness(data.overview.freshnessSeconds)}
               </Badge>
             </div>
-            <p className="text-sm text-muted-foreground">Data Coverage</p>
+            <p className="flex items-center gap-1 text-sm text-muted-foreground">
+              Data Coverage <CoverageInfo coverage={data.dataCoverage} />
+            </p>
             <p className="mt-2 text-3xl font-bold">
               {formatPercent(data.overview.dataCoveragePercent)}
             </p>
@@ -239,8 +245,9 @@ export const HiTrackDashboard: React.FC = () => {
                           dettagli della piattaforma di raccolta: al cliente non
                           servono e dicono da chi arriva il dato. Restano visibili
                           in configurazione, dove servono davvero. */}
-                      <p className="text-xs text-muted-foreground">
+                      <p className="flex items-center gap-1 text-xs text-muted-foreground">
                         Copertura dati {formatPercent(collector.dataCoveragePercent)}
+                        <CoverageInfo coverage={data.dataCoverage} />
                       </p>
                     </div>
                     <Badge
@@ -296,53 +303,7 @@ export const HiTrackDashboard: React.FC = () => {
           <CardTitle className="text-lg">Monitored Devices</CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Device</TableHead>
-                <TableHead>IP</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>RTD Worst</TableHead>
-                <TableHead>RTD Median</TableHead>
-                <TableHead>Packet Loss</TableHead>
-                <TableHead>OS</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.monitoredDevices.map((device) => (
-                <TableRow key={device.id}>
-                  <TableCell>
-                    <div>
-                      <p className="font-medium">{device.deviceName}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {device.type} · {device.vendor || "Vendor N/D"}
-                      </p>
-                    </div>
-                  </TableCell>
-                  <TableCell>{device.ipAddress || "Dato non disponibile"}</TableCell>
-                  <TableCell>
-                    <Badge className={statusBadgeClassName[device.statusType]}>
-                      {device.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{formatMillis(device.rtdWorstMs)}</TableCell>
-                  <TableCell>{formatMillis(device.rtdMedianMs)}</TableCell>
-                  <TableCell>{formatPercent(device.packetLossPercent)}</TableCell>
-                  <TableCell>
-                    {[device.osName, device.osVersion].filter(Boolean).join(" ") ||
-                      "Dato non disponibile"}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {data.monitoredDevices.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center text-sm text-muted-foreground">
-                    Nessun dispositivo gestito disponibile.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+          <HiTrackDevicesTable devices={data.monitoredDevices} />
         </CardContent>
       </Card>
 
@@ -498,3 +459,37 @@ export const HiTrackDashboard: React.FC = () => {
     </div>
   );
 };
+
+/**
+ * Cosa vuol dire "Copertura dati": quanti dispositivi gestiti espongono le
+ * metriche di RAM e disco. Non è la raggiungibilità né quanta rete è
+ * monitorata: switch, stampanti e UPS non hanno RAM né disco e la abbassano
+ * per costruzione.
+ */
+function CoverageInfo({ coverage }: { coverage: HiTrackDataCoverage }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button type="button" aria-label="Cosa misura la copertura dati" className="text-muted-foreground hover:text-foreground">
+          <Info className="h-3.5 w-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-sm space-y-1 text-xs">
+        <p className="font-medium">Copertura dati</p>
+        <p>
+          Quota di dispositivi gestiti per cui il collector riporta l'uso di RAM e di disco:
+          (device con RAM + device con disco) ÷ (device gestiti × 2).
+        </p>
+        <p>
+          Qui: RAM su {coverage.devicesWithRamMetrics}, disco su {coverage.devicesWithDiskMetrics}, su{" "}
+          {coverage.managedDevices} dispositivi gestiti; RTD su {coverage.monitoredDevicesWithRtd}.
+        </p>
+        <p>
+          Switch, stampanti, UPS e altri apparati senza RAM o disco la abbassano anche quando sono
+          monitorati correttamente. Non misura la raggiungibilità: per quella vedi Qualità rete
+          nell'elenco dei dispositivi.
+        </p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
