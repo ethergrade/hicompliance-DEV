@@ -1,10 +1,9 @@
 // HiEndpoint: dispositivi, minacce e aggiornamenti del cliente, dall'ultimo dato
 // letto dal backend. Punteggi e regole sono calcolati sui dati reali: la formula
 // è nei tooltip e nel backend (EndpointDashboard).
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -25,13 +24,12 @@ import {
 	XCircle,
 } from "lucide-react";
 import { RiskScoreCard } from "./RiskScoreCard";
+import { TablePager as Pager, usePager } from "./TablePager";
 import { DemoDataBadge } from "./DemoDataBadge";
 import { ServiceNotConnected } from "./ServiceNotConnected";
 import { useEndpointDashboard } from "@/hooks/useEndpoints";
 import type { EndpointDevice, EndpointProtection } from "@/lib/api/endpoints";
 import { cn } from "@/lib/utils";
-
-const PAGE_SIZES = [10, 30, 50, 100];
 
 const typeIcons: Record<EndpointDevice["type"], React.ComponentType<{ className?: string }>> = {
 	Computer: Monitor,
@@ -76,43 +74,6 @@ const scoreLevel = (score: number) =>
 		: score >= 70
 			? { level: "Moderato", color: "yellow" as const, ring: "#eab308" }
 			: { level: "Critico", color: "red" as const, ring: "#ef4444" };
-
-function usePager<T>(rows: T[], resetKey: unknown) {
-	const [size, setSize] = useState(10);
-	const [page, setPage] = useState(1);
-	useEffect(() => setPage(1), [resetKey, size]);
-	const last = Math.max(1, Math.ceil(rows.length / size));
-	const current = Math.min(page, last);
-	return { size, setSize, current, last, setPage, visible: rows.slice((current - 1) * size, current * size), total: rows.length };
-}
-
-type PagerState = Omit<ReturnType<typeof usePager<unknown>>, "visible">;
-
-function Pager({ p }: { p: PagerState }) {
-	return (
-		<div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
-			<div className="flex items-center gap-2">
-				<span>Mostra</span>
-				{PAGE_SIZES.map((s) => (
-					<Button key={s} size="sm" variant={p.size === s ? "default" : "outline"} className="h-7 px-2" onClick={() => p.setSize(s)}>
-						{s}
-					</Button>
-				))}
-			</div>
-			<div className="flex items-center gap-2">
-				<span>
-					{p.total} righe · pagina {p.current} di {p.last}
-				</span>
-				<Button size="sm" variant="outline" className="h-7" disabled={p.current <= 1} onClick={() => p.setPage(p.current - 1)}>
-					Precedenti
-				</Button>
-				<Button size="sm" variant="outline" className="h-7" disabled={p.current >= p.last} onClick={() => p.setPage(p.current + 1)}>
-					Successivi
-				</Button>
-			</div>
-		</div>
-	);
-}
 
 export const HiEndpointDashboard: React.FC = () => {
 	const { data, loading, isMock, error } = useEndpointDashboard();

@@ -44,6 +44,7 @@ const ROUTE_CAPABILITIES: Record<string, RouteCapabilities> = {
   },
   '/dashboard/service/hitrack': { view: ['hitrack.view'] },
   '/dashboard/service/hiendpoint': { view: ['hiendpoint.view'] },
+  '/dashboard/service/hifirewall': { view: ['hifirewall.view'] },
   '/admin/clients': { view: ['companies.manage'] },
   '/admin/companies': { view: ['companies.manage'] },
   '/admin/role-settings': { view: ['users.manage'] },

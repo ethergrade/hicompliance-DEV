@@ -182,6 +182,7 @@ export const AppSidebar: React.FC = () => {
 	const hipatchOn = !!orgFlags?.hipatch_enabled;
 	const hitrackOn = !!orgFlags?.hitrack_enabled;
 	const hiendpointOn = !!orgFlags?.hiendpoint_enabled;
+	const hifirewallOn = !!orgFlags?.hifirewall_enabled;
 	const { canViewRoute, hasCapability } = usePermissions();
 
 	const isFeatureAllowed = (href: string) => {
@@ -193,6 +194,7 @@ export const AppSidebar: React.FC = () => {
 		if (href === "/dark-risk-esteso") return darkRiskOn && darkRiskExtendedOn;
 		if (href === "/dashboard/service/hipatch") return hipatchOn;
 		if (href === "/dashboard/service/hiendpoint") return hiendpointOn;
+		if (href === "/dashboard/service/hifirewall") return hifirewallOn;
 		// HiTrack segue il contratto come gli altri moduli; il super-admin lo vede
 		// comunque, anche su un cliente dove il servizio non è ancora stato attivato.
 		if (href === "/dashboard/service/hitrack") return hitrackOn || isSuperAdmin;
@@ -347,6 +349,13 @@ export const AppSidebar: React.FC = () => {
 									title: "HiEndpoint",
 									href: "/dashboard/service/hiendpoint",
 									icon: Monitor,
+								})}
+							{hifirewallOn &&
+								isUserAllowed("/dashboard/service/hifirewall") &&
+								renderNavItem({
+									title: "HiFirewall",
+									href: "/dashboard/service/hifirewall",
+									icon: Network,
 								})}
 							{/* HIDDEN: Threat Management page removed per client request (2026-06-05) */}
 							{/* {isModuleEnabled('/threat-management') && renderNavItem({ title: 'Threat Management', href: '/threat-management', icon: Shield })} */}

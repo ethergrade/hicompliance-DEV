@@ -1,18 +1,63 @@
-import { apiClient } from './index';
+import { complianceApiClient } from '@/lib/api-client';
+import type { ApiResponse } from '@/types/api';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
 export interface FirewallStats {
-  activeRules: number;
-  blockedConnections: number;
+  /** Null quando la fonte non li espone (regole e connessioni richiedono l'accesso diretto al firewall). */
+  activeRules: number | null;
+  blockedConnections: number | null;
   threatsBlocked: number;
-  activeConnections: number;
+  activeConnections: number | null;
+  firewalls?: number;
+  connected?: number;
+  disconnected?: number;
+  suspended?: number;
+  upgradesAvailable?: number | null;
+  majorUpgrades?: number | null;
+  openAlerts?: number;
+  vpnTunnelsDown?: number;
+}
+
+export interface FirewallDevice {
+  id: string;
+  name: string;
+  hostname: string | null;
+  serialNumber: string | null;
+  model: string | null;
+  firmware: string | null;
+  connected: boolean;
+  suspended: boolean;
+  state: 'Connesso' | 'Sospeso' | 'Non connesso';
+  cluster: { mode: string; role: string | null } | null;
+  externalIps: string[];
+  stateChangedAt: string | null;
+  /** Null se il controllo degli aggiornamenti non è riuscito. */
+  upgradeTo: string[] | null;
+  majorUpgrade: boolean;
+  openAlerts: number;
+}
+
+export interface FirewallAlert {
+  id: string;
+  device: string | null;
+  type: string;
+  description: string | null;
+  severity: 'Low' | 'Medium' | 'High' | 'Critical';
+  timestamp: string | null;
+  lastSeenAt: string | null;
+  eventCount: number;
+  category?: string | null;
 }
 
 export interface BlockedThreat {
   id: string;
-  source: string;
-  destination: string;
+  source: string | null;
+  destination: string | null;
+  device?: string | null;
+  description?: string | null;
+  eventCount?: number;
+  lastSeenAt?: string | null;
   type: string;
   severity: 'Low' | 'Medium' | 'High' | 'Critical';
   timestamp: string;
@@ -43,39 +88,28 @@ export interface ConnectionLog {
 
 export interface FirewallDashboardData {
   stats: FirewallStats;
+  devices?: FirewallDevice[];
   blockedThreats: BlockedThreat[];
+  alerts?: FirewallAlert[];
   firewallRules: FirewallRule[];
   connectionLogs: ConnectionLog[];
+  /** Sezioni che la fonte non fornisce: la UI le nasconde. */
+  unavailable?: string[];
+  fetchedAt?: string | null;
+  stale?: boolean;
+  lastError?: { code: string; message: string; at: string | null } | null;
 }
 
 // ─── API Client ─────────────────────────────────────────────────────────────
 
 export const firewallApi = {
-  /** GET /firewall/dashboard — aggregated firewall data */
-  dashboard: (tenantId?: string) =>
-    apiClient.get<FirewallDashboardData>(`/firewall/dashboard${tenantId ? `?tenant_id=${tenantId}` : ''}`),
-
-  /** GET /firewall/rules — firewall rules list */
-  rules: (tenantId?: string) =>
-    apiClient.get<FirewallRule[]>(`/firewall/rules${tenantId ? `?tenant_id=${tenantId}` : ''}`),
-
-  /** GET /firewall/threats — blocked threats */
-  threats: (tenantId?: string) =>
-    apiClient.get<BlockedThreat[]>(`/firewall/threats${tenantId ? `?tenant_id=${tenantId}` : ''}`),
-
-  /** GET /firewall/connections — connection logs */
-  connections: (tenantId?: string) =>
-    apiClient.get<ConnectionLog[]>(`/firewall/connections${tenantId ? `?tenant_id=${tenantId}` : ''}`),
-
-  /** POST /firewall/rules — create a new rule */
-  createRule: (rule: Omit<FirewallRule, 'id' | 'hits'>) =>
-    apiClient.post('/firewall/rules', rule),
-
-  /** PUT /firewall/rules/{id} — update a rule */
-  updateRule: (ruleId: string, rule: Partial<FirewallRule>) =>
-    apiClient.put(`/firewall/rules/${ruleId}`, rule),
-
-  /** DELETE /firewall/rules/{id} — delete a rule */
-  deleteRule: (ruleId: string) =>
-    apiClient.delete(`/firewall/rules/${ruleId}`),
+  /** Ultimo dato letto per il cliente; nessuna chiamata diretta alla sorgente. */
+  dashboard: async (organizationId: string, groupId?: string | null): Promise<FirewallDashboardData> => {
+    const res = await complianceApiClient.get<ApiResponse<FirewallDashboardData>>(
+      `/companies/${organizationId}/sophos/firewall/dashboard`,
+      undefined,
+      groupId ? { headers: { 'X-Group-Id': groupId } } : undefined,
+    );
+    return res.data;
+  },
 };

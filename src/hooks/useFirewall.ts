@@ -1,4 +1,5 @@
 import { useApiWithFallback } from './useApiWithFallback';
+import { useClientOrganization } from './useClientOrganization';
 import { firewallApi, type FirewallDashboardData } from '@/lib/api/firewall';
 
 const mockFirewallData: FirewallDashboardData = {
@@ -36,10 +37,14 @@ const mockFirewallData: FirewallDashboardData = {
   ],
 };
 
-export function useFirewallDashboard(tenantId?: string) {
-  return useApiWithFallback(
-    () => firewallApi.dashboard(tenantId),
+export function useFirewallDashboard() {
+  const { organizationId, groupId } = useClientOrganization();
+  return useApiWithFallback<FirewallDashboardData>(
+    () => {
+      if (!organizationId) return Promise.reject(new Error('Nessun cliente selezionato'));
+      return firewallApi.dashboard(organizationId, groupId);
+    },
     mockFirewallData,
-    [tenantId],
+    [organizationId, groupId],
   );
 }
