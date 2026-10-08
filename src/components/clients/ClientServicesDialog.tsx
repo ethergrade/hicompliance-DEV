@@ -44,6 +44,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { tenantServicesApi } from "@/lib/api";
 import { FALLBACK_SERVICE_CATALOG } from "@/data/serviceCatalog";
+import { SophosTenantLinkCard } from "./SophosTenantLinkCard";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import type { TenantServiceResource } from "@/types/api";
 import { getErrorDetail } from "@/lib/api-client";
@@ -1190,6 +1191,8 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 									</div>
 								</div>
 							)}
+
+							<SophosTenantLinkCard organizationId={organizationId} />
 						</div>
 					</ScrollArea>
 				)}

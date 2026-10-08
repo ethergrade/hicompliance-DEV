@@ -1,362 +1,430 @@
-import React from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { 
-  Info, 
-  Laptop, 
-  Monitor, 
-  Server, 
-  Smartphone, 
-  ShieldCheck, 
-  ShieldAlert, 
-  AlertTriangle,
-  CheckCircle,
-  XCircle,
-  Clock,
-  Cpu
-} from 'lucide-react';
-import { RiskScoreCard } from './RiskScoreCard';
-import { DemoDataBadge } from './DemoDataBadge';
-import { ServiceNotConnected } from './ServiceNotConnected';
-import { useEndpointDashboard } from '@/hooks/useEndpoints';
+// HiEndpoint: dispositivi, minacce e aggiornamenti del cliente, dall'ultimo dato
+// letto dal backend. Punteggi e regole sono calcolati sui dati reali: la formula
+// è nei tooltip e nel backend (EndpointDashboard).
+import React, { useEffect, useMemo, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
+	AlertTriangle,
+	CheckCircle,
+	Clock,
+	Cpu,
+	Info,
+	Laptop,
+	Monitor,
+	Search,
+	Server,
+	ShieldAlert,
+	ShieldCheck,
+	Smartphone,
+	XCircle,
+} from "lucide-react";
+import { RiskScoreCard } from "./RiskScoreCard";
+import { DemoDataBadge } from "./DemoDataBadge";
+import { ServiceNotConnected } from "./ServiceNotConnected";
+import { useEndpointDashboard } from "@/hooks/useEndpoints";
+import type { EndpointDevice, EndpointProtection } from "@/lib/api/endpoints";
+import { cn } from "@/lib/utils";
 
-// Data provided by useEndpointDashboard hook with mock fallback
-// When the endpoint protection API becomes available, it will be used automatically.
+const PAGE_SIZES = [10, 30, 50, 100];
 
-const typeIcons = {
-  Workstation: Monitor,
-  Laptop: Laptop,
-  Server: Server,
-  Mobile: Smartphone,
+const typeIcons: Record<EndpointDevice["type"], React.ComponentType<{ className?: string }>> = {
+	Computer: Monitor,
+	Workstation: Monitor,
+	Laptop: Laptop,
+	Server: Server,
+	Mobile: Smartphone,
 };
 
-const statusColors = {
-  Online: 'bg-green-500/20 text-green-500',
-  Offline: 'bg-muted text-muted-foreground',
-  Protected: 'bg-green-500/20 text-green-500',
-  'At Risk': 'bg-red-500/20 text-red-500',
-  Unknown: 'bg-muted text-muted-foreground',
-  Outdated: 'bg-yellow-500/20 text-yellow-500',
-  Quarantined: 'bg-yellow-500/20 text-yellow-500',
-  Removed: 'bg-green-500/20 text-green-500',
-  Blocked: 'bg-green-500/20 text-green-500',
-  Patched: 'bg-green-500/20 text-green-500',
-  Pending: 'bg-orange-500/20 text-orange-500',
+const protectionLabel: Record<EndpointProtection, string> = {
+	Protected: "Protetto",
+	"At Risk": "A rischio",
+	Outdated: "Da aggiornare",
+	Unknown: "Sconosciuto",
+};
+
+const protectionColors: Record<EndpointProtection, string> = {
+	Protected: "bg-green-500/20 text-green-500",
+	"At Risk": "bg-red-500/20 text-red-500",
+	Outdated: "bg-yellow-500/20 text-yellow-500",
+	Unknown: "bg-muted text-muted-foreground",
 };
 
 const severityColors = {
-  Low: 'bg-green-500/20 text-green-500',
-  Medium: 'bg-yellow-500/20 text-yellow-500',
-  High: 'bg-orange-500/20 text-orange-500',
-  Critical: 'bg-red-500/20 text-red-500',
+	Low: "bg-green-500/20 text-green-500",
+	Medium: "bg-yellow-500/20 text-yellow-500",
+	High: "bg-orange-500/20 text-orange-500",
+	Critical: "bg-red-500/20 text-red-500",
 };
 
-const priorityColors = {
-  Low: 'bg-green-500/20 text-green-500',
-  Medium: 'bg-yellow-500/20 text-yellow-500',
-  High: 'bg-orange-500/20 text-orange-500',
-  Critical: 'bg-red-500/20 text-red-500',
+const severityLabel = { Low: "Bassa", Medium: "Media", High: "Alta", Critical: "Critica" };
+
+const fmtDate = (v: string | null | undefined) => {
+	if (!v) return "—";
+	const d = new Date(v);
+	return Number.isNaN(d.getTime()) ? v : d.toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" });
 };
+
+const scoreLevel = (score: number) =>
+	score >= 90
+		? { level: "Buono", color: "green" as const, ring: "#10b981" }
+		: score >= 70
+			? { level: "Moderato", color: "yellow" as const, ring: "#eab308" }
+			: { level: "Critico", color: "red" as const, ring: "#ef4444" };
+
+function usePager<T>(rows: T[], resetKey: unknown) {
+	const [size, setSize] = useState(10);
+	const [page, setPage] = useState(1);
+	useEffect(() => setPage(1), [resetKey, size]);
+	const last = Math.max(1, Math.ceil(rows.length / size));
+	const current = Math.min(page, last);
+	return { size, setSize, current, last, setPage, visible: rows.slice((current - 1) * size, current * size), total: rows.length };
+}
+
+type PagerState = Omit<ReturnType<typeof usePager<unknown>>, "visible">;
+
+function Pager({ p }: { p: PagerState }) {
+	return (
+		<div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+			<div className="flex items-center gap-2">
+				<span>Mostra</span>
+				{PAGE_SIZES.map((s) => (
+					<Button key={s} size="sm" variant={p.size === s ? "default" : "outline"} className="h-7 px-2" onClick={() => p.setSize(s)}>
+						{s}
+					</Button>
+				))}
+			</div>
+			<div className="flex items-center gap-2">
+				<span>
+					{p.total} righe · pagina {p.current} di {p.last}
+				</span>
+				<Button size="sm" variant="outline" className="h-7" disabled={p.current <= 1} onClick={() => p.setPage(p.current - 1)}>
+					Precedenti
+				</Button>
+				<Button size="sm" variant="outline" className="h-7" disabled={p.current >= p.last} onClick={() => p.setPage(p.current + 1)}>
+					Successivi
+				</Button>
+			</div>
+		</div>
+	);
+}
 
 export const HiEndpointDashboard: React.FC = () => {
-  const { data, loading, isMock } = useEndpointDashboard();
-  if (!data) return <ServiceNotConnected service="HiEndpoint" loading={loading} />;
-  const { stats: endpointStats, endpoints, detectedThreats, pendingUpdates } = data;
+	const { data, loading, isMock, error } = useEndpointDashboard();
 
-  return (
-    <div className="space-y-8">
-      {/* Overview Section */}
-      <section className="space-y-4">
-        <div className="flex items-center gap-3">
-          <h2 className="text-2xl font-bold">Endpoint Overview</h2>
-          <DemoDataBadge show={isMock} />
-        </div>
-        
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          <Card className="border-border">
-            <CardContent className="pt-4 pb-4">
-              <div className="flex flex-col items-center text-center">
-                <Cpu className="w-6 h-6 text-primary mb-2" />
-                <p className="text-2xl font-bold">{endpointStats.totalEndpoints}</p>
-                <p className="text-xs text-muted-foreground">Totale Endpoint</p>
-              </div>
-            </CardContent>
-          </Card>
+	const [search, setSearch] = useState("");
+	const [protection, setProtection] = useState("all");
+	const [status, setStatus] = useState("all");
+	const [type, setType] = useState("all");
 
-          <Card className="border-border">
-            <CardContent className="pt-4 pb-4">
-              <div className="flex flex-col items-center text-center">
-                <ShieldCheck className="w-6 h-6 text-green-500 mb-2" />
-                <p className="text-2xl font-bold text-green-500">{endpointStats.protectedEndpoints}</p>
-                <p className="text-xs text-muted-foreground">Protetti</p>
-              </div>
-            </CardContent>
-          </Card>
+	const endpoints = useMemo(() => data?.endpoints ?? [], [data]);
+	const filtered = useMemo(() => {
+		const q = search.trim().toLowerCase();
+		return endpoints.filter((e) => {
+			if (q && ![e.name, e.os].some((v) => (v ?? "").toLowerCase().includes(q))) return false;
+			if (protection !== "all" && e.protection !== protection) return false;
+			if (status !== "all" && e.status !== status) return false;
+			if (type !== "all" && e.type !== type) return false;
+			return true;
+		});
+	}, [endpoints, search, protection, status, type]);
 
-          <Card className="border-border">
-            <CardContent className="pt-4 pb-4">
-              <div className="flex flex-col items-center text-center">
-                <ShieldAlert className="w-6 h-6 text-red-500 mb-2" />
-                <p className="text-2xl font-bold text-red-500">{endpointStats.atRiskEndpoints}</p>
-                <p className="text-xs text-muted-foreground">A Rischio</p>
-              </div>
-            </CardContent>
-          </Card>
+	const devicePager = usePager(filtered, `${search}|${protection}|${status}|${type}`);
+	const threatPager = usePager(data?.detectedThreats ?? [], data?.fetchedAt);
 
-          <Card className="border-border">
-            <CardContent className="pt-4 pb-4">
-              <div className="flex flex-col items-center text-center">
-                <CheckCircle className="w-6 h-6 text-green-500 mb-2" />
-                <p className="text-2xl font-bold text-green-500">{endpointStats.onlineEndpoints}</p>
-                <p className="text-xs text-muted-foreground">Online</p>
-              </div>
-            </CardContent>
-          </Card>
+	if (!data) return <ServiceNotConnected service="HiEndpoint" loading={loading} detail={error} />;
 
-          <Card className="border-border">
-            <CardContent className="pt-4 pb-4">
-              <div className="flex flex-col items-center text-center">
-                <XCircle className="w-6 h-6 text-muted-foreground mb-2" />
-                <p className="text-2xl font-bold text-muted-foreground">{endpointStats.offlineEndpoints}</p>
-                <p className="text-xs text-muted-foreground">Offline</p>
-              </div>
-            </CardContent>
-          </Card>
+	const { stats, detectedThreats, pendingUpdates } = data;
+	const protectionScore = stats.totalEndpoints > 0 ? Math.round((stats.protectedEndpoints / stats.totalEndpoints) * 100) : 0;
+	const complianceScore = endpoints.length > 0 ? Math.round(endpoints.reduce((s, e) => s + e.compliance, 0) / endpoints.length) : 0;
+	const p = scoreLevel(protectionScore);
+	const c = scoreLevel(complianceScore);
+	const types = Array.from(new Set(endpoints.map((e) => e.type)));
 
-          <Card className="border-border">
-            <CardContent className="pt-4 pb-4">
-              <div className="flex flex-col items-center text-center">
-                <Clock className="w-6 h-6 text-yellow-500 mb-2" />
-                <p className="text-2xl font-bold text-yellow-500">{endpointStats.pendingUpdates}</p>
-                <p className="text-xs text-muted-foreground">Aggiornamenti</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+	const kpis = [
+		{ icon: Cpu, value: stats.totalEndpoints, label: "Totale endpoint", tone: "text-primary", valueTone: "" },
+		{ icon: ShieldCheck, value: stats.protectedEndpoints, label: "Protetti", tone: "text-green-500", valueTone: "text-green-500" },
+		{ icon: ShieldAlert, value: stats.atRiskEndpoints, label: "A rischio", tone: "text-red-500", valueTone: "text-red-500" },
+		{ icon: CheckCircle, value: stats.onlineEndpoints, label: "Online", tone: "text-green-500", valueTone: "text-green-500" },
+		{ icon: XCircle, value: stats.offlineEndpoints, label: "Offline", tone: "text-muted-foreground", valueTone: "text-muted-foreground" },
+		{ icon: Clock, value: stats.pendingUpdates, label: "Da aggiornare", tone: "text-yellow-500", valueTone: "text-yellow-500" },
+	];
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <RiskScoreCard 
-            title="Endpoint Protection Score"
-            level="Buono"
-            levelColor="green"
-            score={91}
-            ringColor="#10b981"
-          />
-          <RiskScoreCard 
-            title="Compliance Score"
-            level="Moderato"
-            levelColor="yellow"
-            score={78}
-            ringColor="#eab308"
-          />
-        </div>
-      </section>
+	return (
+		<div className="space-y-8">
+			<section className="space-y-4">
+				<div className="flex flex-wrap items-center gap-3">
+					<h2 className="text-2xl font-bold">Endpoint Overview</h2>
+					<DemoDataBadge show={isMock} />
+					{data.fetchedAt && <span className="text-sm text-muted-foreground">Aggiornato alle {fmtDate(data.fetchedAt)}</span>}
+				</div>
+				{(data.stale || data.lastError) && (
+					<div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
+						{data.lastError
+							? `Ultima lettura non riuscita (${fmtDate(data.lastError.at)}): ${data.lastError.message} Sono mostrati gli ultimi dati validi.`
+							: "I dati non sono aggiornati: l'ultima lettura riuscita risale a oltre 30 minuti fa."}
+					</div>
+				)}
 
-      {/* Endpoints List Section */}
-      <section className="space-y-4">
-        <h2 className="text-2xl font-bold">Elenco Endpoint</h2>
-        
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Laptop className="w-5 h-5 text-primary" />
-              Endpoint monitorati
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">Stato e protezione di tutti gli endpoint</p>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Sistema Operativo</TableHead>
-                  <TableHead>Ultimo Contatto</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Protezione</TableHead>
-                  <TableHead>Minacce</TableHead>
-                  <TableHead>Compliance</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {endpoints.map((endpoint, index) => {
-                  const TypeIcon = typeIcons[endpoint.type];
-                  return (
-                    <TableRow key={index}>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <TypeIcon className="w-4 h-4 text-muted-foreground" />
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Info className="w-3 h-3 text-muted-foreground cursor-help" />
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>{endpoint.type}</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </div>
-                      </TableCell>
-                      <TableCell className="font-medium">{endpoint.name}</TableCell>
-                      <TableCell className="text-sm">{endpoint.os}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{endpoint.lastSeen}</TableCell>
-                      <TableCell>
-                        <Badge className={cn("font-medium", statusColors[endpoint.status])}>
-                          {endpoint.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={cn("font-medium", statusColors[endpoint.protection])}>
-                          {endpoint.protection}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {endpoint.threats > 0 ? (
-                          <span className="text-red-500 font-semibold">{endpoint.threats}</span>
-                        ) : (
-                          <span className="text-green-500">0</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <div className="w-16 h-2 bg-muted rounded-full overflow-hidden">
-                            <div 
-                              className={cn(
-                                "h-full rounded-full",
-                                endpoint.compliance >= 90 ? 'bg-green-500' :
-                                endpoint.compliance >= 70 ? 'bg-yellow-500' : 'bg-red-500'
-                              )}
-                              style={{ width: `${endpoint.compliance}%` }}
-                            />
-                          </div>
-                          <span className="text-xs text-muted-foreground">{endpoint.compliance}%</span>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </section>
+				<div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+					{kpis.map((k) => (
+						<Card key={k.label} className="border-border">
+							<CardContent className="pb-4 pt-4">
+								<div className="flex flex-col items-center text-center">
+									<k.icon className={cn("mb-2 h-6 w-6", k.tone)} />
+									<p className={cn("text-2xl font-bold", k.valueTone)}>{k.value}</p>
+									<p className="text-xs text-muted-foreground">{k.label}</p>
+								</div>
+							</CardContent>
+						</Card>
+					))}
+				</div>
 
-      {/* Detected Threats Section */}
-      <section className="space-y-4">
-        <h2 className="text-2xl font-bold">Minacce Rilevate</h2>
-        
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-orange-500" />
-              Ultime minacce rilevate
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">Minacce identificate sugli endpoint</p>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>ID</TableHead>
-                  <TableHead>Endpoint</TableHead>
-                  <TableHead>Nome Minaccia</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>Rilevata</TableHead>
-                  <TableHead>Severity</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {detectedThreats.map((threat, index) => (
-                  <TableRow key={index}>
-                    <TableCell className="font-mono text-sm">{threat.id}</TableCell>
-                    <TableCell className="font-medium">{threat.endpoint}</TableCell>
-                    <TableCell className="font-mono text-sm">{threat.threatName}</TableCell>
-                    <TableCell>{threat.type}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{threat.detectedAt}</TableCell>
-                    <TableCell>
-                      <Badge className={cn("font-medium", severityColors[threat.severity])}>
-                        {threat.severity}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={cn("font-medium", statusColors[threat.status])}>
-                        {threat.status}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </section>
+				<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+					<div className="relative">
+						<RiskScoreCard title="Endpoint Protection Score" level={p.level} levelColor={p.color} score={protectionScore} ringColor={p.ring} />
+						<ScoreInfo text="Quota dei dispositivi protetti: stato di salute buono e protezione aggiornata, sul totale dei dispositivi." />
+					</div>
+					<div className="relative">
+						<RiskScoreCard title="Compliance Score" level={c.level} levelColor={c.color} score={complianceScore} ringColor={c.ring} />
+						<ScoreInfo text="Media della conformità dei dispositivi. Ognuno parte da 100 e perde: salute compromessa 40 (sospetta 25, sconosciuta 15), protezione anti-manomissione spenta 20, protezione non supportata 25 o da aggiornare 10, nessun contatto da oltre 7 giorni 15, 10 per minaccia aperta fino a 30." />
+					</div>
+				</div>
+			</section>
 
-      {/* Pending Updates Section */}
-      <section className="space-y-4">
-        <h2 className="text-2xl font-bold">Aggiornamenti Pendenti</h2>
-        
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Clock className="w-5 h-5 text-yellow-500" />
-              Aggiornamenti da installare
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">Endpoint con definizioni o software obsoleti</p>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Endpoint</TableHead>
-                  <TableHead>Componente</TableHead>
-                  <TableHead>Versione Attuale</TableHead>
-                  <TableHead>Ultima Versione</TableHead>
-                  <TableHead>Giorni Obsoleto</TableHead>
-                  <TableHead>Priorità</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {pendingUpdates.map((update, index) => (
-                  <TableRow key={index}>
-                    <TableCell className="font-medium">{update.endpoint}</TableCell>
-                    <TableCell>{update.component}</TableCell>
-                    <TableCell className="font-mono text-sm">{update.currentVersion}</TableCell>
-                    <TableCell className="font-mono text-sm text-green-500">{update.latestVersion}</TableCell>
-                    <TableCell>
-                      <span className={cn(
-                        "font-semibold",
-                        update.daysOutdated > 30 ? 'text-red-500' :
-                        update.daysOutdated > 7 ? 'text-yellow-500' : 'text-muted-foreground'
-                      )}>
-                        {update.daysOutdated} giorni
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={cn("font-medium", priorityColors[update.priority])}>
-                        {update.priority}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </section>
-    </div>
-  );
+			<section className="space-y-4">
+				<h2 className="text-2xl font-bold">Elenco Endpoint</h2>
+				<Card className="border-border">
+					<CardHeader>
+						<CardTitle className="flex items-center gap-2 text-lg">
+							<Laptop className="h-5 w-5 text-primary" />
+							Endpoint monitorati
+						</CardTitle>
+						<p className="text-sm text-muted-foreground">Stato e protezione di tutti gli endpoint, dal meno conforme.</p>
+					</CardHeader>
+					<CardContent className="space-y-3">
+						<div className="flex flex-wrap items-center gap-2">
+							<div className="relative min-w-[220px] flex-1">
+								<Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+								<Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cerca nome o sistema operativo…" className="pl-8" />
+							</div>
+							<FilterSelect value={protection} onChange={setProtection} all="Ogni protezione" options={Object.entries(protectionLabel)} />
+							<FilterSelect value={status} onChange={setStatus} all="Online e offline" options={[["Online", "Online"], ["Offline", "Offline"]]} />
+							{types.length > 1 && <FilterSelect value={type} onChange={setType} all="Ogni tipo" options={types.map((t) => [t, t])} />}
+						</div>
+						<Pager p={devicePager} />
+						<div className="overflow-x-auto">
+							<Table>
+								<TableHeader>
+									<TableRow>
+										<TableHead>Tipo</TableHead>
+										<TableHead>Nome</TableHead>
+										<TableHead>Sistema operativo</TableHead>
+										<TableHead>Ultimo contatto</TableHead>
+										<TableHead>Stato</TableHead>
+										<TableHead>Protezione</TableHead>
+										<TableHead>Minacce</TableHead>
+										<TableHead>Conformità</TableHead>
+									</TableRow>
+								</TableHeader>
+								<TableBody>
+									{devicePager.visible.map((e) => {
+										const TypeIcon = typeIcons[e.type] ?? Monitor;
+										return (
+											<TableRow key={e.id}>
+												<TableCell>
+													<Tooltip>
+														<TooltipTrigger asChild>
+															<span className="inline-flex cursor-help">
+																<TypeIcon className="h-4 w-4 text-muted-foreground" />
+															</span>
+														</TooltipTrigger>
+														<TooltipContent>{e.type}</TooltipContent>
+													</Tooltip>
+												</TableCell>
+												<TableCell className="font-medium">
+													{e.name}
+													{e.isolated && <Badge className="ml-2 bg-red-500/20 text-red-500">Isolato</Badge>}
+												</TableCell>
+												<TableCell className="text-sm">{e.os ?? "—"}</TableCell>
+												<TableCell className="whitespace-nowrap text-sm text-muted-foreground">{fmtDate(e.lastSeen)}</TableCell>
+												<TableCell>
+													<Badge className={e.status === "Online" ? "bg-green-500/20 text-green-500" : "bg-muted text-muted-foreground"}>{e.status}</Badge>
+												</TableCell>
+												<TableCell>
+													<Badge className={protectionColors[e.protection]}>{protectionLabel[e.protection]}</Badge>
+													{e.tamperProtection === false && <p className="mt-1 text-[10px] text-amber-500">Anti-manomissione spenta</p>}
+												</TableCell>
+												<TableCell>
+													<span className={e.threats > 0 ? "font-semibold text-red-500" : "text-green-500"}>{e.threats}</span>
+												</TableCell>
+												<TableCell>
+													<div className="flex items-center gap-2">
+														<div className="h-2 w-16 overflow-hidden rounded-full bg-muted">
+															<div
+																className={cn("h-full rounded-full", e.compliance >= 90 ? "bg-green-500" : e.compliance >= 70 ? "bg-yellow-500" : "bg-red-500")}
+																style={{ width: `${e.compliance}%` }}
+															/>
+														</div>
+														<span className="text-xs text-muted-foreground">{e.compliance}%</span>
+													</div>
+												</TableCell>
+											</TableRow>
+										);
+									})}
+									{devicePager.visible.length === 0 && (
+										<TableRow>
+											<TableCell colSpan={8} className="text-center text-sm text-muted-foreground">
+												Nessun endpoint corrisponde ai filtri.
+											</TableCell>
+										</TableRow>
+									)}
+								</TableBody>
+							</Table>
+						</div>
+						{devicePager.total > devicePager.size && <Pager p={devicePager} />}
+					</CardContent>
+				</Card>
+			</section>
+
+			<section className="space-y-4">
+				<h2 className="text-2xl font-bold">Minacce Rilevate</h2>
+				<Card className="border-border">
+					<CardHeader>
+						<CardTitle className="flex items-center gap-2 text-lg">
+							<AlertTriangle className="h-5 w-5 text-orange-500" />
+							Minacce e problemi di protezione aperti
+						</CardTitle>
+						<p className="text-sm text-muted-foreground">Avvisi ancora aperti sugli endpoint, dal più recente.</p>
+					</CardHeader>
+					<CardContent className="space-y-3">
+						{detectedThreats.length === 0 ? (
+							<p className="text-sm text-muted-foreground">Nessuna minaccia aperta.</p>
+						) : (
+							<>
+								<Pager p={threatPager} />
+								<div className="overflow-x-auto">
+									<Table>
+										<TableHeader>
+											<TableRow>
+												<TableHead>Endpoint</TableHead>
+												<TableHead>Descrizione</TableHead>
+												<TableHead>Tipo</TableHead>
+												<TableHead>Rilevata</TableHead>
+												<TableHead>Gravità</TableHead>
+											</TableRow>
+										</TableHeader>
+										<TableBody>
+											{threatPager.visible.map((t) => (
+												<TableRow key={t.id}>
+													<TableCell className="font-medium">{t.endpoint ?? "—"}</TableCell>
+													<TableCell className="text-sm">{t.threatName}</TableCell>
+													<TableCell>{t.type}</TableCell>
+													<TableCell className="whitespace-nowrap text-sm text-muted-foreground">{fmtDate(t.detectedAt)}</TableCell>
+													<TableCell>
+														<Badge className={severityColors[t.severity]}>{severityLabel[t.severity]}</Badge>
+													</TableCell>
+												</TableRow>
+											))}
+										</TableBody>
+									</Table>
+								</div>
+							</>
+						)}
+					</CardContent>
+				</Card>
+			</section>
+
+			<section className="space-y-4">
+				<h2 className="text-2xl font-bold">Aggiornamenti Pendenti</h2>
+				<Card className="border-border">
+					<CardHeader>
+						<CardTitle className="flex items-center gap-2 text-lg">
+							<Clock className="h-5 w-5 text-yellow-500" />
+							Protezione da aggiornare
+						</CardTitle>
+						<p className="text-sm text-muted-foreground">Endpoint con il pacchetto di protezione non aggiornato o non più supportato.</p>
+					</CardHeader>
+					<CardContent>
+						{pendingUpdates.length === 0 ? (
+							<p className="text-sm text-muted-foreground">Tutti gli endpoint hanno la protezione aggiornata.</p>
+						) : (
+							<div className="overflow-x-auto">
+								<Table>
+									<TableHeader>
+										<TableRow>
+											<TableHead>Endpoint</TableHead>
+											<TableHead>Motivo</TableHead>
+											<TableHead>Versione attuale</TableHead>
+											<TableHead>Disponibile</TableHead>
+											<TableHead>Priorità</TableHead>
+										</TableRow>
+									</TableHeader>
+									<TableBody>
+										{pendingUpdates.map((u, i) => (
+											<TableRow key={`${u.endpoint}-${i}`}>
+												<TableCell className="font-medium">{u.endpoint ?? "—"}</TableCell>
+												<TableCell>{u.reason ?? u.component}</TableCell>
+												<TableCell className="font-mono text-sm">{u.currentVersion ?? "—"}</TableCell>
+												<TableCell className="font-mono text-sm text-green-500">{u.latestVersion ?? "—"}</TableCell>
+												<TableCell>
+													<Badge className={severityColors[u.priority]}>{severityLabel[u.priority]}</Badge>
+												</TableCell>
+											</TableRow>
+										))}
+									</TableBody>
+								</Table>
+							</div>
+						)}
+					</CardContent>
+				</Card>
+			</section>
+		</div>
+	);
 };
+
+function ScoreInfo({ text }: { text: string }) {
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<button type="button" className="absolute right-3 top-3 text-muted-foreground" aria-label="Come si calcola">
+					<Info className="h-4 w-4" />
+				</button>
+			</TooltipTrigger>
+			<TooltipContent className="max-w-xs text-xs">{text}</TooltipContent>
+		</Tooltip>
+	);
+}
+
+function FilterSelect({
+	value,
+	onChange,
+	all,
+	options,
+}: {
+	value: string;
+	onChange: (v: string) => void;
+	all: string;
+	options: Array<[string, string]>;
+}) {
+	return (
+		<Select value={value} onValueChange={onChange}>
+			<SelectTrigger className="h-9 w-[170px] text-sm">
+				<SelectValue />
+			</SelectTrigger>
+			<SelectContent>
+				<SelectItem value="all">{all}</SelectItem>
+				{options.map(([v, label]) => (
+					<SelectItem key={v} value={v}>
+						{label}
+					</SelectItem>
+				))}
+			</SelectContent>
+		</Select>
+	);
+}

@@ -1,55 +1,12 @@
-// @ts-nocheck -- type drift vs API contract, da riallineare
 import { useApiWithFallback } from './useApiWithFallback';
+import { useClientOrganization } from './useClientOrganization';
 import { endpointsApi } from '@/lib/api/endpoints';
 
-// Extended types matching the actual dashboard mock data
-export interface EndpointStats {
-  totalEndpoints: number;
-  protectedEndpoints: number;
-  atRiskEndpoints: number;
-  onlineEndpoints: number;
-  offlineEndpoints: number;
-  pendingUpdates: number;
-}
+import type { EndpointDashboardData } from '@/lib/api/endpoints';
 
-export interface EndpointDevice {
-  id: string;
-  name: string;
-  type: 'Workstation' | 'Laptop' | 'Server' | 'Mobile';
-  os: string;
-  lastSeen: string;
-  status: 'Online' | 'Offline';
-  protection: 'Protected' | 'At Risk' | 'Unknown' | 'Outdated';
-  threats: number;
-  compliance: number;
-}
+export type { EndpointDashboardData, EndpointDevice, EndpointThreat as DetectedThreat, PendingUpdate, EndpointStats } from '@/lib/api/endpoints';
 
-export interface DetectedThreat {
-  id: string;
-  endpoint: string;
-  threatName: string;
-  type: string;
-  detectedAt: string;
-  status: 'Quarantined' | 'Removed' | 'Blocked' | 'Patched' | 'Pending';
-  severity: 'Low' | 'Medium' | 'High' | 'Critical';
-}
-
-export interface PendingUpdate {
-  endpoint: string;
-  currentVersion: string;
-  latestVersion: string;
-  component: string;
-  daysOutdated: number;
-  priority: 'Low' | 'Medium' | 'High' | 'Critical';
-}
-
-export interface EndpointDashboardData {
-  stats: EndpointStats;
-  endpoints: EndpointDevice[];
-  detectedThreats: DetectedThreat[];
-  pendingUpdates: PendingUpdate[];
-}
-
+// Dati d'esempio: si vedono solo nella build demo (useApiWithFallback).
 const mockEndpointData: EndpointDashboardData = {
   stats: {
     totalEndpoints: 156,
@@ -84,10 +41,14 @@ const mockEndpointData: EndpointDashboardData = {
   ],
 };
 
-export function useEndpointDashboard(tenantId?: string) {
+export function useEndpointDashboard() {
+  const { organizationId, groupId } = useClientOrganization();
   return useApiWithFallback<EndpointDashboardData>(
-    () => endpointsApi.dashboard(tenantId) as Promise<EndpointDashboardData>,
+    () => {
+      if (!organizationId) return Promise.reject(new Error('Nessun cliente selezionato'));
+      return endpointsApi.dashboard(organizationId, groupId);
+    },
     mockEndpointData,
-    [tenantId],
+    [organizationId, groupId],
   );
 }

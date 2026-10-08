@@ -1,74 +1,83 @@
-import { apiClient } from './index';
+import { complianceApiClient } from "@/lib/api-client";
+import type { ApiResponse } from "@/types/api";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
+// Forma di GET /companies/{id}/sophos/endpoints/dashboard (backend Laravel,
+// EndpointDashboard). Le regole di protezione e conformità sono documentate lì.
 
 export interface EndpointStats {
   totalEndpoints: number;
   protectedEndpoints: number;
   atRiskEndpoints: number;
+  outdatedEndpoints?: number;
+  unknownEndpoints?: number;
   onlineEndpoints: number;
   offlineEndpoints: number;
+  servers?: number;
+  computers?: number;
   pendingUpdates: number;
+  openThreats?: number;
 }
+
+export type EndpointProtection = "Protected" | "At Risk" | "Unknown" | "Outdated";
 
 export interface EndpointDevice {
   id: string;
   name: string;
-  type: 'Workstation' | 'Laptop' | 'Server' | 'Mobile';
-  os: string;
-  status: 'Online' | 'Offline' | 'Warning' | 'Critical';
-  lastSeen: string;
-  protection: 'Protected' | 'At Risk' | 'Unknown' | 'Outdated';
+  /** Sophos distingue solo computer e server: portatile e fisso non si inventano. */
+  type: "Computer" | "Server" | "Workstation" | "Laptop" | "Mobile";
+  os: string | null;
+  status: "Online" | "Offline";
+  lastSeen: string | null;
+  protection: EndpointProtection;
+  health?: string;
+  tamperProtection?: boolean | null;
+  isolated?: boolean;
   threats: number;
   compliance: number;
 }
 
 export interface EndpointThreat {
   id: string;
-  endpoint: string;
+  endpoint: string | null;
   threatName: string;
   type: string;
-  severity: 'Low' | 'Medium' | 'High' | 'Critical';
-  detectedAt: string;
-  status: 'Quarantined' | 'Removed' | 'Blocked' | 'Patched' | 'Pending';
+  severity: "Low" | "Medium" | "High" | "Critical";
+  detectedAt: string | null;
+  status: "Quarantined" | "Removed" | "Blocked" | "Patched" | "Pending";
 }
 
 export interface PendingUpdate {
-  endpoint: string;
-  currentVersion: string;
-  latestVersion: string;
+  endpoint: string | null;
+  currentVersion: string | null;
+  latestVersion: string | null;
   component: string;
-  daysOutdated: number;
-  priority: 'Low' | 'Medium' | 'High' | 'Critical';
+  /** Null quando la sorgente non dice da quando il componente è indietro. */
+  daysOutdated: number | null;
+  priority: "Low" | "Medium" | "High" | "Critical";
+  reason?: string;
 }
 
 export interface EndpointDashboardData {
   stats: EndpointStats;
   endpoints: EndpointDevice[];
-  recentThreats: EndpointThreat[];
+  detectedThreats: EndpointThreat[];
   pendingUpdates: PendingUpdate[];
+  fetchedAt?: string | null;
+  stale?: boolean;
+  lastError?: { code: string; message: string; at: string | null } | null;
 }
 
 // ─── API Client ─────────────────────────────────────────────────────────────
 
 export const endpointsApi = {
-  /** GET /endpoints/dashboard — aggregated endpoint data */
-  dashboard: (tenantId?: string) =>
-    apiClient.get<EndpointDashboardData>(`/endpoints/dashboard${tenantId ? `?tenant_id=${tenantId}` : ''}`),
-
-  /** GET /endpoints — list endpoints */
-  list: (tenantId?: string) =>
-    apiClient.get<EndpointDevice[]>(`/endpoints${tenantId ? `?tenant_id=${tenantId}` : ''}`),
-
-  /** GET /endpoints/{id} — single endpoint detail */
-  get: (endpointId: string) =>
-    apiClient.get<EndpointDevice>(`/endpoints/${endpointId}`),
-
-  /** GET /endpoints/threats — recent endpoint threats */
-  threats: (tenantId?: string) =>
-    apiClient.get<EndpointThreat[]>(`/endpoints/threats${tenantId ? `?tenant_id=${tenantId}` : ''}`),
-
-  /** POST /endpoints/{id}/scan — trigger scan on endpoint */
-  scan: (endpointId: string) =>
-    apiClient.post(`/endpoints/${endpointId}/scan`),
+  /** Ultimo dato letto per il cliente; nessuna chiamata diretta alla sorgente. */
+  dashboard: async (organizationId: string, groupId?: string | null): Promise<EndpointDashboardData> => {
+    const res = await complianceApiClient.get<ApiResponse<EndpointDashboardData>>(
+      `/companies/${organizationId}/sophos/endpoints/dashboard`,
+      undefined,
+      groupId ? { headers: { "X-Group-Id": groupId } } : undefined,
+    );
+    return res.data;
+  },
 };
