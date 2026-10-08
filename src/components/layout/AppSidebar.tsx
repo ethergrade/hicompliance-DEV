@@ -35,6 +35,7 @@ import {
 	Radar,
 	SlidersHorizontal,
 	Activity,
+	Monitor,
 } from "lucide-react";
 import { SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import {
@@ -180,6 +181,7 @@ export const AppSidebar: React.FC = () => {
 	const darkRiskExtendedOn = DARKRISK_EXTENDED_UI_V2_ENABLED && !!orgFlags?.dark_risk_extended_enabled;
 	const hipatchOn = !!orgFlags?.hipatch_enabled;
 	const hitrackOn = !!orgFlags?.hitrack_enabled;
+	const hiendpointOn = !!orgFlags?.hiendpoint_enabled;
 	const { canViewRoute, hasCapability } = usePermissions();
 
 	const isFeatureAllowed = (href: string) => {
@@ -190,6 +192,7 @@ export const AppSidebar: React.FC = () => {
 		if (href === "/dark-risk") return darkRiskOn;
 		if (href === "/dark-risk-esteso") return darkRiskOn && darkRiskExtendedOn;
 		if (href === "/dashboard/service/hipatch") return hipatchOn;
+		if (href === "/dashboard/service/hiendpoint") return hiendpointOn;
 		// HiTrack segue il contratto come gli altri moduli; il super-admin lo vede
 		// comunque, anche su un cliente dove il servizio non è ancora stato attivato.
 		if (href === "/dashboard/service/hitrack") return hitrackOn || isSuperAdmin;
@@ -337,6 +340,13 @@ export const AppSidebar: React.FC = () => {
 									title: "HiPatch",
 									href: "/dashboard/service/hipatch",
 									icon: Download,
+								})}
+							{hiendpointOn &&
+								isUserAllowed("/dashboard/service/hiendpoint") &&
+								renderNavItem({
+									title: "HiEndpoint",
+									href: "/dashboard/service/hiendpoint",
+									icon: Monitor,
 								})}
 							{/* HIDDEN: Threat Management page removed per client request (2026-06-05) */}
 							{/* {isModuleEnabled('/threat-management') && renderNavItem({ title: 'Threat Management', href: '/threat-management', icon: Shield })} */}

@@ -44,7 +44,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { tenantServicesApi } from "@/lib/api";
 import { FALLBACK_SERVICE_CATALOG } from "@/data/serviceCatalog";
-import { SophosTenantLinkCard } from "./SophosTenantLinkCard";
+import { SOPHOS_SERVICES } from "@/lib/sophosServices";
+import { sophosAdminApi } from "@/lib/api/sophos";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import type { TenantServiceResource } from "@/types/api";
 import { getErrorDetail } from "@/lib/api-client";
@@ -108,6 +109,12 @@ function deriveFlags(services: TenantServiceResource[]) {
 		dark_risk360_enabled: !!dr || !!hc,
 		hipatch_enabled: !!hp,
 		hitrack_enabled: !!htk,
+		sophos: Object.fromEntries(
+			SOPHOS_SERVICES.map((svc) => [
+				svc.code,
+				services.some((s) => s.service_type === svc.code && (s.status === "active" || !s.status)),
+			]),
+		) as Record<string, boolean>,
 	};
 }
 
@@ -223,6 +230,15 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 
 	// Feature flags derived from tenant-services
 	const orgFlags = deriveFlags(tenantServices);
+	const sophosActive = SOPHOS_SERVICES.some((svc) => orgFlags.sophos[svc.code]);
+
+	// Il tenant Sophos si collega in Integrazioni: qui serve solo a segnalare
+	// un servizio attivo che non ha ancora da dove leggere i dati.
+	const { data: sophosLink, isLoading: sophosLinkLoading } = useQuery({
+		queryKey: ["sophos-link", organizationId],
+		queryFn: () => sophosAdminApi.link(organizationId!),
+		enabled: open && !!organizationId && sophosActive,
+	});
 	const darkRiskEntitlement = deriveDarkRiskTier(tenantServices);
 
 	const updateFlagsMutation = useMutation({
@@ -310,6 +326,13 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 			if (patch.hitrack_enabled === false) {
 				const ht = ts.find((s) => s.service_type === "hitrack");
 				if (ht) await tenantServicesApi.delete(ht.id, groupId);
+			}
+			// Servizi Sophos OFF
+			for (const svc of SOPHOS_SERVICES) {
+				if (patch[`${svc.code}_enabled`] === false) {
+					const found = ts.find((s) => s.service_type === svc.code);
+					if (found) await tenantServicesApi.delete(found.id, groupId);
+				}
 			}
 
 			// Create new services
@@ -445,6 +468,27 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 								collector_aliases: [],
 								sync_interval_minutes: 15,
 								data_source: "domotz_public_api",
+								...(defaultStart ? { contract_start: defaultStart } : {}),
+							},
+						},
+						groupId,
+					);
+				}
+			}
+			// Servizi Sophos ON — il tenant Sophos si collega in Integrazioni;
+			// contract_start eredita da HiCompliance se presente, come gli altri.
+			for (const svc of SOPHOS_SERVICES) {
+				if (patch[`${svc.code}_enabled`] === true && !ts.find((s) => s.service_type === svc.code)) {
+					const hcSettings =
+						(ts.find((s) => s.service_type === "hicompliance")?.settings as any) || {};
+					const defaultStart = hcSettings.contract_start || "";
+					await tenantServicesApi.create(
+						{
+							tenant_id: organizationId,
+							service_type: svc.code,
+							status: "active",
+							settings: {
+								data_source: "sophos_central",
 								...(defaultStart ? { contract_start: defaultStart } : {}),
 							},
 						},
@@ -1192,7 +1236,56 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 								</div>
 							)}
 
-							<SophosTenantLinkCard organizationId={organizationId} />
+							<div className="pt-2">
+								<p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Servizi Sophos</p>
+								<p className="text-xs text-muted-foreground">
+									Ogni servizio ha il suo contratto; tutti leggono dallo stesso tenant Sophos, collegato in Integrazioni.
+								</p>
+							</div>
+							{SOPHOS_SERVICES.map((svc) => {
+								const enabled = !!orgFlags.sophos[svc.code];
+								return (
+									<React.Fragment key={svc.code}>
+										<div className="flex items-center justify-between rounded-md border p-3">
+											<div className="flex items-center gap-3">
+												<div className={`p-1.5 rounded-md ${enabled ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+													{SERVICE_ICONS[svc.code] ?? <Shield className="w-4 h-4" />}
+												</div>
+												<div>
+													<p className="flex items-center gap-2 text-sm font-medium">
+														{svc.name}
+														{!svc.live && (
+															<Badge variant="outline" className="text-[10px] font-normal">
+																dati reali in arrivo
+															</Badge>
+														)}
+													</p>
+													<p className="text-xs text-muted-foreground">{svc.description}</p>
+												</div>
+											</div>
+											<Switch
+												checked={enabled}
+												disabled={updateFlagsMutation.isPending}
+												onCheckedChange={(v) => updateFlagsMutation.mutate({ [`${svc.code}_enabled`]: v })}
+											/>
+										</div>
+										{enabled && (
+											<div className="ml-4 space-y-2 border-l-2 border-primary/20 pl-3">
+												{renderContractRow(svc.code)}
+											</div>
+										)}
+									</React.Fragment>
+								);
+							})}
+							{sophosActive && !sophosLinkLoading && (
+								<div
+									className={`rounded-md border p-2.5 text-xs ${sophosLink ? "text-muted-foreground" : "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"}`}
+								>
+									{sophosLink
+										? `Tenant Sophos collegato: ${sophosLink.sophosTenantName ?? sophosLink.sophosTenantId} · ${sophosLink.dataRegion ?? ""}`
+										: "Tenant Sophos da collegare in Integrazioni: finché non è collegato, i servizi Sophos attivi non hanno dati da mostrare."}
+								</div>
+							)}
 						</div>
 					</ScrollArea>
 				)}

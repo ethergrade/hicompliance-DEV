@@ -1,5 +1,7 @@
 // @ts-nocheck -- type drift vs API contract, da riallineare
 import { useState, useMemo } from "react";
+import { SophosTenantLinkCard } from "@/components/clients/SophosTenantLinkCard";
+import { SOPHOS_SERVICE_CODES } from "@/lib/sophosServices";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -198,6 +200,19 @@ const Integrations = () => {
 
 	const existingHitrack =
 		hitrackServices.length > 0 ? hitrackServices[0] : null;
+
+	// Servizi Sophos attivi: il tenant Sophos si collega qui, una volta per tutti.
+	const { data: sophosServices = [] } = useQuery({
+		queryKey: ["tenant-services-sophos", organizationId, groupId],
+		enabled: !!organizationId,
+		queryFn: async () => {
+			if (!organizationId) return [];
+			const all = await tenantServicesApi.listByOrganization(organizationId, groupId);
+			return all
+				.filter((s) => s.tenant_id === organizationId && SOPHOS_SERVICE_CODES.includes(s.service_type) && (s.status === "active" || !s.status))
+				.map((s) => s.service_type);
+		},
+	});
 
 	// Una scheda qui rappresenta una *configurazione*, non l'esistenza del
 	// servizio: quella si vede e si cambia dal pannello di attivazione. Un
@@ -926,6 +941,10 @@ const Integrations = () => {
 						</DialogContent>
 					</Dialog>
 				</div>
+
+				{organizationId && sophosServices.length > 0 && (
+					<SophosTenantLinkCard organizationId={organizationId} activeServices={sophosServices} />
+				)}
 
 				<div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
 					{/* HiPatch integrations live in tenant_services (not organization_integrations).

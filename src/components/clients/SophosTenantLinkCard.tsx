@@ -10,8 +10,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { sophosAdminApi } from "@/lib/api/sophos";
+import { SOPHOS_SERVICES } from "@/lib/sophosServices";
 
-export function SophosTenantLinkCard({ organizationId }: { organizationId: string }) {
+export function SophosTenantLinkCard({ organizationId, activeServices }: { organizationId: string; activeServices: string[] }) {
 	const queryClient = useQueryClient();
 	const [filter, setFilter] = useState("");
 	const [choice, setChoice] = useState<string>("");
@@ -51,7 +52,15 @@ export function SophosTenantLinkCard({ organizationId }: { organizationId: strin
 			<div className="flex items-center justify-between gap-2">
 				<div>
 					<p className="text-sm font-medium">Tenant Sophos Central</p>
-					<p className="text-xs text-muted-foreground">Origine dei dati di HiEndpoint, HiFirewall, HiDetect, HiMail e HiMobile. Sola lettura.</p>
+					<p className="text-xs text-muted-foreground">Da qui leggono i servizi Sophos attivi del cliente, in sola lettura.</p>
+					<div className="mt-1 flex flex-wrap gap-1">
+						{SOPHOS_SERVICES.filter((svc) => activeServices.includes(svc.code)).map((svc) => (
+							<Badge key={svc.code} variant="outline" className="text-[10px] font-normal">
+								{svc.name}
+								{svc.live ? "" : " · dati reali in arrivo"}
+							</Badge>
+						))}
+					</div>
 				</div>
 				{link.data ? (
 					<Badge variant="outline" className="gap-1 text-xs">

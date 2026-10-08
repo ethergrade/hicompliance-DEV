@@ -43,6 +43,7 @@ const ROUTE_CAPABILITIES: Record<string, RouteCapabilities> = {
     export: ['darkrisk.export', 'darkrisk.extended.export', 'darkrisk.identity.export'],
   },
   '/dashboard/service/hitrack': { view: ['hitrack.view'] },
+  '/dashboard/service/hiendpoint': { view: ['hiendpoint.view'] },
   '/admin/clients': { view: ['companies.manage'] },
   '/admin/companies': { view: ['companies.manage'] },
   '/admin/role-settings': { view: ['users.manage'] },
