@@ -43,7 +43,7 @@ const REASON: Record<string, string> = {
 	insufficient_samples: "Troppi pochi probe per valutare",
 	few_samples: "Pochi probe: valore provvisorio",
 	no_probe_counts: "Numero di probe non disponibile",
-	no_observed_at: "Ora della misura non disponibile",
+	no_observed_at: "Domotz non indica l'ora della misura",
 	mixed_window: "RTD e perdita da finestre diverse",
 };
 
@@ -216,6 +216,9 @@ function NetworkQualityCell({ quality }: { quality?: HiTrackNetworkQuality }) {
 	const q = quality ?? { algorithmVersion: "network-quality-v1", score: null, health: "unknown" as const, dataQuality: "provisional" as const, reasons: ["missing_metrics"], observedAt: null };
 	const h = HEALTH[q.health] ?? HEALTH.unknown;
 	const observed = q.observedAt ? new Date(q.observedAt) : null;
+	// Senza l'ora della misura (Domotz manda `timestamp` vuoto) l'ora salvata è
+	// quella della nostra lettura, non della misura.
+	const observedLabel = q.reasons.includes("no_observed_at") ? "Ultima lettura" : "Ultima misura";
 
 	return (
 		<Tooltip>
@@ -248,7 +251,7 @@ function NetworkQualityCell({ quality }: { quality?: HiTrackNetworkQuality }) {
 					</ul>
 				)}
 				<p className="text-muted-foreground">
-					Ultima misura: {observed && !Number.isNaN(observed.getTime()) ? observed.toLocaleString("it-IT") : "non disponibile"} · {q.algorithmVersion}
+					{observedLabel}: {observed && !Number.isNaN(observed.getTime()) ? observed.toLocaleString("it-IT") : "non disponibile"} · {q.algorithmVersion}
 				</p>
 			</TooltipContent>
 		</Tooltip>
