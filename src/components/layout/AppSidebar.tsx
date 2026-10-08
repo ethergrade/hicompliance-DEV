@@ -36,6 +36,8 @@ import {
 	SlidersHorizontal,
 	Activity,
 	Monitor,
+	Smartphone,
+	Mail,
 } from "lucide-react";
 import { SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import {
@@ -183,6 +185,9 @@ export const AppSidebar: React.FC = () => {
 	const hitrackOn = !!orgFlags?.hitrack_enabled;
 	const hiendpointOn = !!orgFlags?.hiendpoint_enabled;
 	const hifirewallOn = !!orgFlags?.hifirewall_enabled;
+	const himobileOn = !!orgFlags?.himobile_enabled;
+	const hidetectOn = !!orgFlags?.hidetect_enabled;
+	const himailOn = !!orgFlags?.himail_enabled;
 	const { canViewRoute, hasCapability } = usePermissions();
 
 	const isFeatureAllowed = (href: string) => {
@@ -195,6 +200,9 @@ export const AppSidebar: React.FC = () => {
 		if (href === "/dashboard/service/hipatch") return hipatchOn;
 		if (href === "/dashboard/service/hiendpoint") return hiendpointOn;
 		if (href === "/dashboard/service/hifirewall") return hifirewallOn;
+		if (href === "/dashboard/service/himobile") return himobileOn;
+		if (href === "/dashboard/service/hidetect") return hidetectOn;
+		if (href === "/dashboard/service/himail") return himailOn;
 		// HiTrack segue il contratto come gli altri moduli; il super-admin lo vede
 		// comunque, anche su un cliente dove il servizio non è ancora stato attivato.
 		if (href === "/dashboard/service/hitrack") return hitrackOn || isSuperAdmin;
@@ -356,6 +364,27 @@ export const AppSidebar: React.FC = () => {
 									title: "HiFirewall",
 									href: "/dashboard/service/hifirewall",
 									icon: Network,
+								})}
+							{himobileOn &&
+								isUserAllowed("/dashboard/service/himobile") &&
+								renderNavItem({
+									title: "HiMobile",
+									href: "/dashboard/service/himobile",
+									icon: Smartphone,
+								})}
+							{hidetectOn &&
+								isUserAllowed("/dashboard/service/hidetect") &&
+								renderNavItem({
+									title: "HiDetect",
+									href: "/dashboard/service/hidetect",
+									icon: Radar,
+								})}
+							{himailOn &&
+								isUserAllowed("/dashboard/service/himail") &&
+								renderNavItem({
+									title: "HiMail",
+									href: "/dashboard/service/himail",
+									icon: Mail,
 								})}
 							{/* HIDDEN: Threat Management page removed per client request (2026-06-05) */}
 							{/* {isModuleEnabled('/threat-management') && renderNavItem({ title: 'Threat Management', href: '/threat-management', icon: Shield })} */}

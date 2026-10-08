@@ -1,707 +1,347 @@
-import React from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { RiskScoreCard } from './RiskScoreCard';
-import { DemoDataBadge } from './DemoDataBadge';
-import { ServiceNotConnected } from './ServiceNotConnected';
-import { useDetectDashboard } from '@/hooks/useDetect';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Shield,
-  AlertTriangle,
-  Monitor,
-  Activity,
-  Eye,
-  Clock,
-  CheckCircle,
-  XCircle,
-  Bell,
-  Target,
-  Zap,
-  TrendingUp,
-} from 'lucide-react';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  LineChart,
-  Line,
-  Legend,
-  AreaChart,
-  Area,
-} from 'recharts';
+// HiDetect: detection XDR degli ultimi 30 giorni del cliente, dall'ultimo dato
+// letto dal backend (DetectDashboard). Casi MDR, tempo di risposta, stato delle
+// detection e stato per endpoint si mostrano solo se presenti: la fonte di oggi
+// non li fornisce, e non si riempiono con numeri d'esempio.
+import React from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Activity, AlertTriangle, Bell, Eye, Monitor, Shield, Target, TrendingUp, Zap } from "lucide-react";
+import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { DemoDataBadge } from "./DemoDataBadge";
+import { RiskScoreCard } from "./RiskScoreCard";
+import { ServiceNotConnected } from "./ServiceNotConnected";
+import { TablePager, usePager } from "./TablePager";
+import { useDetectDashboard } from "@/hooks/useDetect";
+import { cn } from "@/lib/utils";
 
-// Data provided by useDetectDashboard hook with mock fallback
+const SEVERITY = {
+	Critical: { label: "Critica", color: "#ef4444", badge: "bg-red-500/20 text-red-500" },
+	High: { label: "Alta", color: "#f97316", badge: "bg-orange-500/20 text-orange-500" },
+	Medium: { label: "Media", color: "#eab308", badge: "bg-yellow-500/20 text-yellow-500" },
+	Low: { label: "Bassa", color: "#22c55e", badge: "bg-green-500/20 text-green-500" },
+} as const;
+const LABEL_TO_KEY: Record<string, keyof typeof SEVERITY> = { Critico: "Critical", Critica: "Critical", Alto: "High", Alta: "High", Medio: "Medium", Media: "Medium", Basso: "Low", Bassa: "Low" };
 
-// Mock data for overview
-const overviewData = {
-  totalEndpoints: 245,
-  monitoredEndpoints: 238,
-  threatsDetected: 127,
-  alertsToday: 23,
-  avgResponseTime: '< 15 min',
-  coverageHours: '24/7',
+const STATUS_LABEL: Record<string, string> = { New: "Nuova", Investigating: "In analisi", Resolved: "Risolta", Escalated: "Scalata" };
+
+const fmtDate = (v: string | null | undefined) => {
+	if (!v) return "—";
+	const d = new Date(v);
+	return Number.isNaN(d.getTime()) ? v : d.toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" });
 };
 
-// Threat severity distribution
-const threatSeverityData = [
-  { name: 'Critico', value: 8, color: '#ef4444' },
-  { name: 'Alto', value: 24, color: '#f97316' },
-  { name: 'Medio', value: 45, color: '#eab308' },
-  { name: 'Basso', value: 50, color: '#22c55e' },
-];
-
-// Weekly threat trend
-const weeklyThreatTrend = [
-  { day: 'Lun', rilevati: 18, bloccati: 18, investigati: 15 },
-  { day: 'Mar', rilevati: 24, bloccati: 24, investigati: 22 },
-  { day: 'Mer', rilevati: 15, bloccati: 15, investigati: 14 },
-  { day: 'Gio', rilevati: 32, bloccati: 31, investigati: 28 },
-  { day: 'Ven', rilevati: 22, bloccati: 22, investigati: 20 },
-  { day: 'Sab', rilevati: 8, bloccati: 8, investigati: 8 },
-  { day: 'Dom', rilevati: 6, bloccati: 6, investigati: 6 },
-];
-
-// Detection categories
-const detectionCategoriesData = [
-  { category: 'Malware', count: 34 },
-  { category: 'Phishing', count: 28 },
-  { category: 'Suspicious Behavior', count: 22 },
-  { category: 'Network Anomaly', count: 18 },
-  { category: 'Credential Theft', count: 12 },
-  { category: 'Ransomware', count: 8 },
-  { category: 'Data Exfiltration', count: 5 },
-];
-
-// Real-time alerts
-const realtimeAlerts = [
-  {
-    id: 'ALR-001',
-    timestamp: '10:45:32',
-    severity: 'Critico',
-    type: 'Ransomware Detection',
-    endpoint: 'WS-PC042',
-    status: 'In Analisi',
-    analyst: 'SOC Team',
-  },
-  {
-    id: 'ALR-002',
-    timestamp: '10:32:15',
-    severity: 'Alto',
-    type: 'Credential Dumping',
-    endpoint: 'SRV-DC01',
-    status: 'Mitigato',
-    analyst: 'SOC Team',
-  },
-  {
-    id: 'ALR-003',
-    timestamp: '10:18:44',
-    severity: 'Medio',
-    type: 'Suspicious PowerShell',
-    endpoint: 'WS-PC087',
-    status: 'Risolto',
-    analyst: 'SOC Team',
-  },
-  {
-    id: 'ALR-004',
-    timestamp: '09:55:22',
-    severity: 'Alto',
-    type: 'Lateral Movement',
-    endpoint: 'SRV-FILE02',
-    status: 'In Analisi',
-    analyst: 'SOC Team',
-  },
-  {
-    id: 'ALR-005',
-    timestamp: '09:42:11',
-    severity: 'Basso',
-    type: 'Policy Violation',
-    endpoint: 'WS-PC156',
-    status: 'Risolto',
-    analyst: 'SOC Team',
-  },
-];
-
-// Endpoint protection status
-const endpointStatusData = [
-  {
-    hostname: 'WS-PC001',
-    ip: '192.168.10.101',
-    os: 'Windows 11 Pro',
-    status: 'Protetto',
-    lastSeen: '2 min fa',
-    threats: 0,
-  },
-  {
-    hostname: 'WS-PC002',
-    ip: '192.168.10.102',
-    os: 'Windows 10 Enterprise',
-    status: 'Protetto',
-    lastSeen: '5 min fa',
-    threats: 1,
-  },
-  {
-    hostname: 'SRV-DC01',
-    ip: '192.168.1.10',
-    os: 'Windows Server 2022',
-    status: 'Attenzione',
-    lastSeen: '1 min fa',
-    threats: 2,
-  },
-  {
-    hostname: 'SRV-FILE02',
-    ip: '192.168.1.20',
-    os: 'Windows Server 2019',
-    status: 'Protetto',
-    lastSeen: '3 min fa',
-    threats: 0,
-  },
-  {
-    hostname: 'WS-MAC001',
-    ip: '192.168.10.201',
-    os: 'macOS Sonoma',
-    status: 'Protetto',
-    lastSeen: '8 min fa',
-    threats: 0,
-  },
-  {
-    hostname: 'WS-PC045',
-    ip: '192.168.10.145',
-    os: 'Windows 11 Pro',
-    status: 'Offline',
-    lastSeen: '2 ore fa',
-    threats: 0,
-  },
-];
-
-// SOC Activity log
-const socActivityLog = [
-  {
-    time: '10:45',
-    action: 'Analisi minaccia avviata',
-    details: 'Ransomware detection su WS-PC042',
-    analyst: 'SOC L2',
-  },
-  {
-    time: '10:32',
-    action: 'Threat contenuta',
-    details: 'Credential dumping bloccato su SRV-DC01',
-    analyst: 'SOC L2',
-  },
-  {
-    time: '10:18',
-    action: 'Alert chiuso',
-    details: 'False positive - PowerShell legittimo',
-    analyst: 'SOC L1',
-  },
-  {
-    time: '10:05',
-    action: 'Escalation a L2',
-    details: 'Lateral movement rilevato',
-    analyst: 'SOC L1',
-  },
-  {
-    time: '09:55',
-    action: 'Investigation avviata',
-    details: 'Anomalia network su segmento DMZ',
-    analyst: 'SOC L2',
-  },
-  {
-    time: '09:42',
-    action: 'Policy enforcement',
-    details: 'USB non autorizzato bloccato',
-    analyst: 'SOC L1',
-  },
-];
-
-// Detection rules status
-const detectionRulesData = [
-  { category: 'Malware Detection', active: 156, updated: '2 ore fa' },
-  { category: 'Behavioral Analysis', active: 89, updated: '1 ora fa' },
-  { category: 'Network Monitoring', active: 67, updated: '30 min fa' },
-  { category: 'Identity Protection', active: 45, updated: '4 ore fa' },
-  { category: 'Data Protection', active: 34, updated: '1 giorno fa' },
-];
-
-// Hourly detection activity
-const hourlyActivityData = [
-  { hour: '00:00', detections: 2 },
-  { hour: '02:00', detections: 1 },
-  { hour: '04:00', detections: 0 },
-  { hour: '06:00', detections: 3 },
-  { hour: '08:00', detections: 8 },
-  { hour: '10:00', detections: 12 },
-  { hour: '12:00', detections: 6 },
-  { hour: '14:00', detections: 9 },
-  { hour: '16:00', detections: 15 },
-  { hour: '18:00', detections: 7 },
-  { hour: '20:00', detections: 4 },
-  { hour: '22:00', detections: 2 },
-];
-
-// Dati d'esempio: ancora nessun endpoint reale per HiDetect. Si vedono solo
-// nella build demo; per i clienti veri la pagina dice che non è collegato.
-const isMock = import.meta.env.VITE_DEMO_MODE === 'true';
-
-const getSeverityBadge = (severity: string) => {
-  switch (severity) {
-    case 'Critico':
-      return <Badge className="bg-red-500/20 text-red-500 border-red-500/30">Critico</Badge>;
-    case 'Alto':
-      return <Badge className="bg-orange-500/20 text-orange-500 border-orange-500/30">Alto</Badge>;
-    case 'Medio':
-      return <Badge className="bg-yellow-500/20 text-yellow-500 border-yellow-500/30">Medio</Badge>;
-    case 'Basso':
-      return <Badge className="bg-green-500/20 text-green-500 border-green-500/30">Basso</Badge>;
-    default:
-      return <Badge variant="outline">{severity}</Badge>;
-  }
-};
-
-const getStatusBadge = (status: string) => {
-  switch (status) {
-    case 'Protetto':
-      return <Badge className="bg-green-500/20 text-green-500 border-green-500/30">Protetto</Badge>;
-    case 'Attenzione':
-      return <Badge className="bg-orange-500/20 text-orange-500 border-orange-500/30">Attenzione</Badge>;
-    case 'Offline':
-      return <Badge className="bg-muted text-muted-foreground border-muted">Offline</Badge>;
-    case 'In Analisi':
-      return <Badge className="bg-blue-500/20 text-blue-500 border-blue-500/30">In Analisi</Badge>;
-    case 'Mitigato':
-      return <Badge className="bg-cyan-500/20 text-cyan-500 border-cyan-500/30">Mitigato</Badge>;
-    case 'Risolto':
-      return <Badge className="bg-green-500/20 text-green-500 border-green-500/30">Risolto</Badge>;
-    default:
-      return <Badge variant="outline">{status}</Badge>;
-  }
-};
+const tooltipStyle = { backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px" };
 
 export const HiDetectDashboard: React.FC = () => {
-  if (!isMock) return <ServiceNotConnected service="HiDetect" />;
+	const { data, loading, isMock, error } = useDetectDashboard();
+	const alertPager = usePager(data?.realtimeAlerts ?? [], data?.fetchedAt);
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">HiDetect - SOC as a Service</h1>
-          <p className="text-muted-foreground">
-            Monitoraggio continuo 24/7 con rilevamento e risposta gestita alle minacce
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <DemoDataBadge show={isMock} />
-          <Badge className="bg-green-500/20 text-green-500 border-green-500/30">
-            <Activity className="w-3 h-3 mr-1" />
-            SOC Attivo
-          </Badge>
-          <Badge variant="outline">
-            <Clock className="w-3 h-3 mr-1" />
-            Copertura 24/7
-          </Badge>
-        </div>
-      </div>
+	if (!data) return <ServiceNotConnected service="HiDetect" loading={loading} detail={error} />;
 
-      {/* Overview Metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <Card className="border-border">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground">Endpoint Totali</p>
-                <p className="text-2xl font-bold">{overviewData.totalEndpoints}</p>
-              </div>
-              <Monitor className="w-8 h-8 text-primary" />
-            </div>
-          </CardContent>
-        </Card>
+	const { overview, threatSeverityData, weeklyThreatTrend, detectionCategories, realtimeAlerts, endpointStatus, socActivity, detectionRules, hourlyActivity } = data;
+	const windowDays = overview.windowDays ?? 30;
+	const pie = threatSeverityData.map((s) => {
+		const key = (s.key as keyof typeof SEVERITY) ?? LABEL_TO_KEY[s.name] ?? "Low";
+		return { ...s, color: s.color ?? SEVERITY[key]?.color ?? "#64748b" };
+	});
+	const showStatus = realtimeAlerts.some((a) => a.status);
+	const coverage = overview.totalEndpoints > 0 ? Math.round((overview.monitoredEndpoints / overview.totalEndpoints) * 100) : 0;
+	const cov = coverage >= 90 ? { level: "Buono", color: "green" as const, ring: "#22c55e" } : coverage >= 70 ? { level: "Moderato", color: "yellow" as const, ring: "#eab308" } : { level: "Critico", color: "red" as const, ring: "#ef4444" };
 
-        <Card className="border-border">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground">Monitorati</p>
-                <p className="text-2xl font-bold text-green-500">{overviewData.monitoredEndpoints}</p>
-              </div>
-              <Eye className="w-8 h-8 text-green-500" />
-            </div>
-          </CardContent>
-        </Card>
+	const kpis = [
+		{ label: "Endpoint totali", value: overview.totalEndpoints, icon: Monitor, tone: "text-primary" },
+		{ label: "Monitorati", value: overview.monitoredEndpoints, icon: Eye, tone: "text-green-500" },
+		{ label: `Detection (${windowDays}gg)`, value: overview.threatsDetected, icon: Target, tone: "text-orange-500" },
+		...(overview.last7Days !== undefined ? [{ label: "Ultimi 7 giorni", value: overview.last7Days, icon: TrendingUp, tone: "text-yellow-500" }] : []),
+		{ label: "Oggi", value: overview.alertsToday, icon: Bell, tone: "text-red-500" },
+		...(overview.criticalOrHigh !== undefined ? [{ label: "Alte o critiche", value: overview.criticalOrHigh, icon: AlertTriangle, tone: "text-red-500" }] : []),
+		...(overview.avgResponseTime ? [{ label: "Tempo risposta", value: overview.avgResponseTime, icon: Zap, tone: "text-cyan-500" }] : []),
+		...(overview.coverageHours ? [{ label: "Copertura", value: overview.coverageHours, icon: Shield, tone: "text-primary" }] : []),
+	];
 
-        <Card className="border-border">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground">Minacce (30gg)</p>
-                <p className="text-2xl font-bold text-orange-500">{overviewData.threatsDetected}</p>
-              </div>
-              <Target className="w-8 h-8 text-orange-500" />
-            </div>
-          </CardContent>
-        </Card>
+	return (
+		<div className="space-y-6">
+			<div>
+				<div className="flex flex-wrap items-center gap-3">
+					<h1 className="text-2xl font-bold">HiDetect - Threat Detection</h1>
+					<DemoDataBadge show={isMock} />
+					{data.fetchedAt && <span className="text-sm text-muted-foreground">Aggiornato alle {fmtDate(data.fetchedAt)}</span>}
+				</div>
+				<p className="text-muted-foreground">Detection su endpoint, firewall, posta e rete degli ultimi {windowDays} giorni</p>
+			</div>
+			{(data.stale || data.lastError) && (
+				<div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
+					{data.lastError
+						? `Ultima lettura non riuscita (${fmtDate(data.lastError.at)}): ${data.lastError.message} Sono mostrati gli ultimi dati validi.`
+						: "I dati non sono aggiornati: l'ultima lettura riuscita risale a oltre 30 minuti fa."}
+				</div>
+			)}
 
-        <Card className="border-border">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground">Alert Oggi</p>
-                <p className="text-2xl font-bold text-red-500">{overviewData.alertsToday}</p>
-              </div>
-              <Bell className="w-8 h-8 text-red-500" />
-            </div>
-          </CardContent>
-        </Card>
+			<div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+				{kpis.map((k) => (
+					<Card key={k.label} className="border-border">
+						<CardContent className="p-4">
+							<div className="flex items-center justify-between">
+								<div>
+									<p className="text-xs text-muted-foreground">{k.label}</p>
+									<p className={cn("text-2xl font-bold", k.tone === "text-primary" ? "" : k.tone)}>{k.value}</p>
+								</div>
+								<k.icon className={cn("h-8 w-8", k.tone)} />
+							</div>
+						</CardContent>
+					</Card>
+				))}
+			</div>
 
-        <Card className="border-border">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground">Tempo Risposta</p>
-                <p className="text-2xl font-bold text-cyan-500">{overviewData.avgResponseTime}</p>
-              </div>
-              <Zap className="w-8 h-8 text-cyan-500" />
-            </div>
-          </CardContent>
-        </Card>
+			<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+				<RiskScoreCard title="Copertura XDR degli endpoint" level={cov.level} levelColor={cov.color} score={coverage} ringColor={cov.ring} />
+				<Card className="border-border">
+					<CardHeader>
+						<CardTitle className="flex items-center gap-2 text-base">
+							<AlertTriangle className="h-4 w-4" />
+							Distribuzione per gravità
+						</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<div className="h-56">
+							<ResponsiveContainer width="100%" height="100%">
+								<PieChart>
+									<Pie data={pie.filter((p) => p.value > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2} dataKey="value" label={({ name, value }) => `${name}: ${value}`}>
+										{pie
+											.filter((p) => p.value > 0)
+											.map((entry, index) => (
+												<Cell key={`cell-${index}`} fill={entry.color} />
+											))}
+									</Pie>
+									<Tooltip />
+								</PieChart>
+							</ResponsiveContainer>
+						</div>
+					</CardContent>
+				</Card>
+			</div>
 
-        <Card className="border-border">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground">Copertura</p>
-                <p className="text-2xl font-bold text-primary">{overviewData.coverageHours}</p>
-              </div>
-              <Shield className="w-8 h-8 text-primary" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+			<div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+				<Card className="border-border">
+					<CardHeader>
+						<CardTitle className="flex items-center gap-2 text-base">
+							<TrendingUp className="h-4 w-4" />
+							Ultimi 7 giorni
+						</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<div className="h-64">
+							<ResponsiveContainer width="100%" height="100%">
+								<BarChart data={weeklyThreatTrend}>
+									<CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+									<XAxis dataKey="day" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+									<YAxis allowDecimals={false} stroke="hsl(var(--muted-foreground))" fontSize={12} />
+									<Tooltip contentStyle={tooltipStyle} />
+									<Legend />
+									<Bar dataKey="critical" stackId="s" fill={SEVERITY.Critical.color} name="Critiche" />
+									<Bar dataKey="high" stackId="s" fill={SEVERITY.High.color} name="Alte" />
+									<Bar dataKey="medium" stackId="s" fill={SEVERITY.Medium.color} name="Medie" />
+									<Bar dataKey="low" stackId="s" fill={SEVERITY.Low.color} name="Basse" />
+								</BarChart>
+							</ResponsiveContainer>
+						</div>
+					</CardContent>
+				</Card>
 
-      {/* Risk Scores */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <RiskScoreCard
-          title="Detection Rate"
-          level="Eccellente"
-          levelColor="green"
-          score={98}
-          ringColor="#22c55e"
-        />
-        <RiskScoreCard
-          title="Threat Coverage"
-          level="Buono"
-          levelColor="green"
-          score={94}
-          ringColor="#22c55e"
-        />
-        <RiskScoreCard
-          title="Response SLA"
-          level="Eccellente"
-          levelColor="green"
-          score={99}
-          ringColor="#22c55e"
-        />
-      </div>
+				<Card className="border-border">
+					<CardHeader>
+						<CardTitle className="flex items-center gap-2 text-base">
+							<Activity className="h-4 w-4" />
+							Detection per ora del giorno ({windowDays} giorni)
+						</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<div className="h-64">
+							<ResponsiveContainer width="100%" height="100%">
+								<LineChart data={hourlyActivity}>
+									<CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+									<XAxis dataKey="hour" stroke="hsl(var(--muted-foreground))" fontSize={10} interval={2} />
+									<YAxis allowDecimals={false} stroke="hsl(var(--muted-foreground))" fontSize={12} />
+									<Tooltip contentStyle={tooltipStyle} />
+									<Line type="monotone" dataKey="alerts" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} name="Detection" />
+									{hourlyActivity.some((h) => h.resolved !== null && h.resolved !== undefined) && (
+										<Line type="monotone" dataKey="resolved" stroke="#22c55e" strokeWidth={2} dot={false} name="Risolte" />
+									)}
+								</LineChart>
+							</ResponsiveContainer>
+						</div>
+					</CardContent>
+				</Card>
+			</div>
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Threat Severity Distribution */}
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4" />
-              Distribuzione Severità Minacce
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={threatSeverityData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={100}
-                    paddingAngle={2}
-                    dataKey="value"
-                    label={({ name, value }) => `${name}: ${value}`}
-                  >
-                    {threatSeverityData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
+			<Card className="border-border">
+				<CardHeader>
+					<CardTitle className="flex items-center gap-2 text-base">
+						<Target className="h-4 w-4" />
+						Tattiche MITRE ATT&CK
+					</CardTitle>
+					<p className="text-sm text-muted-foreground">Detection per tattica; la variazione confronta gli ultimi 7 giorni con i 7 precedenti.</p>
+				</CardHeader>
+				<CardContent>
+					{detectionCategories.length === 0 ? (
+						<p className="text-sm text-muted-foreground">Nessuna detection nel periodo.</p>
+					) : (
+						<div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+							{detectionCategories.map((c) => (
+								<div key={c.category} className="flex items-center justify-between rounded-lg border border-border bg-muted/30 p-3">
+									<div>
+										<p className="text-sm font-medium">{c.category}</p>
+										<p className="text-xs text-muted-foreground">
+											{c.change === null ? "nessun confronto" : `${c.change > 0 ? "+" : ""}${c.change}% sulla settimana prima`}
+										</p>
+									</div>
+									<p className="text-2xl font-bold text-primary">{c.count}</p>
+								</div>
+							))}
+						</div>
+					)}
+				</CardContent>
+			</Card>
 
-        {/* Weekly Threat Trend */}
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <TrendingUp className="w-4 h-4" />
-              Trend Minacce Settimanale
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={weeklyThreatTrend}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="day" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
-                    }}
-                  />
-                  <Legend />
-                  <Area
-                    type="monotone"
-                    dataKey="rilevati"
-                    stackId="1"
-                    stroke="#ef4444"
-                    fill="#ef4444"
-                    fillOpacity={0.3}
-                    name="Rilevati"
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="bloccati"
-                    stackId="2"
-                    stroke="#22c55e"
-                    fill="#22c55e"
-                    fillOpacity={0.3}
-                    name="Bloccati"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+			<Card className="border-border">
+				<CardHeader>
+					<CardTitle className="flex items-center gap-2 text-base">
+						<Bell className="h-4 w-4" />
+						Detection
+					</CardTitle>
+					<p className="text-sm text-muted-foreground">Dalla più recente.</p>
+				</CardHeader>
+				<CardContent className="space-y-3">
+					{realtimeAlerts.length === 0 ? (
+						<p className="text-sm text-muted-foreground">Nessuna detection nel periodo.</p>
+					) : (
+						<>
+							<TablePager p={alertPager} />
+							<div className="overflow-x-auto">
+								<Table>
+									<TableHeader>
+										<TableRow>
+											<TableHead>Ora</TableHead>
+											<TableHead>Gravità</TableHead>
+											<TableHead>Rilevata da</TableHead>
+											<TableHead>Regola</TableHead>
+											<TableHead>Tattica / tecnica</TableHead>
+											<TableHead>Tipo</TableHead>
+											{showStatus && <TableHead>Stato</TableHead>}
+										</TableRow>
+									</TableHeader>
+									<TableBody>
+										{alertPager.visible.map((a) => {
+											const sev = SEVERITY[a.severity] ?? SEVERITY.Low;
+											return (
+												<TableRow key={a.id}>
+													<TableCell className="whitespace-nowrap text-sm text-muted-foreground">{fmtDate(a.timestamp)}</TableCell>
+													<TableCell>
+														<Badge className={sev.badge}>{sev.label}</Badge>
+													</TableCell>
+													<TableCell>{a.source ?? "—"}</TableCell>
+													<TableCell className="text-sm">{a.description ?? a.rule ?? "—"}</TableCell>
+													<TableCell className="text-sm">
+														{a.tactic ?? "—"}
+														{a.technique && <p className="text-xs text-muted-foreground">{a.technique}</p>}
+													</TableCell>
+													<TableCell className="text-sm">{a.type}</TableCell>
+													{showStatus && <TableCell>{a.status ? STATUS_LABEL[a.status] ?? a.status : "—"}</TableCell>}
+												</TableRow>
+											);
+										})}
+									</TableBody>
+								</Table>
+							</div>
+							{alertPager.total > alertPager.size && <TablePager p={alertPager} />}
+						</>
+					)}
+				</CardContent>
+			</Card>
 
-      {/* Detection Categories & Hourly Activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Target className="w-4 h-4" />
-              Categorie di Rilevamento
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={detectionCategoriesData} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis type="number" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                  <YAxis
-                    type="category"
-                    dataKey="category"
-                    stroke="hsl(var(--muted-foreground))"
-                    fontSize={11}
-                    width={120}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
-                    }}
-                  />
-                  <Bar dataKey="count" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
+			{detectionRules.length > 0 && (
+				<Card className="border-border">
+					<CardHeader>
+						<CardTitle className="flex items-center gap-2 text-base">
+							<Shield className="h-4 w-4" />
+							Regole che hanno generato detection
+						</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-5">
+							{detectionRules.map((rule, index) => (
+								<div key={index} className="rounded-lg border border-border bg-muted/30 p-4 text-center">
+									<p className="text-2xl font-bold text-primary">{rule.triggers}</p>
+									<p className="mt-1 text-sm font-medium">{rule.rule}</p>
+									<p className="mt-1 text-xs text-muted-foreground">{[rule.source, rule.category].filter(Boolean).join(" · ")}</p>
+								</div>
+							))}
+						</div>
+					</CardContent>
+				</Card>
+			)}
 
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Activity className="w-4 h-4" />
-              Attività Rilevamento (24h)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={hourlyActivityData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="hour" stroke="hsl(var(--muted-foreground))" fontSize={10} />
-                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="detections"
-                    stroke="hsl(var(--primary))"
-                    strokeWidth={2}
-                    dot={{ fill: 'hsl(var(--primary))' }}
-                    name="Rilevamenti"
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Real-time Alerts */}
-      <Card className="border-border">
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Bell className="w-4 h-4" />
-            Alert in Tempo Reale
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>ID</TableHead>
-                <TableHead>Ora</TableHead>
-                <TableHead>Severità</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Endpoint</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Assegnato</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {realtimeAlerts.map((alert) => (
-                <TableRow key={alert.id}>
-                  <TableCell className="font-mono text-xs">{alert.id}</TableCell>
-                  <TableCell className="text-muted-foreground">{alert.timestamp}</TableCell>
-                  <TableCell>{getSeverityBadge(alert.severity)}</TableCell>
-                  <TableCell>{alert.type}</TableCell>
-                  <TableCell className="font-mono text-xs">{alert.endpoint}</TableCell>
-                  <TableCell>{getStatusBadge(alert.status)}</TableCell>
-                  <TableCell className="text-muted-foreground">{alert.analyst}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      {/* Endpoint Status & SOC Activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Endpoint Protection Status */}
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Monitor className="w-4 h-4" />
-              Stato Protezione Endpoint
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Hostname</TableHead>
-                  <TableHead>IP</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Ultimo Check</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {endpointStatusData.map((endpoint, index) => (
-                  <TableRow key={index}>
-                    <TableCell className="font-mono text-xs">{endpoint.hostname}</TableCell>
-                    <TableCell className="text-muted-foreground text-xs">{endpoint.ip}</TableCell>
-                    <TableCell>{getStatusBadge(endpoint.status)}</TableCell>
-                    <TableCell className="text-muted-foreground text-xs">{endpoint.lastSeen}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-
-        {/* SOC Activity Log */}
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Activity className="w-4 h-4" />
-              Attività SOC
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {socActivityLog.map((activity, index) => (
-                <div
-                  key={index}
-                  className="flex items-start gap-3 p-3 rounded-lg bg-muted/30 border border-border"
-                >
-                  <div className="text-xs text-muted-foreground font-mono w-12">
-                    {activity.time}
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">{activity.action}</p>
-                    <p className="text-xs text-muted-foreground">{activity.details}</p>
-                  </div>
-                  <Badge variant="outline" className="text-xs">
-                    {activity.analyst}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Detection Rules Status */}
-      <Card className="border-border">
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Shield className="w-4 h-4" />
-            Regole di Rilevamento Attive
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            {detectionRulesData.map((rule, index) => (
-              <div
-                key={index}
-                className="p-4 rounded-lg bg-muted/30 border border-border text-center"
-              >
-                <p className="text-2xl font-bold text-primary">{rule.active}</p>
-                <p className="text-sm font-medium mt-1">{rule.category}</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Aggiornato: {rule.updated}
-                </p>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
+			{(endpointStatus.length > 0 || socActivity.length > 0) && (
+				<div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+					{endpointStatus.length > 0 && (
+						<Card className="border-border">
+							<CardHeader>
+								<CardTitle className="flex items-center gap-2 text-base">
+									<Monitor className="h-4 w-4" />
+									Endpoint con detection
+								</CardTitle>
+							</CardHeader>
+							<CardContent className="overflow-x-auto">
+								<Table>
+									<TableHeader>
+										<TableRow>
+											<TableHead>Nome</TableHead>
+											<TableHead>IP</TableHead>
+											<TableHead>Stato</TableHead>
+											<TableHead>Rischio</TableHead>
+										</TableRow>
+									</TableHeader>
+									<TableBody>
+										{endpointStatus.map((e) => (
+											<TableRow key={e.id}>
+												<TableCell className="font-mono text-xs">{e.name}</TableCell>
+												<TableCell className="text-xs text-muted-foreground">{e.ip}</TableCell>
+												<TableCell>{e.status}</TableCell>
+												<TableCell>{e.riskScore}</TableCell>
+											</TableRow>
+										))}
+									</TableBody>
+								</Table>
+							</CardContent>
+						</Card>
+					)}
+					{socActivity.length > 0 && (
+						<Card className="border-border">
+							<CardHeader>
+								<CardTitle className="flex items-center gap-2 text-base">
+									<Activity className="h-4 w-4" />
+									Attività SOC
+								</CardTitle>
+							</CardHeader>
+							<CardContent className="space-y-3">
+								{socActivity.map((a) => (
+									<div key={a.id} className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-3">
+										<div className="w-24 font-mono text-xs text-muted-foreground">{a.timestamp}</div>
+										<div className="flex-1">
+											<p className="text-sm font-medium">{a.action}</p>
+											<p className="text-xs text-muted-foreground">{a.target}</p>
+										</div>
+										<Badge variant="outline" className="text-xs">
+											{a.analyst}
+										</Badge>
+									</div>
+								))}
+							</CardContent>
+						</Card>
+					)}
+				</div>
+			)}
+		</div>
+	);
 };

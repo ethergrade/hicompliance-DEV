@@ -1,21 +1,27 @@
-// @ts-nocheck -- type drift vs API contract, da riallineare
 import { useApiWithFallback } from './useApiWithFallback';
-import { mailApi } from '@/lib/api/mail';
+import { useClientOrganization } from './useClientOrganization';
+import { complianceApiClient } from '@/lib/api-client';
+import type { ApiResponse } from '@/types/api';
 
 export interface EmailStats {
-  totalProcessed: number;
-  delivered: number;
+  /** Null: il totale processato e i consegnati non sono esposti dalla sorgente. */
+  totalProcessed: number | null;
+  delivered: number | null;
   spamBlocked: number;
   phishingBlocked: number;
   malwareBlocked: number;
   quarantined: number;
+  bulk?: number;
+  threats?: number;
+  windowDays?: number;
 }
 
 export interface EmailThreat {
   id: string;
-  from: string;
-  to: string;
-  subject: string;
+  from: string | null;
+  to: string | null;
+  subject: string | null;
+  reason?: string;
   type: 'Phishing' | 'Malware' | 'Spam' | 'BEC';
   detectedAt: string;
   status: 'Blocked' | 'Quarantined' | 'Delivered';
@@ -24,12 +30,17 @@ export interface EmailThreat {
 
 export interface QuarantinedEmail {
   id: string;
-  from: string;
-  to: string;
-  subject: string;
+  from: string | null;
+  fromName?: string | null;
+  to: string | null;
+  recipients?: number;
+  subject: string | null;
   reason: string;
-  quarantinedAt: string;
-  expiresIn: string;
+  reasonCode?: string;
+  direction?: string;
+  attachments?: number;
+  quarantinedAt: string | null;
+  expiresIn: string | null;
   actions: string[];
 }
 
@@ -37,7 +48,7 @@ export interface TopSender {
   domain: string;
   emails: number;
   blocked: number;
-  blockRate: number;
+  blockRate: number | null;
 }
 
 export interface PolicyViolation {
@@ -53,6 +64,11 @@ export interface MailDashboardData {
   quarantinedEmails: QuarantinedEmail[];
   topSenders: TopSender[];
   policyViolations: PolicyViolation[];
+  reasons?: { code: string; label: string; count: number }[];
+  unavailable?: string[];
+  fetchedAt?: string | null;
+  stale?: boolean;
+  lastError?: { code: string; message: string; at: string | null } | null;
 }
 
 const mockMailData: MailDashboardData = {
@@ -96,10 +112,19 @@ const mockMailData: MailDashboardData = {
   ],
 };
 
-export function useMailDashboard(tenantId?: string) {
+export function useMailDashboard() {
+  const { organizationId, groupId } = useClientOrganization();
   return useApiWithFallback<MailDashboardData>(
-    () => mailApi.dashboard(tenantId) as Promise<MailDashboardData>,
+    async () => {
+      if (!organizationId) throw new Error('Nessun cliente selezionato');
+      const res = await complianceApiClient.get<ApiResponse<MailDashboardData>>(
+        `/companies/${organizationId}/sophos/mail/dashboard`,
+        undefined,
+        groupId ? { headers: { 'X-Group-Id': groupId } } : undefined,
+      );
+      return res.data;
+    },
     mockMailData,
-    [tenantId],
+    [organizationId, groupId],
   );
 }

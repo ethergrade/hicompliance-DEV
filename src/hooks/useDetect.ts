@@ -1,25 +1,36 @@
-// @ts-nocheck -- type drift vs API contract, da riallineare
 import { useApiWithFallback } from './useApiWithFallback';
-import { detectApi } from '@/lib/api/detect';
+import { useClientOrganization } from './useClientOrganization';
+import { complianceApiClient } from '@/lib/api-client';
+import type { ApiResponse } from '@/types/api';
 
 export interface DetectOverviewData {
   totalEndpoints: number;
   monitoredEndpoints: number;
   threatsDetected: number;
   alertsToday: number;
-  avgResponseTime: string;
-  coverageHours: string;
+  /** Null senza i casi MDR. */
+  avgResponseTime: string | null;
+  coverageHours: string | null;
+  last7Days?: number;
+  criticalOrHigh?: number;
+  windowDays?: number;
 }
 
 export interface RealtimeAlert {
   id: string;
   type: string;
   severity: 'Critical' | 'High' | 'Medium' | 'Low';
-  source: string;
-  destination: string;
-  description: string;
-  timestamp: string;
-  status: 'New' | 'Investigating' | 'Resolved' | 'Escalated';
+  /** Sensore che ha rilevato (Firewall, Email, Endpoint…). */
+  source: string | null;
+  destination: string | null;
+  description: string | null;
+  rule?: string | null;
+  tactic?: string | null;
+  technique?: string | null;
+  score?: number;
+  timestamp: string | null;
+  /** Null: lo stato vive nei casi, non nelle detection. */
+  status: 'New' | 'Investigating' | 'Resolved' | 'Escalated' | null;
 }
 
 export interface EndpointStatus {
@@ -44,14 +55,18 @@ export interface SocActivity {
 
 export interface DetectDashboardData {
   overview: DetectOverviewData;
-  threatSeverityData: { name: string; value: number; color: string }[];
+  threatSeverityData: { name: string; value: number; color?: string; key?: string }[];
   weeklyThreatTrend: { day: string; critical: number; high: number; medium: number; low: number }[];
-  detectionCategories: { category: string; count: number; change: number }[];
+  detectionCategories: { category: string; count: number; change: number | null }[];
   realtimeAlerts: RealtimeAlert[];
   endpointStatus: EndpointStatus[];
   socActivity: SocActivity[];
-  detectionRules: { rule: string; category: string; triggers: number; status: 'Active' | 'Disabled' }[];
-  hourlyActivity: { hour: string; alerts: number; resolved: number }[];
+  detectionRules: { rule: string; category: string; triggers: number; status: 'Active' | 'Disabled'; source?: string | null }[];
+  hourlyActivity: { hour: string; alerts: number; resolved: number | null }[];
+  unavailable?: string[];
+  fetchedAt?: string | null;
+  stale?: boolean;
+  lastError?: { code: string; message: string; at: string | null } | null;
 }
 
 const mockDetectData: DetectDashboardData = {
@@ -128,10 +143,19 @@ const mockDetectData: DetectDashboardData = {
   ],
 };
 
-export function useDetectDashboard(tenantId?: string) {
+export function useDetectDashboard() {
+  const { organizationId, groupId } = useClientOrganization();
   return useApiWithFallback<DetectDashboardData>(
-    () => detectApi.dashboard(tenantId) as Promise<DetectDashboardData>,
+    async () => {
+      if (!organizationId) throw new Error('Nessun cliente selezionato');
+      const res = await complianceApiClient.get<ApiResponse<DetectDashboardData>>(
+        `/companies/${organizationId}/sophos/detect/dashboard`,
+        undefined,
+        groupId ? { headers: { 'X-Group-Id': groupId } } : undefined,
+      );
+      return res.data;
+    },
     mockDetectData,
-    [tenantId],
+    [organizationId, groupId],
   );
 }

@@ -1,6 +1,7 @@
-// @ts-nocheck -- type drift vs API contract, da riallineare
 import { useApiWithFallback } from './useApiWithFallback';
-import { mobileApi } from '@/lib/api/mobile';
+import { useClientOrganization } from './useClientOrganization';
+import { complianceApiClient } from '@/lib/api-client';
+import type { ApiResponse } from '@/types/api';
 
 export interface MobileOverviewData {
   totalDevices: number;
@@ -10,18 +11,26 @@ export interface MobileOverviewData {
   iOSDevices: number;
   androidDevices: number;
   pendingEnrollment: number;
+  otherDevices?: number;
 }
 
 export interface MobileDeviceInventory {
   id: string;
   deviceName: string;
-  user: string;
-  os: string;
-  model: string;
+  user: string | null;
+  os: string | null;
+  platform?: string | null;
+  /** Null quando la sorgente non lo fornisce (modello, batteria, cifratura). */
+  model: string | null;
   status: 'Compliant' | 'Non Compliant';
-  lastSeen: string;
-  battery: number;
-  encrypted: boolean;
+  complianceSeverity?: string | null;
+  health?: string | null;
+  enrollment?: string | null;
+  management?: string | null;
+  ownership?: string | null;
+  lastSeen: string | null;
+  battery: number | null;
+  encrypted: boolean | null;
 }
 
 export interface SecurityPolicy {
@@ -39,6 +48,7 @@ export interface AppInventoryItem {
 }
 
 export interface SecurityEvent {
+  id?: string;
   time: string;
   event: string;
   device: string;
@@ -47,13 +57,18 @@ export interface SecurityEvent {
 
 export interface MobileDashboardData {
   overview: MobileOverviewData;
-  osDistribution: { name: string; value: number; color: string }[];
+  osDistribution: { name: string; value: number; color?: string }[];
   complianceData: { category: string; compliant: number; nonCompliant: number }[];
   enrollmentTrend: { month: string; enrolled: number; active: number }[];
   deviceInventory: MobileDeviceInventory[];
   securityPolicies: SecurityPolicy[];
   appInventory: AppInventoryItem[];
   securityEvents: SecurityEvent[];
+  /** Sezioni che la sorgente non fornisce: la UI le nasconde. */
+  unavailable?: string[];
+  fetchedAt?: string | null;
+  stale?: boolean;
+  lastError?: { code: string; message: string; at: string | null } | null;
 }
 
 const mockMobileData: MobileDashboardData = {
@@ -121,10 +136,19 @@ const mockMobileData: MobileDashboardData = {
   ],
 };
 
-export function useMobileDashboard(tenantId?: string) {
+export function useMobileDashboard() {
+  const { organizationId, groupId } = useClientOrganization();
   return useApiWithFallback<MobileDashboardData>(
-    () => mobileApi.dashboard(tenantId) as Promise<MobileDashboardData>,
+    async () => {
+      if (!organizationId) throw new Error('Nessun cliente selezionato');
+      const res = await complianceApiClient.get<ApiResponse<MobileDashboardData>>(
+        `/companies/${organizationId}/sophos/mobile/dashboard`,
+        undefined,
+        groupId ? { headers: { 'X-Group-Id': groupId } } : undefined,
+      );
+      return res.data;
+    },
     mockMobileData,
-    [tenantId],
+    [organizationId, groupId],
   );
 }
