@@ -130,16 +130,6 @@ export const REPORT_GLOSSARY: GlossaryTerm[] = [
     definition:
       'Open Source Intelligence: raccolta di informazioni da fonti pubblicamente accessibili (DNS, certificati, registri WHOIS, social, web). Base di ogni attività ricognitiva.',
   },
-  {
-    term: 'Shodan',
-    definition:
-      'Motore di ricerca specializzato che indicizza servizi e dispositivi esposti su Internet. Usato per trovare porte aperte, versioni software e configurazioni rischiose.',
-  },
-  {
-    term: 'crt.sh',
-    definition:
-      'Interfaccia web al registro Certificate Transparency. Permette di scoprire tutti i sottodomini registrati con certificati SSL per un dominio.',
-  },
   // ── Sorgenti DarkRisk360 ──────────────────────────────────────────────────
   {
     term: 'Data Leak riservati',
@@ -166,11 +156,6 @@ export const REPORT_GLOSSARY: GlossaryTerm[] = [
     term: 'Threat intelligence',
     definition:
       'Raccolta e analisi di dati su minacce informatiche attuali o potenziali. Include informazioni su attaccanti, tattiche, credenziali rubate e vulnerabilità sfruttate, provenienti da fonti OSINT, dark web e feed specializzati.',
-  },
-  {
-    term: 'IntelX (Intelligence eXtended)',
-    definition:
-      'Servizio di threat intelligence che indicizza leak, databreach, dark web e fonti OSINT. Usato da DarkRisk360 per trovare credenziali e dati esposti del cliente.',
   },
   {
     term: 'Credential leak / Databreach',

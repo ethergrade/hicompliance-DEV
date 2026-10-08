@@ -13,7 +13,7 @@ const SOURCE_PATTERNS: Array<{ pattern: RegExp; label: string }> = [
   { pattern: /\breverse[_-\s]?dns\b/i, label: 'Reverse DNS' },
   { pattern: /\bsubdomain[_-\s]?dump\b/i, label: 'Discovery sottodomini' },
   { pattern: /\bmanual|scope\b/i, label: 'Scope' },
-  { pattern: /\bcve|nvd|kev|epss\b/i, label: 'CVE/NVD' },
+  { pattern: /\bcve|nvd|kev|epss\b/i, label: 'Catalogo CVE' },
 ];
 
 const INTERNAL_SOURCE_TOKENS: RegExp[] = [

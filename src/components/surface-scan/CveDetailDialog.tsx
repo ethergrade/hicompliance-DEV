@@ -51,7 +51,7 @@ export const CveDetailDialog: React.FC<CveDetailDialogProps> = ({ cveId, open, o
             )}
           </DialogTitle>
           <DialogDescription>
-            Dettagli NVD + EPSS + CISA Known Exploited Vulnerabilities
+            Gravità, probabilità di sfruttamento (EPSS) e sfruttamento attivo noto (KEV)
           </DialogDescription>
         </DialogHeader>
 
@@ -122,9 +122,9 @@ export const CveDetailDialog: React.FC<CveDetailDialogProps> = ({ cveId, open, o
               )}
 
               <div>
-                <h4 className="font-semibold mb-1">Descrizione NVD (originale inglese)</h4>
+                <h4 className="font-semibold mb-1">Descrizione ufficiale (in inglese)</h4>
                 <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                  {intel.description_en ?? 'Descrizione NVD non disponibile'}
+                  {intel.description_en ?? 'Descrizione ufficiale non disponibile'}
                 </p>
               </div>
 
@@ -204,7 +204,7 @@ export const CveDetailDialog: React.FC<CveDetailDialogProps> = ({ cveId, open, o
               <div className="pt-2 border-t flex items-center justify-between">
                 <a href={nvdLink(intel.cve_id)} target="_blank" rel="noopener noreferrer">
                   <Button variant="outline" size="sm" className="gap-1">
-                    Apri su NVD <ExternalLink className="w-3 h-3" />
+                    Scheda CVE <ExternalLink className="w-3 h-3" />
                   </Button>
                 </a>
                 <span className="text-xs text-muted-foreground">

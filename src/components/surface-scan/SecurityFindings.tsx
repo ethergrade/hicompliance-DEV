@@ -131,7 +131,7 @@ const sourceFamily = (row: SurfaceFindingRow): string => {
   const provider = String(row.provider || '').toLowerCase();
   const module = String(row.module || '').toLowerCase();
   const findingType = String(row.finding_type || '').toLowerCase();
-  if (provider.includes('surface_report') || module.includes('cve_catalog')) return 'CVE/NVD';
+  if (provider.includes('surface_report') || module.includes('cve_catalog')) return 'Catalogo CVE';
   if (findingType.includes('open_port') || findingType.includes('service_fingerprint') || findingType.includes('sensitive_port')) {
     return 'Servizi esposti';
   }
