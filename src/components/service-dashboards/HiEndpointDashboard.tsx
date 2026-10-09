@@ -60,7 +60,12 @@ const severityColors = {
 	Critical: "bg-red-500/20 text-red-500",
 };
 
-const severityLabel = { Low: "Bassa", Medium: "Media", High: "Alta", Critical: "Critica" };
+const severityLabel = {
+	Low: "Bassa",
+	Medium: "Media",
+	High: "Alta",
+	Critical: "Critica",
+};
 
 const fmtDate = (v: string | null | undefined) => {
 	if (!v) return "—";
@@ -96,11 +101,43 @@ export const HiEndpointDashboard: React.FC = () => {
 	}, [endpoints, search, protection, status, type]);
 
 	const devicePager = usePager(filtered, `${search}|${protection}|${status}|${type}`);
-	const threatPager = usePager(data?.detectedThreats ?? [], data?.fetchedAt);
+
+	// Filtri delle minacce e degli aggiornamenti, anche per dispositivo.
+	const [threatSearch, setThreatSearch] = useState("");
+	const [threatType, setThreatType] = useState("all");
+	const [threatSeverity, setThreatSeverity] = useState("all");
+	const [updateSearch, setUpdateSearch] = useState("");
+	const threats = useMemo(() => data?.detectedThreats ?? [], [data]);
+	const filteredThreats = useMemo(() => {
+		const q = threatSearch.trim().toLowerCase();
+		return threats.filter(
+			(t) =>
+				(!q || [t.endpoint, t.threatName].some((v) => (v ?? "").toLowerCase().includes(q))) &&
+				(threatType === "all" || t.type === threatType) &&
+				(threatSeverity === "all" || t.severity === threatSeverity),
+		);
+	}, [threats, threatSearch, threatType, threatSeverity]);
+	const threatPager = usePager(filteredThreats, `${data?.fetchedAt}|${threatSearch}|${threatType}|${threatSeverity}`);
+	const filteredUpdates = useMemo(() => {
+		const q = updateSearch.trim().toLowerCase();
+		return (data?.pendingUpdates ?? []).filter(
+			(u) => !q || [u.endpoint, u.reason, u.currentVersion].some((v) => (v ?? "").toLowerCase().includes(q)),
+		);
+	}, [data, updateSearch]);
+	const updatePager = usePager(filteredUpdates, `${data?.fetchedAt}|${updateSearch}`);
+
+	// Dal numero di minacce di un dispositivo all'elenco filtrato su quel dispositivo.
+	const showThreatsOf = (name: string) => {
+		setThreatSearch(name);
+		setThreatType("all");
+		setThreatSeverity("all");
+		document.getElementById("hiendpoint-threats")?.scrollIntoView({ behavior: "smooth", block: "start" });
+	};
 
 	if (!data) return <ServiceNotConnected service="HiEndpoint" loading={loading} detail={error} />;
 
 	const { stats, detectedThreats, pendingUpdates } = data;
+	const threatTypes = Array.from(new Set(detectedThreats.map((t) => t.type))).sort();
 	const protectionScore = stats.totalEndpoints > 0 ? Math.round((stats.protectedEndpoints / stats.totalEndpoints) * 100) : 0;
 	const complianceScore = endpoints.length > 0 ? Math.round(endpoints.reduce((s, e) => s + e.compliance, 0) / endpoints.length) : 0;
 	const p = scoreLevel(protectionScore);
@@ -108,12 +145,48 @@ export const HiEndpointDashboard: React.FC = () => {
 	const types = Array.from(new Set(endpoints.map((e) => e.type)));
 
 	const kpis = [
-		{ icon: Cpu, value: stats.totalEndpoints, label: "Totale endpoint", tone: "text-primary", valueTone: "" },
-		{ icon: ShieldCheck, value: stats.protectedEndpoints, label: "Protetti", tone: "text-green-500", valueTone: "text-green-500" },
-		{ icon: ShieldAlert, value: stats.atRiskEndpoints, label: "A rischio", tone: "text-red-500", valueTone: "text-red-500" },
-		{ icon: CheckCircle, value: stats.onlineEndpoints, label: "Online", tone: "text-green-500", valueTone: "text-green-500" },
-		{ icon: XCircle, value: stats.offlineEndpoints, label: "Offline", tone: "text-muted-foreground", valueTone: "text-muted-foreground" },
-		{ icon: Clock, value: stats.pendingUpdates, label: "Da aggiornare", tone: "text-yellow-500", valueTone: "text-yellow-500" },
+		{
+			icon: Cpu,
+			value: stats.totalEndpoints,
+			label: "Totale endpoint",
+			tone: "text-primary",
+			valueTone: "",
+		},
+		{
+			icon: ShieldCheck,
+			value: stats.protectedEndpoints,
+			label: "Protetti",
+			tone: "text-green-500",
+			valueTone: "text-green-500",
+		},
+		{
+			icon: ShieldAlert,
+			value: stats.atRiskEndpoints,
+			label: "A rischio",
+			tone: "text-red-500",
+			valueTone: "text-red-500",
+		},
+		{
+			icon: CheckCircle,
+			value: stats.onlineEndpoints,
+			label: "Online",
+			tone: "text-green-500",
+			valueTone: "text-green-500",
+		},
+		{
+			icon: XCircle,
+			value: stats.offlineEndpoints,
+			label: "Offline",
+			tone: "text-muted-foreground",
+			valueTone: "text-muted-foreground",
+		},
+		{
+			icon: Clock,
+			value: stats.pendingUpdates,
+			label: "Da aggiornare",
+			tone: "text-yellow-500",
+			valueTone: "text-yellow-500",
+		},
 	];
 
 	return (
@@ -148,7 +221,13 @@ export const HiEndpointDashboard: React.FC = () => {
 
 				<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
 					<div className="relative">
-						<RiskScoreCard title="Endpoint Protection Score" level={p.level} levelColor={p.color} score={protectionScore} ringColor={p.ring} />
+						<RiskScoreCard
+							title="Endpoint Protection Score"
+							level={p.level}
+							levelColor={p.color}
+							score={protectionScore}
+							ringColor={p.ring}
+						/>
 						<ScoreInfo text="Quota dei dispositivi protetti: stato di salute buono e protezione aggiornata, sul totale dei dispositivi." />
 					</div>
 					<div className="relative">
@@ -172,10 +251,23 @@ export const HiEndpointDashboard: React.FC = () => {
 						<div className="flex flex-wrap items-center gap-2">
 							<div className="relative min-w-[220px] flex-1">
 								<Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-								<Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cerca nome o sistema operativo…" className="pl-8" />
+								<Input
+									value={search}
+									onChange={(e) => setSearch(e.target.value)}
+									placeholder="Cerca nome o sistema operativo…"
+									className="pl-8"
+								/>
 							</div>
 							<FilterSelect value={protection} onChange={setProtection} all="Ogni protezione" options={Object.entries(protectionLabel)} />
-							<FilterSelect value={status} onChange={setStatus} all="Online e offline" options={[["Online", "Online"], ["Offline", "Offline"]]} />
+							<FilterSelect
+								value={status}
+								onChange={setStatus}
+								all="Online e offline"
+								options={[
+									["Online", "Online"],
+									["Offline", "Offline"],
+								]}
+							/>
 							{types.length > 1 && <FilterSelect value={type} onChange={setType} all="Ogni tipo" options={types.map((t) => [t, t])} />}
 						</div>
 						<Pager p={devicePager} />
@@ -215,20 +307,36 @@ export const HiEndpointDashboard: React.FC = () => {
 												<TableCell className="text-sm">{e.os ?? "—"}</TableCell>
 												<TableCell className="whitespace-nowrap text-sm text-muted-foreground">{fmtDate(e.lastSeen)}</TableCell>
 												<TableCell>
-													<Badge className={e.status === "Online" ? "bg-green-500/20 text-green-500" : "bg-muted text-muted-foreground"}>{e.status}</Badge>
+													<Badge className={e.status === "Online" ? "bg-green-500/20 text-green-500" : "bg-muted text-muted-foreground"}>
+														{e.status}
+													</Badge>
 												</TableCell>
 												<TableCell>
 													<Badge className={protectionColors[e.protection]}>{protectionLabel[e.protection]}</Badge>
 													{e.tamperProtection === false && <p className="mt-1 text-[10px] text-amber-500">Anti-manomissione spenta</p>}
 												</TableCell>
 												<TableCell>
-													<span className={e.threats > 0 ? "font-semibold text-red-500" : "text-green-500"}>{e.threats}</span>
+													{e.threats > 0 ? (
+														<button
+															type="button"
+															className="font-semibold text-red-500 underline-offset-2 hover:underline"
+															onClick={() => showThreatsOf(e.name)}
+															title="Mostra le minacce di questo endpoint"
+														>
+															{e.threats}
+														</button>
+													) : (
+														<span className="text-green-500">0</span>
+													)}
 												</TableCell>
 												<TableCell>
 													<div className="flex items-center gap-2">
 														<div className="h-2 w-16 overflow-hidden rounded-full bg-muted">
 															<div
-																className={cn("h-full rounded-full", e.compliance >= 90 ? "bg-green-500" : e.compliance >= 70 ? "bg-yellow-500" : "bg-red-500")}
+																className={cn(
+																	"h-full rounded-full",
+																	e.compliance >= 90 ? "bg-green-500" : e.compliance >= 70 ? "bg-yellow-500" : "bg-red-500",
+																)}
 																style={{ width: `${e.compliance}%` }}
 															/>
 														</div>
@@ -253,7 +361,7 @@ export const HiEndpointDashboard: React.FC = () => {
 				</Card>
 			</section>
 
-			<section className="space-y-4">
+			<section className="scroll-mt-24 space-y-4" id="hiendpoint-threats">
 				<h2 className="text-2xl font-bold">Minacce Rilevate</h2>
 				<Card className="border-border">
 					<CardHeader>
@@ -268,6 +376,37 @@ export const HiEndpointDashboard: React.FC = () => {
 							<p className="text-sm text-muted-foreground">Nessuna minaccia aperta.</p>
 						) : (
 							<>
+								<div className="flex flex-wrap items-center gap-2">
+									<div className="relative min-w-[220px] flex-1">
+										<Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+										<Input
+											value={threatSearch}
+											onChange={(e) => setThreatSearch(e.target.value)}
+											placeholder="Cerca endpoint o descrizione…"
+											className="pl-8"
+										/>
+									</div>
+									<FilterSelect value={threatType} onChange={setThreatType} all="Ogni tipo" options={threatTypes.map((t) => [t, t])} />
+									<FilterSelect
+										value={threatSeverity}
+										onChange={setThreatSeverity}
+										all="Ogni gravità"
+										options={Object.entries(severityLabel)}
+									/>
+									{(threatSearch || threatType !== "all" || threatSeverity !== "all") && (
+										<button
+											type="button"
+											className="text-sm text-muted-foreground hover:underline"
+											onClick={() => {
+												setThreatSearch("");
+												setThreatType("all");
+												setThreatSeverity("all");
+											}}
+										>
+											Azzera filtri
+										</button>
+									)}
+								</div>
 								<Pager p={threatPager} />
 								<div className="overflow-x-auto">
 									<Table>
@@ -292,9 +431,17 @@ export const HiEndpointDashboard: React.FC = () => {
 													</TableCell>
 												</TableRow>
 											))}
+											{threatPager.visible.length === 0 && (
+												<TableRow>
+													<TableCell colSpan={5} className="text-center text-sm text-muted-foreground">
+														Nessuna minaccia corrisponde ai filtri.
+													</TableCell>
+												</TableRow>
+											)}
 										</TableBody>
 									</Table>
 								</div>
+								{threatPager.total > threatPager.size && <Pager p={threatPager} />}
 							</>
 						)}
 					</CardContent>
@@ -311,36 +458,55 @@ export const HiEndpointDashboard: React.FC = () => {
 						</CardTitle>
 						<p className="text-sm text-muted-foreground">Endpoint con il pacchetto di protezione non aggiornato o non più supportato.</p>
 					</CardHeader>
-					<CardContent>
+					<CardContent className="space-y-3">
 						{pendingUpdates.length === 0 ? (
 							<p className="text-sm text-muted-foreground">Tutti gli endpoint hanno la protezione aggiornata.</p>
 						) : (
-							<div className="overflow-x-auto">
-								<Table>
-									<TableHeader>
-										<TableRow>
-											<TableHead>Endpoint</TableHead>
-											<TableHead>Motivo</TableHead>
-											<TableHead>Versione attuale</TableHead>
-											<TableHead>Disponibile</TableHead>
-											<TableHead>Priorità</TableHead>
-										</TableRow>
-									</TableHeader>
-									<TableBody>
-										{pendingUpdates.map((u, i) => (
-											<TableRow key={`${u.endpoint}-${i}`}>
-												<TableCell className="font-medium">{u.endpoint ?? "—"}</TableCell>
-												<TableCell>{u.reason ?? u.component}</TableCell>
-												<TableCell className="font-mono text-sm">{u.currentVersion ?? "—"}</TableCell>
-												<TableCell className="font-mono text-sm text-green-500">{u.latestVersion ?? "—"}</TableCell>
-												<TableCell>
-													<Badge className={severityColors[u.priority]}>{severityLabel[u.priority]}</Badge>
-												</TableCell>
+							<>
+								<div className="relative max-w-md">
+									<Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+									<Input
+										value={updateSearch}
+										onChange={(e) => setUpdateSearch(e.target.value)}
+										placeholder="Cerca endpoint o versione…"
+										className="pl-8"
+									/>
+								</div>
+								{updatePager.total > 10 && <Pager p={updatePager} />}
+								<div className="overflow-x-auto">
+									<Table>
+										<TableHeader>
+											<TableRow>
+												<TableHead>Endpoint</TableHead>
+												<TableHead>Motivo</TableHead>
+												<TableHead>Versione attuale</TableHead>
+												<TableHead>Disponibile</TableHead>
+												<TableHead>Priorità</TableHead>
 											</TableRow>
-										))}
-									</TableBody>
-								</Table>
-							</div>
+										</TableHeader>
+										<TableBody>
+											{updatePager.visible.map((u, i) => (
+												<TableRow key={`${u.endpoint}-${i}`}>
+													<TableCell className="font-medium">{u.endpoint ?? "—"}</TableCell>
+													<TableCell>{u.reason ?? u.component}</TableCell>
+													<TableCell className="font-mono text-sm">{u.currentVersion ?? "—"}</TableCell>
+													<TableCell className="font-mono text-sm text-green-500">{u.latestVersion ?? "—"}</TableCell>
+													<TableCell>
+														<Badge className={severityColors[u.priority]}>{severityLabel[u.priority]}</Badge>
+													</TableCell>
+												</TableRow>
+											))}
+											{updatePager.visible.length === 0 && (
+												<TableRow>
+													<TableCell colSpan={5} className="text-center text-sm text-muted-foreground">
+														Nessun endpoint corrisponde alla ricerca.
+													</TableCell>
+												</TableRow>
+											)}
+										</TableBody>
+									</Table>
+								</div>
+							</>
 						)}
 					</CardContent>
 				</Card>
