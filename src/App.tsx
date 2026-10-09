@@ -43,6 +43,7 @@ import MfaSetup from "./pages/MfaSetup";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import NucleiScan360 from "./pages/NucleiScan360";
+import SystemStatus from "./pages/SystemStatus";
 import SamlCallback from "./pages/SamlCallback";
 import EntraRedirect from "./pages/EntraRedirect";
 import NotFound from "./pages/NotFound";
@@ -87,6 +88,7 @@ const App = () => (
 							<Route path="/login" element={<SamlCallback />} />
 							<Route path="/entra" element={<EntraRedirect />} />
 							<Route path="/admin/nuclei-scan360" element={<NucleiScan360 />} />
+							<Route path="/admin/status" element={<SystemStatus />} />
 							<Route path="/admin/clients" element={<ClientSelection />} />
 							<Route
 								path="/dashboard"

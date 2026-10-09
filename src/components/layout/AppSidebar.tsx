@@ -129,6 +129,12 @@ const adminNavigation = [
 		icon: Settings,
 	},
 	{
+		title: "Stato piattaforma",
+		href: "/admin/status",
+		icon: Activity,
+		superAdminOnly: true,
+	},
+	{
 		title: "NUCLEI-SCAN360",
 		href: "/admin/nuclei-scan360",
 		icon: Radar,
@@ -492,6 +498,8 @@ export const AppSidebar: React.FC = () => {
 							<SidebarMenu>
 								{adminNavigation
 									.filter((item) => {
+										// Le voci riservate al super-admin non si mostrano agli admin di gruppo.
+										if ((item as { superAdminOnly?: boolean }).superAdminOnly && !isSuperAdmin) return false;
 										// Capability-based gating (Stefano dotted keys)
 										const hasCompanyMgmt = hasCapability("companies.manage");
 										const hasUserMgmt = hasCapability("users.manage");
