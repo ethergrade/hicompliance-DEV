@@ -47,6 +47,12 @@ import { FALLBACK_SERVICE_CATALOG } from "@/data/serviceCatalog";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import type { TenantServiceResource } from "@/types/api";
 import { getErrorDetail } from "@/lib/api-client";
+import { Package as PackageIcon, FolderOpen as FolderOpenIcon } from "lucide-react";
+
+const SIMPLE_SERVICES = [
+	{ code: "assetmanagement", name: "Asset Management", description: "Registro asset del cliente (con HaloPSA facoltativo)", icon: PackageIcon },
+	{ code: "documents", name: "Gestione Documenti", description: "Archivio documentale ISO del cliente", icon: FolderOpenIcon },
+];
 
 interface ClientServicesDialogProps {
 	open: boolean;
@@ -223,6 +229,25 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 	// Feature flags derived from tenant-services
 	const orgFlags = deriveFlags(tenantServices);
 	const darkRiskEntitlement = deriveDarkRiskTier(tenantServices);
+
+	// Servizi semplici on/off (Asset Management, Gestione Documenti)
+	const simpleToggle = useMutation({
+		mutationFn: async ({ code, on }: { code: string; on: boolean }) => {
+			if (!organizationId) throw new Error("Nessuna azienda selezionata");
+			const row = tenantServices.find((s) => s.service_type === code);
+			if (row) {
+				await tenantServicesApi.update(row.id, { status: on ? "active" : "inactive" } as any, groupId);
+			} else if (on) {
+				await tenantServicesApi.create({ tenant_id: organizationId, service_type: code, status: "active" }, groupId);
+			}
+		},
+		onSuccess: () => {
+			refetchServices();
+			queryClient.invalidateQueries({ queryKey: ["org-services-hydrate", organizationId] });
+			toast.success("Servizio aggiornato");
+		},
+		onError: (err: Error) => toast.error(`Errore servizio: ${getErrorDetail(err)}`),
+	});
 
 	const updateFlagsMutation = useMutation({
 		mutationFn: async (patch: Record<string, boolean | string>) => {
@@ -1190,6 +1215,29 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 									</div>
 								</div>
 							)}
+
+							{SIMPLE_SERVICES.map((svc) => {
+								const row = tenantServices.find((s) => s.service_type === svc.code);
+								const on = !!row && (row.status === "active" || !row.status);
+								return (
+									<div key={svc.code} className="flex items-center justify-between rounded-md border p-3">
+										<div className="flex items-center gap-3">
+											<div className={`p-1.5 rounded-md ${on ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+												<svc.icon className="w-4 h-4" />
+											</div>
+											<div>
+												<p className="text-sm font-medium">{svc.name}</p>
+												<p className="text-xs text-muted-foreground">{svc.description}</p>
+											</div>
+										</div>
+										<Switch
+											checked={on}
+											disabled={simpleToggle.isPending}
+											onCheckedChange={(v) => simpleToggle.mutate({ code: svc.code, on: v })}
+										/>
+									</div>
+								);
+							})}
 						</div>
 					</ScrollArea>
 				)}

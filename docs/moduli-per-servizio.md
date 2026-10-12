@@ -5,7 +5,10 @@ Aggiornato: 12/10/2026
 ## Regola
 Con un cliente selezionato, menu laterale, pagine e dashboard mostrano solo i moduli il cui servizio è **attivo** per quel cliente (`tenant_services.tenant_id = organizations.id`, `status = 'active'`).
 Senza cliente selezionato (vista console super admin / sales) si vede tutto.
-I moduli generali (Home, Dashboard, CyberNews, Report, Gestione Documenti, Impostazioni, Admin) sono sempre visibili.
+I moduli generali (Home, Dashboard, CyberNews, Report, Impostazioni, Admin) sono sempre visibili. **Gestione Documenti e Asset Management sono servizi** e compaiono solo se attivi.
+
+## Dove si attivano
+Gestione Clienti → scheda del cliente → **Servizi**. Ogni servizio ha un interruttore: HiCompliance, SurfaceScan360, DarkRisk360, HiPatch, HiTrack, prodotti Sophos, **Asset Management** e **Gestione Documenti**. Accendere crea/riattiva la riga `tenant_services` (`status='active'`), spegnere la mette a `inactive`. Il menu si aggiorna subito.
 
 ## Mappa pagina → servizio
 Unica fonte: `src/config/moduleServiceMap.ts`.
@@ -15,7 +18,8 @@ Unica fonte: `src/config/moduleServiceMap.ts`.
 | /assessment, /analytics, /remediation, /compliance-events, /incident-response, /business-impact-analysis, /supply-chain | hicompliance |
 | /surface-scan/* | surfacescan |
 | /dark-risk, /dark-risk-esteso | darkrisk (Esteso richiede anche tier extended nei settings) |
-| /asset-management | assetmanagement (nuovo) |
+| /asset-management | assetmanagement |
+| /documents | documents (nuovo) |
 | /dashboard/service/hitrack, hipatch, hiendpoint, hifirewall, hidetect, himail, himobile, hilog | stesso codice |
 
 Supply Chain resta inoltre limitata alla demo Innovatech.
@@ -28,17 +32,19 @@ Supply Chain resta inoltre limitata alla demo Innovatech.
 - `Dashboard`: il riquadro rischio per servizio considera solo HiTrack/SurfaceScan/DarkRisk attivi; se nessuno è attivo mostra "Nessun servizio di sicurezza attivo".
 
 ## Dati
-- Aggiunto `assetmanagement` a `hisolution_services` e a `FALLBACK_SERVICE_CATALOG`.
+- Aggiunti `assetmanagement` e `documents` a `hisolution_services` e a `FALLBACK_SERVICE_CATALOG`.
+- `documents` attivato per tutti i clienti esistenti tranne AKC, per non togliere l'accesso a chi lo usava.
+- `ClientServicesDialog`: interruttori dedicati per Asset Management e Gestione Documenti (lista `SIMPLE_SERVICES`).
 - Attivato `assetmanagement` per AKC e per i clienti che avevano già asset (Innovatech).
-- AKC ha quindi solo Asset Management.
+- AKC ha quindi solo Asset Management (niente Gestione Documenti).
 
 ## Aggiungere un nuovo modulo
-1. Aggiungere il servizio al catalogo (`hisolution_services` + `serviceCatalog.ts`).
+1. Aggiungere il servizio al catalogo (`hisolution_services` + `serviceCatalog.ts`) e l'interruttore in Gestione Clienti → Servizi (`SIMPLE_SERVICES` se è un semplice on/off).
 2. Aggiungere la riga in `MODULE_SERVICE_MAP`.
 3. Avvolgere la pagina in `ClientSelectionGuard`.
 
 ## Test manuali
-- AKC: menu con sole voci generali + Asset Management; `/assessment` → pagina "non attivo".
+- AKC: menu con sole voci generali + Asset Management (senza Gestione Documenti); `/assessment` → pagina "non attivo".
 - Innovatech: tutti i moduli visibili.
 - Cliente senza servizi: solo voci generali; dashboard con "Nessun servizio di sicurezza attivo".
 - Vista console senza cliente: tutto visibile.
