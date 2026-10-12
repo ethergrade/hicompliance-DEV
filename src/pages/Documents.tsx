@@ -13,6 +13,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { useContactDirectory } from '@/hooks/useContactDirectory';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { documentsApi } from '@/lib/api';
+import { SOURCE_LABELS } from '@/lib/api/documents';
 import type { DocumentResource } from '@/types/api';
 import DocumentSearchBar, { DocumentFilters } from '@/components/documents/DocumentSearchBar';
 import DocumentMetadataDialog, { DocumentMetadata } from '@/components/documents/DocumentMetadataDialog';
@@ -60,6 +61,8 @@ const Documents: React.FC = () => {
   });
   const [tagInput, setTagInput] = useState('');
   const [showUploadDetails, setShowUploadDetails] = useState(false);
+  const [uploadOrigin, setUploadOrigin] = useState<'manual' | 'irp'>('manual');
+  const [sourceFilter, setSourceFilter] = useState<string>('all');
 
   // Metadata dialog
   const [metadataDialogOpen, setMetadataDialogOpen] = useState(false);
@@ -100,6 +103,7 @@ const Documents: React.FC = () => {
   // Filter documents
   const filteredDocuments = useMemo(() => {
     return documents.filter(doc => {
+      if (sourceFilter !== 'all' && doc.source_type !== sourceFilter) return false;
       if (filters.category !== 'all' && doc.category !== filters.category) return false;
       if (filters.status !== 'all' && doc.status !== filters.status) return false;
       if (filters.confidentiality !== 'all' && doc.confidentiality !== filters.confidentiality) return false;
@@ -136,20 +140,15 @@ const Documents: React.FC = () => {
 
     setUploading(true);
     try {
-      // Generate document code
-      const categoryDocs = documents.filter(d => d.category === uploadForm.category);
-      const nextSeq = categoryDocs.length + 1;
-      const docCode = generateDocumentCode(uploadForm.category, nextSeq);
-
-      await documentsApi.create(organizationId, {
+      await documentsApi.createWithFile(organizationId, selectedFile, selectedFile.name, {
         name: uploadForm.name,
         category: uploadForm.category,
-        document_code: docCode,
         status: uploadForm.status,
         confidentiality: uploadForm.confidentiality,
         description: uploadForm.description,
-        tags: uploadForm.tags,
-      }, groupId);
+        tags: uploadOrigin === 'irp' ? Array.from(new Set([...uploadForm.tags, 'IRP', 'modificato dal cliente'])) : uploadForm.tags,
+        source_type: uploadOrigin,
+      });
 
       toast({ title: "Successo", description: "Documento caricato con successo" });
       setSelectedFile(null);
@@ -158,6 +157,7 @@ const Documents: React.FC = () => {
         description: '', tags: [],
       });
       setShowUploadDetails(false);
+      setUploadOrigin('manual');
       fetchDocuments();
     } catch (error) {
       console.error('Error uploading document:', error);
@@ -368,6 +368,12 @@ const Documents: React.FC = () => {
                   </div>
                 </div>
 
+                <div className="flex flex-wrap gap-2 items-center">
+                  <Label className="mr-2">Tipo documento</Label>
+                  <Button size="sm" variant={uploadOrigin === 'manual' ? 'default' : 'outline'} onClick={() => setUploadOrigin('manual')}>Documento generico</Button>
+                  <Button size="sm" variant={uploadOrigin === 'irp' ? 'default' : 'outline'} onClick={() => { setUploadOrigin('irp'); setUploadForm(f => ({ ...f, category: 'Piano Generale' })); }}>IRP compilato/modificato dal cliente</Button>
+                </div>
+
                 <Button variant="ghost" size="sm" onClick={() => setShowUploadDetails(!showUploadDetails)}>
                   {showUploadDetails ? 'Nascondi' : 'Mostra'} campi avanzati (Responsabili, Descrizione)
                 </Button>
@@ -404,6 +410,14 @@ const Documents: React.FC = () => {
 
             {/* Search Bar */}
             <DocumentSearchBar filters={filters} onFiltersChange={setFilters} />
+            <div className="flex flex-wrap gap-2">
+              {['all', ...Object.keys(SOURCE_LABELS)].map(s => (
+                <Button key={s} size="sm" variant={sourceFilter === s ? 'default' : 'outline'} onClick={() => setSourceFilter(s)}>
+                  {s === 'all' ? 'Tutte le origini' : SOURCE_LABELS[s]}
+                  <Badge variant="secondary" className="ml-2">{s === 'all' ? documents.length : documents.filter(d => d.source_type === s).length}</Badge>
+                </Button>
+              ))}
+            </div>
 
             {/* Documents List */}
             <Card className="border-border bg-card">
@@ -444,12 +458,13 @@ const Documents: React.FC = () => {
                                 {doc.confidentiality}
                               </Badge>
                               <Badge variant="secondary" className="text-xs">{doc.category}</Badge>
+                              <Badge className="text-xs">{SOURCE_LABELS[doc.source_type] || 'Manuale'}</Badge>
                               {doc.tags && doc.tags.length > 0 && doc.tags.map(t => (
                                 <Badge key={t} variant="outline" className="text-xs">{t}</Badge>
                               ))}
                             </div>
                             <div className="text-xs text-muted-foreground space-y-0.5">
-                              <span>{formatFileSize(doc.file_size)} • {formatDate(doc.created_at)}</span>
+                              <span>{doc.file_size ? `${formatFileSize(doc.file_size)} • ` : 'Report generato • '}{new Date(doc.created_at).toLocaleString('it-IT')}</span>
                               {doc.revision_date && <span> • Rev. {formatDate(doc.revision_date)}</span>}
                             </div>
                           </div>
