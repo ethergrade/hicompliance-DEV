@@ -1,0 +1,96 @@
+import { createClient } from "npm:@supabase/supabase-js@2";
+
+const cors = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+const json = (b: unknown, s = 200) =>
+  new Response(JSON.stringify(b), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
+
+async function haloToken(base: string) {
+  const id = Deno.env.get("HALO_CLIENT_ID"), secret = Deno.env.get("HALO_CLIENT_SECRET");
+  if (!id || !secret) throw new Error("Credenziali Halo non configurate");
+  const r = await fetch(`${base}/auth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "client_credentials", client_id: id, client_secret: secret, scope: "all" }),
+  });
+  if (!r.ok) throw new Error(`Token Halo [${r.status}]: ${await r.text()}`);
+  return (await r.json()).access_token as string;
+}
+
+// deno-lint-ignore no-explicit-any
+const cf = (a: any, name: string) => a.fields?.find?.((f: any) => f.name === name)?.display ?? a.customfields?.find?.((f: any) => f.name === name)?.display;
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: cors });
+  try {
+    const auth = req.headers.get("Authorization") ?? "";
+    const url = Deno.env.get("SUPABASE_URL")!;
+    const userClient = createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: auth } } });
+    const { data: u } = await userClient.auth.getUser();
+    if (!u.user) return json({ error: "Non autenticato" }, 401);
+    const { action, organization_id, search } = await req.json();
+    const base = (Deno.env.get("HALO_BASE_URL") ?? "").replace(/\/$/, "");
+    if (!base) return json({ error: "HALO_BASE_URL non configurato" }, 400);
+    const token = await haloToken(base);
+    const H = { Authorization: `Bearer ${token}` };
+
+    if (action === "test") return json({ ok: true });
+    if (action === "clients") {
+      const r = await fetch(`${base}/api/Client?pageinate=true&page_size=50&page_no=1${search ? `&search=${encodeURIComponent(search)}` : ""}`, { headers: H });
+      if (!r.ok) return json({ error: "Halo", status: r.status, details: await r.text() }, r.status);
+      const d = await r.json();
+      // deno-lint-ignore no-explicit-any
+      return json({ clients: (d.clients ?? d).map((c: any) => ({ id: String(c.id), name: c.name })) });
+    }
+    if (action !== "sync" || !organization_id) return json({ error: "Richiesta non valida" }, 400);
+
+    // verifica accesso al cliente con il token dell'utente
+    const { data: link, error: le } = await userClient.from("asset_halo_links").select("*").eq("organization_id", organization_id).maybeSingle();
+    if (le || !link?.halo_client_id) return json({ error: "Cliente Halo non collegato" }, 400);
+    const map = link.field_mapping ?? {};
+    const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
+    const { data: existing } = await admin.from("managed_assets").select("internal_code").eq("organization_id", organization_id);
+    let next = Math.max(0, ...(existing ?? []).map((e) => parseInt(e.internal_code) || 0)) + 1;
+
+    let page = 1, total = 0;
+    while (page < 50) {
+      const r = await fetch(`${base}/api/Asset?client_id=${link.halo_client_id}&pageinate=true&page_size=100&page_no=${page}&includedetails=true`, { headers: H });
+      if (!r.ok) throw new Error(`Asset Halo [${r.status}]: ${await r.text()}`);
+      const d = await r.json();
+      const list = d.assets ?? [];
+      if (!list.length) break;
+      for (const a of list) {
+        const { data: ex } = await admin.from("managed_assets").select("id").eq("organization_id", organization_id).eq("halo_asset_id", String(a.id)).maybeSingle();
+        const row = {
+          organization_id, source: "halo", halo_asset_id: String(a.id), last_synced_at: new Date().toISOString(),
+          asset_number: cf(a, map.asset_number ?? "CFASAssetNumber") ?? a.inventory_number ?? null,
+          asset_type: cf(a, "CFASsetType") ?? a.assettype_name ?? null,
+          model: cf(a, "CFASModelCustomer") ?? a.model ?? null,
+          name: cf(a, "CFASName") ?? a.key_field ?? null,
+          serial_number: cf(a, "CFASerialNumber") ?? a.key_field2 ?? null,
+          status: a.status_name ?? null,
+          status_cliente: cf(a, "CFStatus_Cliente") ?? null,
+          assignee: a.users?.[0]?.name ?? a.username ?? null,
+          site: a.site_name ?? null,
+          supplier: a.supplier_name ?? null,
+        };
+        if (ex) await admin.from("managed_assets").update(row).eq("id", ex.id);
+        else {
+          const code = cf(a, "CFASInternalCode") ?? String(next++).padStart(3, "0");
+          await admin.from("managed_assets").insert({ ...row, internal_code: code });
+        }
+        total++;
+      }
+      if (list.length < 100) break;
+      page++;
+    }
+    await admin.from("asset_halo_links").update({ last_sync_at: new Date().toISOString(), last_sync_status: "ok", last_sync_message: `${total} asset sincronizzati` }).eq("organization_id", organization_id);
+    return json({ ok: true, total });
+  } catch (e) {
+    console.error(e);
+    return json({ error: (e as Error).message }, 500);
+  }
+});
