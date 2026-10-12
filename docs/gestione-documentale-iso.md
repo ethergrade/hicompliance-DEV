@@ -215,3 +215,24 @@ Classificazione e accesso proposti:
 - Ogni azione compare nel registro con utente e ora.
 - L'hash del file scaricato coincide con quello registrato.
 - L'elenco per audit è esportabile e coincide con l'archivio.
+
+---
+
+## 12. Documenti che confluiscono in automatico [ATTIVO]
+
+Archivio su database Supabase (`incident_documents`) e storage `incident-documents`, file in `org/{organization_id}/...`, visibili solo a utenti del cliente, super admin e sales.
+
+| Origine | Quando entra | Categoria | Codice |
+|---|---|---|---|
+| SurfaceScan360 | A ogni report generato | Tecnico | TEC-NNN |
+| DarkRisk360 | A ogni report generato | Tecnico | TEC-NNN |
+| DarkRisk360 Esteso | A ogni report esteso (solo clienti abilitati, perché solo loro lo generano) | Tecnico | TEC-NNN |
+| Conformità NIS2 | A ogni snapshot dell'assessment, con data dello snapshot | NIS2 | NIS-NNN |
+| IRP compilato | Quando si genera il DOCX dall'editor IRP | Piano Generale | PG-NNN |
+| IRP modificato dal cliente | Upload con tipo "IRP compilato/modificato dal cliente" | Piano Generale | PG-NNN |
+
+- I report generati entrano con stato **Approvato**, classificazione **Riservato**, Rev01, data del report, origine e collegamento al report di partenza (nessun doppione).
+- Download: se esiste il PDF originale (DarkRisk) si scarica quello; altrimenti viene creato un PDF di sintesi con codice, revisione, data e contenuto.
+- Il report di conformità riporta: data snapshot, classificazione NIS2, punteggio complessivo, livello di aderenza (Buono ≥70, Parziale 40–69, Insufficiente <40), domande risposte, punteggio per area.
+- I report e snapshot già esistenti sono stati importati.
+- In pagina Documenti: filtro per origine con contatori e badge di origine su ogni documento.
