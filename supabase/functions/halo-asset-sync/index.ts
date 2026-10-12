@@ -46,13 +46,16 @@ Deno.serve(async (req) => {
     }
     if (action === "preview") {
       const cid = encodeURIComponent(String(search ?? ""));
-      const [c, a] = await Promise.all([
-        fetch(`${base}/api/Client/${cid}`, { headers: H }),
-        fetch(`${base}/api/Asset?client_id=${cid}&pageinate=true&page_size=5&page_no=1&includedetails=true`, { headers: H }),
-      ]);
-      const cj = c.ok ? await c.json() : null;
-      const aj = a.ok ? await a.json() : await a.text();
-      return json({ client: cj && { id: cj.id, name: cj.name }, assets: aj });
+      const get = async (p: string) => { const r = await fetch(`${base}${p}`, { headers: H }); return r.ok ? await r.json() : { status: r.status, body: await r.text() }; };
+      const cj = await get(`/api/Client/${cid}`);
+      const aj = await get(`/api/Asset?client_id=${cid}&pageinate=true&page_size=200&page_no=1`);
+      const first = aj.assets?.[0]?.id;
+      return json({
+        client: { id: cj.id, name: cj.name },
+        assets: aj,
+        detail: first ? await get(`/api/Asset/${first}?includedetails=true`) : null,
+        licences: await get(`/api/SoftwareLicence?client_id=${cid}`),
+      });
     }
     if (action !== "sync" || !organization_id) return json({ error: "Richiesta non valida" }, 400);
 
