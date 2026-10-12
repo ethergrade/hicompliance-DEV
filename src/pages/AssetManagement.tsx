@@ -357,9 +357,11 @@ function AssetSheet({ asset, lookups, onClose, onSaved, onDeleted, readOnly, all
   const t = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => { setForm(asset); setStatus("idle"); setShowSecret(false); }, [asset?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const set = (f: keyof ManagedAsset, v: unknown) => {
-    if (!form) return;
-    const next = { ...form, [f]: v } as ManagedAsset;
+  const formRef = useRef(form); formRef.current = form;
+  const setMany = (p: Partial<ManagedAsset>) => {
+    if (!formRef.current) return;
+    const next = { ...formRef.current, ...p } as ManagedAsset;
+    formRef.current = next;
     setForm(next); setStatus("idle");
     clearTimeout(t.current);
     t.current = setTimeout(async () => {
@@ -367,6 +369,7 @@ function AssetSheet({ asset, lookups, onClose, onSaved, onDeleted, readOnly, all
       try { onSaved(await managedAssetsApi.update(next.id, next)); setStatus("saved"); } catch { setStatus("error"); }
     }, 1500);
   };
+  const set = (f: keyof ManagedAsset, v: unknown) => setMany({ [f]: v } as Partial<ManagedAsset>);
 
   if (!form) return null;
   const locked = (f: keyof ManagedAsset) => readOnly || f === "internal_code" || (form.source === "halo" && HALO_LOCKED.has(f));
@@ -448,14 +451,14 @@ function AssetSheet({ asset, lookups, onClose, onSaved, onDeleted, readOnly, all
             )}
             <div className="flex items-center gap-2 text-sm">
               <FlagButton color={form.flag_color} note={form.flag_note} disabled={readOnly}
-                onChange={(c, n) => { set("flag_color", c); setForm((f) => f && { ...f, flag_color: c, flag_note: n }); set("flag_note", n); }} />
+                onChange={(c, n) => setMany({ flag_color: c, flag_note: n })} />
               {form.flag_color ? (form.flag_note || "Flag attivo") : <span className="text-muted-foreground">Nessun flag</span>}
             </div>
           </div>
           <div className="space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">HiTrack</p>
             <HiTrackPanel match={match} data={hitrack} asset={form} disabled={readOnly}
-              onLink={(id, mode) => { setForm((f) => f && { ...f, hitrack_device_id: id }); set("hitrack_device_id", id); set("hitrack_link_mode", mode); }} />
+              onLink={(id, mode) => setMany({ hitrack_device_id: id, hitrack_link_mode: mode })} />
           </div>
           {!readOnly && <Button variant="destructive" size="sm" onClick={async () => { await managedAssetsApi.remove(form.id); onDeleted(form.id); }}>
             <Trash2 className="w-4 h-4 mr-1" />Elimina asset
@@ -629,5 +632,37 @@ function HaloTab({ orgId, onSynced }: { orgId: string; onSynced: () => void }) {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function GroupsTab({ orgId, groups, members, onChange }: {
+  orgId: string; groups: AssetGroup[]; members: { group_id: string; asset_id: string }[]; onChange: () => void;
+}) {
+  const { toast } = useToast();
+  const [name, setName] = useState("");
+  const run = async (fn: () => Promise<void>) => {
+    try { await fn(); onChange(); } catch (e) { toast({ title: "Errore", description: (e as Error).message, variant: "destructive" }); }
+  };
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">I miei gruppi</CardTitle>
+        <p className="text-sm text-muted-foreground">I gruppi sono personali: li vedi solo tu. Aggiungi gli asset ai gruppi dalla scheda asset.</p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <form className="flex gap-2 max-w-md" onSubmit={(e) => { e.preventDefault(); const n = name.trim(); if (n) run(async () => { await managedAssetsApi.createGroup(orgId, n); setName(""); }); }}>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome nuovo gruppo" />
+          <Button type="submit"><Plus className="w-4 h-4 mr-1" />Crea</Button>
+        </form>
+        {groups.map((g) => (
+          <div key={g.id} className="flex items-center gap-2 max-w-md">
+            <Input defaultValue={g.name} onBlur={(e) => { const n = e.target.value.trim(); if (n && n !== g.name) run(() => managedAssetsApi.renameGroup(g.id, n)); }} />
+            <Badge variant="secondary">{members.filter((m) => m.group_id === g.id).length} asset</Badge>
+            <Button variant="ghost" size="icon" aria-label={`Elimina ${g.name}`} onClick={() => run(() => managedAssetsApi.deleteGroup(g.id))}><Trash2 className="w-4 h-4" /></Button>
+          </div>
+        ))}
+        {!groups.length && <p className="text-sm text-muted-foreground">Nessun gruppo creato.</p>}
+      </CardContent>
+    </Card>
   );
 }
