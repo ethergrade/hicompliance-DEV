@@ -1,4 +1,5 @@
 # Roadmap BIA
+- [ ] Asset Management: uniform column headers and Excel-style column resizing; verify interactions.
 - [x] Schema DB, calcolo, workflow, audit
 - [x] Tipi, API, calcoli, test
 - [x] Panoramica e dettaglio servizio, export PDF

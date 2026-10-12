@@ -30,6 +30,7 @@ import {
 import { Plus, Upload, Download, RefreshCw, Trash2, Link2, Loader2, Check, X, Eye, EyeOff } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BulkEditBar } from "@/components/asset-management/BulkEditBar";
+import { ASSET_TABLE_COLUMNS, ResizableAssetHeader } from "@/components/asset-management/ResizableAssetHeader";
 
 const PAGE = 15;
 const DATE_FIELDS = new Set(["date_of_assign", "start_contract_date", "end_contract_date", "warranty_start_date", "warranty_expiration", "ddt_date"]);
@@ -69,6 +70,8 @@ export default function AssetManagement() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [colFilters, setColFilters] = useState<Record<string, string>>({});
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+  const tableWidth = 88 + ASSET_TABLE_COLUMNS.reduce((total, column) => total + (columnWidths[column.key] ?? column.width), 0);
   const [groupBy, setGroupBy] = useState<"none" | "asset_type" | "status" | "assignee">("none");
   const [page, setPage] = useState(0);
   const [editing, setEditing] = useState<ManagedAsset | null>(null);
@@ -283,28 +286,27 @@ export default function AssetManagement() {
             />
             <Card><CardContent className="p-0 overflow-x-auto">
               {loading ? <div className="p-10 flex justify-center"><Loader2 className="animate-spin" /></div> : (
-                <Table>
-                  <TableHeader>
+                <Table className="table-fixed [&_td]:overflow-hidden [&_td]:px-3 [&_td]:py-3 [&_td]:break-words" style={{ width: tableWidth, minWidth: tableWidth }}>
+                  <colgroup>
+                    <col style={{ width: 44 }} /><col style={{ width: 44 }} />
+                    {ASSET_TABLE_COLUMNS.map((column) => <col key={column.key} style={{ width: columnWidths[column.key] ?? column.width }} />)}
+                  </colgroup>
+                  <TableHeader className="bg-muted/50">
                     <TableRow>
-                      <TableHead className="w-8 align-top">
-                        <Checkbox aria-label="Seleziona tutti i filtrati" className="mt-1"
+                      <TableHead className="w-11 px-3 pt-4 align-top">
+                        <Checkbox aria-label="Seleziona tutti i filtrati"
                           checked={filtered.length > 0 && filtered.every((a) => selectedIds.has(a.id))}
                           onCheckedChange={(v) => setSelectedIds((s) => { const n = new Set(s); filtered.forEach((a) => (v ? n.add(a.id) : n.delete(a.id))); return n; })} />
                       </TableHead>
-                      <TableHead className="w-8" />
-                      <TableHead className="align-top min-w-[140px]">
-                        <div>Nome</div>
-                        <Input className="h-7 mt-1 text-xs" value={colFilters.name ?? ""} onChange={(e) => { setColFilters((p) => ({ ...p, name: e.target.value })); setPage(0); }} />
-                      </TableHead>
-                      {(["internal_code", "asset_type", "model", "serial_number", "status", "assignee", "site", "supplier"] as (keyof ManagedAsset)[]).map((f) => (
-                        <TableHead key={f} className="align-top min-w-[110px]">
-                          <div>{label(f)}</div>
-                          <Input className="h-7 mt-1 text-xs" value={colFilters[f] ?? ""} onChange={(e) => { setColFilters((p) => ({ ...p, [f]: e.target.value })); setPage(0); }} />
-                        </TableHead>
+                      <TableHead className="w-11" />
+                      {ASSET_TABLE_COLUMNS.map((column) => (
+                        <ResizableAssetHeader key={column.key} title={column.title}
+                          width={columnWidths[column.key] ?? column.width} defaultWidth={column.width}
+                          filter={colFilters[column.key] ?? ""}
+                          onFilter={"unfiltered" in column ? undefined : (value) => { setColFilters((p) => ({ ...p, [column.key]: value })); setPage(0); }}
+                          onResize={(width) => setColumnWidths((previous) => ({ ...previous, [column.key]: width }))}
+                        />
                       ))}
-                      <TableHead>Disponibilità</TableHead>
-                      <TableHead>Scadenza</TableHead>
-                      <TableHead>Origine</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -313,7 +315,7 @@ export default function AssetManagement() {
                         <TableCell><Checkbox aria-label={`Seleziona ${a.name ?? a.internal_code}`} checked={selectedIds.has(a.id)} onCheckedChange={() => setSelectedIds((s) => { const n = new Set(s); n.has(a.id) ? n.delete(a.id) : n.add(a.id); return n; })} /></TableCell>
                         <TableCell><FlagButton color={a.flag_color} note={a.flag_note} disabled={!canEdit(a)} onChange={(c, n) => patchAsset(a, { flag_color: c, flag_note: n })} /></TableCell>
                         <TableCell>
-                          <button className="text-left font-medium text-primary hover:underline" onClick={() => setEditing(a)}>{a.name || a.model || `Asset ${a.internal_code}`}</button>
+                          <Button variant="link" className="h-auto max-w-full justify-start whitespace-normal p-0 text-left font-medium" onClick={() => setEditing(a)}>{a.name || a.model || `Asset ${a.internal_code}`}</Button>
                           {(a.tags ?? []).length > 0 && <div className="flex flex-wrap gap-1 mt-1">{a.tags.map((t) => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}</div>}
                         </TableCell>
                         <TableCell className="font-mono">{a.internal_code}</TableCell>
