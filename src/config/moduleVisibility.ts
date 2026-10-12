@@ -1,6 +1,6 @@
 export const moduleVisibility = {
   cyberNews: true,
-  documents: false,
+  documents: true,
   consistenze: false,
   incidentResponse: true,
   complianceEvents: false,

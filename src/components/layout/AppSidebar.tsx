@@ -37,6 +37,7 @@ import {
 	SlidersHorizontal,
 	Activity,
 	Laptop as LaptopIcon,
+	FolderOpen,
 } from "lucide-react";
 import { Flame, Mail, Smartphone } from "lucide-react";
 import { SheetTitle, SheetDescription } from "@/components/ui/sheet";
@@ -77,7 +78,7 @@ const navigation = [
 	{ title: "CyberNews", href: "/cyber-news", icon: Newspaper },
 	{ title: "Minacce", href: "/threats", icon: AlertTriangle },
 	{ title: "Report", href: "/reports", icon: FileText },
-	{ title: "Gestione Documenti", href: "/documents", icon: FileText },
+	{ title: "Gestione Documenti", href: "/documents", icon: FolderOpen },
 	{ title: "Inventario Asset", href: "/asset-inventory", icon: Package },
 	{ title: "Consistenze", href: "/consistenze", icon: Package },
 ];
