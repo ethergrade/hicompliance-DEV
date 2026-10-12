@@ -44,6 +44,16 @@ Deno.serve(async (req) => {
       // deno-lint-ignore no-explicit-any
       return json({ clients: (d.clients ?? d).map((c: any) => ({ id: String(c.id), name: c.name })) });
     }
+    if (action === "preview") {
+      const cid = encodeURIComponent(String(search ?? ""));
+      const [c, a] = await Promise.all([
+        fetch(`${base}/api/Client/${cid}`, { headers: H }),
+        fetch(`${base}/api/Asset?client_id=${cid}&pageinate=true&page_size=5&page_no=1&includedetails=true`, { headers: H }),
+      ]);
+      const cj = c.ok ? await c.json() : null;
+      const aj = a.ok ? await a.json() : await a.text();
+      return json({ client: cj && { id: cj.id, name: cj.name }, assets: aj });
+    }
     if (action !== "sync" || !organization_id) return json({ error: "Richiesta non valida" }, 400);
 
     // verifica accesso al cliente con il token dell'utente
