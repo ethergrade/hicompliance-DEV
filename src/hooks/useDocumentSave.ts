@@ -1,4 +1,3 @@
-// @ts-nocheck -- type drift vs API contract, da riallineare
 import { documentsApi } from '@/lib/api';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
@@ -12,20 +11,19 @@ interface SaveDocumentOptions {
 
 export const useDocumentSave = () => {
   const { user } = useAuth();
-  const { organizationId, groupId } = useClientOrganization();
+  const { organizationId } = useClientOrganization();
 
   const saveToDocuments = async ({ blob, fileName, category }: SaveDocumentOptions): Promise<boolean> => {
     try {
-      if (!user || !organizationId) {
-        console.error('User not authenticated or no organization');
-        return false;
-      }
-
+      if (!user || !organizationId) return false;
+      const isIrp = /^IRP_/i.test(fileName) || category === 'Piano Generale';
       await documentsApi.createWithFile(organizationId, blob, fileName, {
         name: fileName,
         category,
-      }, groupId);
-
+        source_type: isIrp ? 'irp' : 'manual',
+        is_generated: true,
+        tags: isIrp ? ['IRP', 'compilato'] : [],
+      } as any);
       return true;
     } catch (error) {
       console.error('Error in saveToDocuments:', error);
