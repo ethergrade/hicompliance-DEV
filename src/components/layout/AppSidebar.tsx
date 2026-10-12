@@ -37,6 +37,7 @@ import {
 	SlidersHorizontal,
 	Activity,
 	Laptop as LaptopIcon,
+	FolderOpen,
 } from "lucide-react";
 import { Flame, Mail, Smartphone } from "lucide-react";
 import { SheetTitle, SheetDescription } from "@/components/ui/sheet";
