@@ -255,6 +255,60 @@ export type Database = {
         }
         Relationships: []
       }
+      asset_group_members: {
+        Row: {
+          asset_id: string
+          group_id: string
+        }
+        Insert: {
+          asset_id: string
+          group_id: string
+        }
+        Update: {
+          asset_id?: string
+          group_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_group_members_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "managed_assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "asset_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      asset_groups: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          organization_id: string
+          owner_user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          organization_id: string
+          owner_user_id?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          organization_id?: string
+          owner_user_id?: string
+        }
+        Relationships: []
+      }
       asset_halo_links: {
         Row: {
           created_at: string
@@ -4248,13 +4302,19 @@ export type Database = {
           assignee: string | null
           contract_number: string | null
           created_at: string
+          created_by: string | null
           date_of_assign: string | null
           ddt_date: string | null
           ddt_number: string | null
           end_contract_date: string | null
+          flag_color: string | null
+          flag_note: string | null
           halo_asset_id: string | null
+          hitrack_device_id: string | null
+          hitrack_link_mode: string | null
           id: string
           internal_code: string
+          ip_address: string | null
           last_synced_at: string | null
           model: string | null
           name: string | null
@@ -4270,6 +4330,7 @@ export type Database = {
           status: string | null
           status_cliente: string | null
           supplier: string | null
+          tags: string[]
           updated_at: string
           warranty_cost: number | null
           warranty_expiration: string | null
@@ -4284,13 +4345,19 @@ export type Database = {
           assignee?: string | null
           contract_number?: string | null
           created_at?: string
+          created_by?: string | null
           date_of_assign?: string | null
           ddt_date?: string | null
           ddt_number?: string | null
           end_contract_date?: string | null
+          flag_color?: string | null
+          flag_note?: string | null
           halo_asset_id?: string | null
+          hitrack_device_id?: string | null
+          hitrack_link_mode?: string | null
           id?: string
           internal_code: string
+          ip_address?: string | null
           last_synced_at?: string | null
           model?: string | null
           name?: string | null
@@ -4306,6 +4373,7 @@ export type Database = {
           status?: string | null
           status_cliente?: string | null
           supplier?: string | null
+          tags?: string[]
           updated_at?: string
           warranty_cost?: number | null
           warranty_expiration?: string | null
@@ -4320,13 +4388,19 @@ export type Database = {
           assignee?: string | null
           contract_number?: string | null
           created_at?: string
+          created_by?: string | null
           date_of_assign?: string | null
           ddt_date?: string | null
           ddt_number?: string | null
           end_contract_date?: string | null
+          flag_color?: string | null
+          flag_note?: string | null
           halo_asset_id?: string | null
+          hitrack_device_id?: string | null
+          hitrack_link_mode?: string | null
           id?: string
           internal_code?: string
+          ip_address?: string | null
           last_synced_at?: string | null
           model?: string | null
           name?: string | null
@@ -4342,6 +4416,7 @@ export type Database = {
           status?: string | null
           status_cliente?: string | null
           supplier?: string | null
+          tags?: string[]
           updated_at?: string
           warranty_cost?: number | null
           warranty_expiration?: string | null
