@@ -23,6 +23,13 @@ export interface OrganizationFlags {
 	dark_risk_extended_enabled: boolean;
 	hipatch_enabled: boolean;
 	hitrack_enabled: boolean;
+	hiendpoint_enabled: boolean;
+	hifirewall_enabled: boolean;
+	hidetect_enabled: boolean;
+	himail_enabled: boolean;
+	himobile_enabled: boolean;
+	hilog_enabled: boolean;
+	assetmanagement_enabled: boolean;
 }
 
 /** Derive boolean flags from a list of tenant services. Pure, no side effects. */
@@ -93,6 +100,7 @@ export const useOrganizationStore = create<OrganizationState>()(
 			selectedGroup: null,
 			groups: [],
 			tenantServices: [],
+			servicesOrgId: null,
 			orgFlags: deriveOrganizationFlags([]),
 			isLoadingOrganizations: true,
 			hasFetchedOrganizations: false,
@@ -107,6 +115,7 @@ export const useOrganizationStore = create<OrganizationState>()(
 				set({
 					selectedOrganization: null,
 					tenantServices: [],
+					servicesOrgId: null,
 					orgFlags: deriveOrganizationFlags([]),
 				});
 			},
