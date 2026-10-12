@@ -1,5 +1,6 @@
 # Asset Management HiConsole – Documento per il DEV (porting in produzione)
 
+Ultimo aggiornamento: 12/10/2026 (aggiunta modifica multipla).
 Stato: prototipo funzionante sul ramo PROTOTIPO (Supabase `hcllvyzhefcqftesahnv`).
 Scopo: descrivere tutto ciò che serve per portare l'Asset Management in produzione: dati, sicurezza, integrazioni HaloPSA e HiTrack, UI, test e attività mancanti.
 
@@ -20,6 +21,7 @@ Scopo: descrivere tutto ciò che serve per portare l'Asset Management in produzi
 |---|---|
 | Pagina | `src/pages/AssetManagement.tsx` (route `/asset-management`, protetta da `ClientSelectionGuard` in `src/App.tsx`) |
 | Componenti extra | `src/components/asset-management/AssetExtras.tsx` (match HiTrack, semaforo, flag, tag, pannello HiTrack) |
+| Modifica multipla | `src/components/asset-management/BulkEditBar.tsx` (tag, gruppi, persona, location su piu asset) |
 | API client | `src/lib/api/managed-assets.ts` (CRUD, lookup, gruppi, scadenze, chiamata funzione Halo) |
 | Funzione server | `supabase/functions/halo-asset-sync/index.ts` |
 | Migrazioni | `supabase/migrations/20261012095328_*.sql` (tabelle base), `supabase/migrations/20261012104327_*.sql` (autore, tag, flag, HiTrack, gruppi, policy) |
@@ -149,6 +151,7 @@ Regole di sync:
 - Liste configurabili per cliente (aggiunta/rimozione valori).
 - Scadenze: `nearestExpiry` = minimo tra fine contratto e fine garanzia; evidenza in tabella sotto `lead_days`.
 - Tag con suggerimenti, flag colorati con nota, gruppi personali (crea, rinomina, elimina, assegna).
+- Modifica multipla: selezione righe (anche tutti i filtrati) e barra azioni per tag, gruppi, persona assegnataria e location (dettagli al par. 11).
 - Pannello Halo: test connessione, ricerca e collegamento cliente Halo, "Sincronizza ora", esito ultima sync.
 
 ## 8. Checklist per la produzione
@@ -170,7 +173,8 @@ Regole di sync:
 12. Integrazione licenze Halo (`/api/SoftwareLicence` o equivalente da verificare sul tenant).
 13. Invio notifiche scadenze: le impostazioni esistono (`asset_expiry_settings`) ma l'invio email **non è implementato**.
 14. Validazione import Excel: date, numeri, valori fuori lista, report righe scartate.
-15. Indici: `managed_assets(organization_id)`, GIN su `tags`, `(organization_id, ip_address)`.
+15. RPC transazionale per la modifica multipla con audit (par. 11), al posto degli aggiornamenti uno per asset.
+16. Indici: `managed_assets(organization_id)`, GIN su `tags`, `(organization_id, ip_address)`.
 
 ## 9. Criteri di accettazione
 
@@ -184,13 +188,15 @@ Regole di sync:
 - Un asset collegato a HiTrack mostra origine, dettagli e semaforo coerenti con HiTrack.
 - Export Excel ha le stesse colonne e lo stesso ordine del file AKC e può essere reimportato senza perdite.
 - PIN/PUK cifrati a riposo e mascherati per default.
+- La modifica multipla aggiorna tutti gli asset selezionati consentiti, salta quelli non modificabili e non cambia persona/location degli asset Halo, riportando il conteggio di aggiornati e saltati.
 
 ## 10. Test manuali suggeriti
 
 1. Cliente demo Innovatech: 28 asset demo, match HiTrack su CAM-ENTRY-01 con semaforo Up, crea gruppo e assegna asset, imposta flag.
 2. Cliente AKC: collegato a Halo 265, "Sincronizza ora" due volte -> totale invariato (119).
 3. Utente cliente (non sales): prova a modificare un asset Halo o di un altro utente -> negato.
-4. Import del file Excel AKC e successivo export -> colonne identiche.
+4. Seleziona 5 asset manuali + 1 Halo, assegna persona e location: 5 aggiornati, 1 saltato; aggiungi tag e gruppo: 6 aggiornati.
+5. Import del file Excel AKC e successivo export -> colonne identiche.
 
 ## 11. Modifica multipla (bulk edit)
 
