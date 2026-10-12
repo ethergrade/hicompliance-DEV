@@ -34,7 +34,7 @@ export function deriveOrganizationFlags(
 	return {
 		hicompliance_enabled: isActive("hicompliance"),
 		surface_scan360_enabled: isActive("surfacescan"),
-		dark_risk360_enabled: isActive("darkrisk") || isActive("hicompliance"),
+		dark_risk360_enabled: isActive("darkrisk"),
 		dark_risk_extended_enabled: services.some((service) => {
 			if (service.service_type !== "darkrisk" || service.status !== "active") return false;
 			const settings = service.settings ?? {};
@@ -42,6 +42,13 @@ export function deriveOrganizationFlags(
 		}),
 		hipatch_enabled: isActive("hipatch"),
 		hitrack_enabled: isActive("hitrack"),
+		hiendpoint_enabled: isActive("hiendpoint"),
+		hifirewall_enabled: isActive("hifirewall"),
+		hidetect_enabled: isActive("hidetect"),
+		himail_enabled: isActive("himail"),
+		himobile_enabled: isActive("himobile"),
+		hilog_enabled: isActive("hilog"),
+		assetmanagement_enabled: isActive("assetmanagement"),
 	};
 }
 
@@ -55,6 +62,8 @@ interface OrganizationState {
 
 	// Tenant services for the selected organization
 	tenantServices: TenantServiceResource[];
+	/** Organizzazione a cui si riferiscono i tenantServices caricati */
+	servicesOrgId: string | null;
 
 	// Derived organization flags (computed on setServices)
 	orgFlags: OrganizationFlags;
@@ -69,7 +78,7 @@ interface OrganizationState {
 	setOrganizations: (orgs: TenantResource[]) => void;
 	setSelectedGroup: (group: Group) => void;
 	setGroups: (groups: Group[]) => void;
-	setTenantServices: (services: TenantServiceResource[]) => void;
+	setTenantServices: (services: TenantServiceResource[], orgId?: string | null) => void;
 	setLoadingOrganizations: (loading: boolean) => void;
 	setHasFetchedOrganizations: (fetched: boolean) => void;
 
@@ -108,10 +117,11 @@ export const useOrganizationStore = create<OrganizationState>()(
 
 			setGroups: (groups) => set({ groups }),
 
-			setTenantServices: (services) =>
+			setTenantServices: (services, orgId) =>
 				set({
 					tenantServices: services,
 					orgFlags: deriveOrganizationFlags(services),
+					...(orgId !== undefined ? { servicesOrgId: orgId } : {}),
 				}),
 
 			setLoadingOrganizations: (loading) =>
