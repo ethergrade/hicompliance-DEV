@@ -44,6 +44,10 @@ Deno.serve(async (req) => {
       // deno-lint-ignore no-explicit-any
       return json({ clients: (d.clients ?? d).map((c: any) => ({ id: String(c.id), name: c.name })) });
     }
+    if (action === "asset") {
+      const r = await fetch(`${base}/api/Asset/${encodeURIComponent(String(search))}?includedetails=true`, { headers: H });
+      return json(await r.json());
+    }
     if (action === "preview") {
       const cid = encodeURIComponent(String(search ?? ""));
       const get = async (p: string) => { const r = await fetch(`${base}${p}`, { headers: H }); return r.ok ? await r.json() : { status: r.status, body: await r.text() }; };
