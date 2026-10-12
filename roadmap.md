@@ -7,3 +7,5 @@
 - [x] Verifica E2E
 - [ ] Ordine di recovery in Incident Response
 - [ ] Pubblicazione
+
+- [ ] Asset Management: credenziali HaloPSA (in attesa utente), email settimanale scadenze (serve dominio mittente)
