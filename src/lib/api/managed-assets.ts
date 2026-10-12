@@ -61,7 +61,8 @@ export const ASSET_COLUMNS: [keyof ManagedAsset, string, boolean][] = [
   ["note", "Note", false], ["site", "Sito", false],
 ];
 
-const unwrap = <T,>(r: { data: T; error: { message: string } | null }): T => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const unwrap = <T = any,>(r: { data: T; error: { message: string } | null }): T => {
   if (r.error) throw new Error(r.error.message);
   return r.data;
 };
