@@ -3871,70 +3871,82 @@ export type Database = {
           approved_by: string[] | null
           category: Database["public"]["Enums"]["document_category"]
           confidentiality: string
+          content_json: Json | null
           description: string | null
           document_code: string | null
           drafted_by: string[] | null
-          file_path: string
-          file_size: number
-          file_type: string
+          file_path: string | null
+          file_size: number | null
+          file_type: string | null
           id: string
+          is_generated: boolean
           name: string
           organization_id: string | null
           prepared_by: string[] | null
           reviewed_by: string[] | null
           revision: number
           revision_date: string | null
+          source_id: string | null
+          source_type: string
           status: string
           tags: string[] | null
           updated_at: string
           uploaded_at: string
-          uploaded_by: string
+          uploaded_by: string | null
         }
         Insert: {
           approved_by?: string[] | null
           category?: Database["public"]["Enums"]["document_category"]
           confidentiality?: string
+          content_json?: Json | null
           description?: string | null
           document_code?: string | null
           drafted_by?: string[] | null
-          file_path: string
-          file_size: number
-          file_type: string
+          file_path?: string | null
+          file_size?: number | null
+          file_type?: string | null
           id?: string
+          is_generated?: boolean
           name: string
           organization_id?: string | null
           prepared_by?: string[] | null
           reviewed_by?: string[] | null
           revision?: number
           revision_date?: string | null
+          source_id?: string | null
+          source_type?: string
           status?: string
           tags?: string[] | null
           updated_at?: string
           uploaded_at?: string
-          uploaded_by: string
+          uploaded_by?: string | null
         }
         Update: {
           approved_by?: string[] | null
           category?: Database["public"]["Enums"]["document_category"]
           confidentiality?: string
+          content_json?: Json | null
           description?: string | null
           document_code?: string | null
           drafted_by?: string[] | null
-          file_path?: string
-          file_size?: number
-          file_type?: string
+          file_path?: string | null
+          file_size?: number | null
+          file_type?: string | null
           id?: string
+          is_generated?: boolean
           name?: string
           organization_id?: string | null
           prepared_by?: string[] | null
           reviewed_by?: string[] | null
           revision?: number
           revision_date?: string | null
+          source_id?: string | null
+          source_type?: string
           status?: string
           tags?: string[] | null
           updated_at?: string
           uploaded_at?: string
-          uploaded_by?: string
+          uploaded_by?: string | null
         }
         Relationships: [
           {
@@ -8652,6 +8664,21 @@ export type Database = {
       darkrisk_qa_security_snapshot: {
         Args: { _org_id: string }
         Returns: Json
+      }
+      doc_can_access_org: { Args: { _org: string }; Returns: boolean }
+      doc_register_generated: {
+        Args: {
+          _at: string
+          _cat: Database["public"]["Enums"]["document_category"]
+          _content: Json
+          _desc: string
+          _name: string
+          _org: string
+          _source: string
+          _source_id: string
+          _tags: string[]
+        }
+        Returns: undefined
       }
       enqueue_all_surface_cves: { Args: never; Returns: number }
       enqueue_cve_enrichment: {
