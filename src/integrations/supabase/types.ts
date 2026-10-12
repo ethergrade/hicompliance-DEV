@@ -225,6 +225,72 @@ export type Database = {
           },
         ]
       }
+      asset_expiry_settings: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          last_sent_at: string | null
+          lead_days: number
+          organization_id: string
+          recipients: string[]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          last_sent_at?: string | null
+          lead_days?: number
+          organization_id: string
+          recipients?: string[]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          last_sent_at?: string | null
+          lead_days?: number
+          organization_id?: string
+          recipients?: string[]
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      asset_halo_links: {
+        Row: {
+          created_at: string
+          field_mapping: Json
+          halo_client_id: string | null
+          halo_client_name: string | null
+          last_sync_at: string | null
+          last_sync_message: string | null
+          last_sync_status: string | null
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          field_mapping?: Json
+          halo_client_id?: string | null
+          halo_client_name?: string | null
+          last_sync_at?: string | null
+          last_sync_message?: string | null
+          last_sync_status?: string | null
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          field_mapping?: Json
+          halo_client_id?: string | null
+          halo_client_name?: string | null
+          last_sync_at?: string | null
+          last_sync_message?: string | null
+          last_sync_status?: string | null
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       asset_inventory: {
         Row: {
           access_points_count: number | null
@@ -435,6 +501,30 @@ export type Database = {
             referencedColumns: ["organization_id"]
           },
         ]
+      }
+      asset_lookup_values: {
+        Row: {
+          created_at: string
+          id: string
+          kind: string
+          organization_id: string
+          value: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          kind: string
+          organization_id: string
+          value: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          kind?: string
+          organization_id?: string
+          value?: string
+        }
+        Relationships: []
       }
       bia_assessments: {
         Row: {
@@ -4146,6 +4236,117 @@ export type Database = {
           partita_iva?: string
           telefono?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      managed_assets: {
+        Row: {
+          asset_cost: number | null
+          asset_cost_nd: boolean
+          asset_number: string | null
+          asset_type: string | null
+          assignee: string | null
+          contract_number: string | null
+          created_at: string
+          date_of_assign: string | null
+          ddt_date: string | null
+          ddt_number: string | null
+          end_contract_date: string | null
+          halo_asset_id: string | null
+          id: string
+          internal_code: string
+          last_synced_at: string | null
+          model: string | null
+          name: string | null
+          note: string | null
+          organization_id: string
+          pin: string | null
+          puk: string | null
+          purchase_type: string | null
+          serial_number: string | null
+          site: string | null
+          source: string
+          start_contract_date: string | null
+          status: string | null
+          status_cliente: string | null
+          supplier: string | null
+          updated_at: string
+          warranty_cost: number | null
+          warranty_expiration: string | null
+          warranty_start_date: string | null
+          warranty_type: string | null
+        }
+        Insert: {
+          asset_cost?: number | null
+          asset_cost_nd?: boolean
+          asset_number?: string | null
+          asset_type?: string | null
+          assignee?: string | null
+          contract_number?: string | null
+          created_at?: string
+          date_of_assign?: string | null
+          ddt_date?: string | null
+          ddt_number?: string | null
+          end_contract_date?: string | null
+          halo_asset_id?: string | null
+          id?: string
+          internal_code: string
+          last_synced_at?: string | null
+          model?: string | null
+          name?: string | null
+          note?: string | null
+          organization_id: string
+          pin?: string | null
+          puk?: string | null
+          purchase_type?: string | null
+          serial_number?: string | null
+          site?: string | null
+          source?: string
+          start_contract_date?: string | null
+          status?: string | null
+          status_cliente?: string | null
+          supplier?: string | null
+          updated_at?: string
+          warranty_cost?: number | null
+          warranty_expiration?: string | null
+          warranty_start_date?: string | null
+          warranty_type?: string | null
+        }
+        Update: {
+          asset_cost?: number | null
+          asset_cost_nd?: boolean
+          asset_number?: string | null
+          asset_type?: string | null
+          assignee?: string | null
+          contract_number?: string | null
+          created_at?: string
+          date_of_assign?: string | null
+          ddt_date?: string | null
+          ddt_number?: string | null
+          end_contract_date?: string | null
+          halo_asset_id?: string | null
+          id?: string
+          internal_code?: string
+          last_synced_at?: string | null
+          model?: string | null
+          name?: string | null
+          note?: string | null
+          organization_id?: string
+          pin?: string | null
+          puk?: string | null
+          purchase_type?: string | null
+          serial_number?: string | null
+          site?: string | null
+          source?: string
+          start_contract_date?: string | null
+          status?: string | null
+          status_cliente?: string | null
+          supplier?: string | null
+          updated_at?: string
+          warranty_cost?: number | null
+          warranty_expiration?: string | null
+          warranty_start_date?: string | null
+          warranty_type?: string | null
         }
         Relationships: []
       }
