@@ -36,7 +36,16 @@ export interface ManagedAsset {
   source: "manual" | "halo";
   halo_asset_id: string | null;
   last_synced_at: string | null;
+  created_by: string | null;
+  tags: string[];
+  flag_color: string | null;
+  flag_note: string | null;
+  hitrack_device_id: string | null;
+  hitrack_link_mode: string | null;
+  ip_address: string | null;
 }
+
+export interface AssetGroup { id: string; name: string; organization_id: string }
 
 export type LookupKind = "asset_type" | "status" | "purchase_type" | "supplier" | "assignee";
 
@@ -81,7 +90,7 @@ export const managedAssetsApi = {
     return unwrap(await db.from("managed_assets").insert({ ...p, organization_id: org, internal_code, source: "manual" }).select().single());
   },
   async update(id: string, p: Partial<ManagedAsset>): Promise<ManagedAsset> {
-    const { id: _i, organization_id: _o, source: _s, ...rest } = p as ManagedAsset;
+    const { id: _i, organization_id: _o, source: _s, created_by: _c, ...rest } = p as ManagedAsset;
     return unwrap(await db.from("managed_assets").update(rest).eq("id", id).select().single());
   },
   async remove(id: string) {
@@ -130,6 +139,27 @@ export const managedAssetsApi = {
       throw new Error(msg);
     }
     return data;
+  },
+  async groups(org: string): Promise<AssetGroup[]> {
+    const { data: u } = await supabase.auth.getUser();
+    return unwrap(await db.from("asset_groups").select("id,name,organization_id").eq("organization_id", org).eq("owner_user_id", u.user?.id).order("name")) ?? [];
+  },
+  async createGroup(org: string, name: string) {
+    unwrap(await db.from("asset_groups").insert({ organization_id: org, name }));
+  },
+  async renameGroup(id: string, name: string) {
+    unwrap(await db.from("asset_groups").update({ name }).eq("id", id));
+  },
+  async deleteGroup(id: string) {
+    unwrap(await db.from("asset_groups").delete().eq("id", id));
+  },
+  async groupMembers(groupIds: string[]): Promise<{ group_id: string; asset_id: string }[]> {
+    if (!groupIds.length) return [];
+    return unwrap(await db.from("asset_group_members").select("group_id,asset_id").in("group_id", groupIds)) ?? [];
+  },
+  async setMembership(groupId: string, assetId: string, member: boolean) {
+    if (member) unwrap(await db.from("asset_group_members").upsert({ group_id: groupId, asset_id: assetId }));
+    else unwrap(await db.from("asset_group_members").delete().eq("group_id", groupId).eq("asset_id", assetId));
   },
   async expirySettings(org: string) {
     return unwrap(await db.from("asset_expiry_settings").select("*").eq("organization_id", org).maybeSingle());
