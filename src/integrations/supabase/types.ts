@@ -4010,6 +4010,80 @@ export type Database = {
         }
         Relationships: []
       }
+      hitrack_device_group_members: {
+        Row: {
+          device_key: string
+          group_id: string
+        }
+        Insert: {
+          device_key: string
+          group_id: string
+        }
+        Update: {
+          device_key?: string
+          group_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hitrack_device_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "hitrack_device_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hitrack_device_groups: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          organization_id: string
+          owner_user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          organization_id: string
+          owner_user_id?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          organization_id?: string
+          owner_user_id?: string
+        }
+        Relationships: []
+      }
+      hitrack_device_tags: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          device_key: string
+          id: string
+          organization_id: string
+          tag: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          device_key: string
+          id?: string
+          organization_id: string
+          tag: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          device_key?: string
+          id?: string
+          organization_id?: string
+          tag?: string
+        }
+        Relationships: []
+      }
       incident_documents: {
         Row: {
           approved_by: string[] | null

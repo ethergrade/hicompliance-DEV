@@ -30,6 +30,9 @@ import {
   pickTrend,
 } from "@/lib/hitrack/formatters";
 import type { HiTrackTrendWindow } from "@/lib/hitrack/types";
+import { computeAllHosts } from "@/lib/hitrack/hostHealth";
+import { useClientOrganization } from "@/hooks/useClientOrganization";
+import { DevicesSection, HealthSheet, Sparkline, TrendDialog, useCardFilter } from "./HiTrackExtras";
 
 const statusBadgeClassName: Record<string, string> = {
   success: "bg-green-500/15 text-green-400 border-green-500/20",
@@ -104,48 +107,28 @@ const Paginatore: React.FC<{ stato: ReturnType<typeof usePagina<unknown>> }> = (
   );
 };
 
-const Sparkline: React.FC<{ values: number[] }> = ({ values }) => {
-  const normalized = values.length > 0 ? values : [0];
-  const max = Math.max(...normalized, 1);
-  const points = normalized.map((value, index) => {
-    const x = normalized.length === 1 ? 0 : (index / (normalized.length - 1)) * 100;
-    const y = 100 - (value / max) * 100;
-    return `${x},${y}`;
-  });
-
-  return (
-    <svg viewBox="0 0 100 100" className="h-10 w-28 text-emerald-400">
-      <polyline
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="4"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-        points={points.join(" ")}
-      />
-    </svg>
-  );
-};
-
 export const HiTrackDashboard: React.FC = () => {
   const { data, isLoading, isFetching } = useHiTrackDashboard();
+  const { organizationId } = useClientOrganization();
   const syncMutation = useHiTrackSyncNow();
   const [trendWindow, setTrendWindow] = useState<HiTrackTrendWindow>("24h");
-  const paginaDispositivi = usePagina(data.monitoredDevices);
-  const paginaDischi = usePagina(data.logicalDisks);
-  const paginaRam = usePagina(data.ramMonitoring);
+  const [healthOpen, setHealthOpen] = useState(false);
+  const [trendOpen, setTrendOpen] = useState<{ title: string; values: number[] } | null>(null);
+  const hosts = useMemo(() => computeAllHosts(data), [data]);
+  const diskFilter = useCardFilter(data.logicalDisks, (d) => `${d.diskLabel} ${d.deviceName}`, (d) => d.usagePercent);
+  const ramFilter = useCardFilter(data.ramMonitoring, (r) => `${r.dimensionLabel ?? ""} ${r.deviceName}`, (r) => r.usagePercent);
+  const paginaDischi = usePagina(diskFilter.rows);
+  const paginaRam = usePagina(ramFilter.rows);
 
   const onlineRatio = useMemo(() => {
     if (data.overview.monitoredDevices === 0) return 0;
     return (data.overview.onlineDevices / data.overview.monitoredDevices) * 100;
   }, [data.overview.monitoredDevices, data.overview.onlineDevices]);
 
-  // Il blocco «Supabase non configurato» che stava qui è caduto con la
-  // migrazione: i dati arrivano dal backend, non c'è più niente da configurare
-  // nel browser.
-
   return (
     <div className="space-y-6">
+      <HealthSheet open={healthOpen} onOpenChange={setHealthOpen} data={data} hosts={hosts} />
+      <TrendDialog open={!!trendOpen} onOpenChange={(o) => !o && setTrendOpen(null)} title={trendOpen?.title ?? ""} series={trendOpen ? [{ name: "Utilizzo %", values: trendOpen.values }] : []} window={trendWindow} />
       <SectionNav items={[
         { id: "ht-kpi", label: "Indicatori" }, { id: "ht-overview", label: "Monitoring Overview" },
         { id: "ht-devices", label: "Dispositivi" }, { id: "ht-disks", label: "Dischi" }, { id: "ht-ram", label: "RAM" },
@@ -175,7 +158,7 @@ export const HiTrackDashboard: React.FC = () => {
             <p className="mt-2 text-3xl font-bold">{formatPercent(onlineRatio)}</p>
           </CardContent>
         </Card>
-        <Card className="border-border">
+        <Card className="border-border cursor-pointer transition-colors hover:border-primary/50" role="button" tabIndex={0} onClick={() => setHealthOpen(true)} onKeyDown={(e) => e.key === "Enter" && setHealthOpen(true)}>
           <CardContent className="p-5">
             <div className="mb-3 flex items-center justify-between">
               <div className="rounded-lg bg-amber-500/10 p-2 text-amber-300">
@@ -187,6 +170,7 @@ export const HiTrackDashboard: React.FC = () => {
             <p className="mt-2 text-3xl font-bold">
               {formatPercent(data.overview.healthScore)}
             </p>
+            <p className="mt-1 text-xs text-primary">Clicca per vedere il perché</p>
           </CardContent>
         </Card>
         <Card className="border-border">
@@ -302,56 +286,7 @@ export const HiTrackDashboard: React.FC = () => {
           <CardTitle className="text-lg">Monitored Devices</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="overflow-x-auto rounded-lg border border-border">
-          <Table className="min-w-[920px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead>Device</TableHead>
-                <TableHead>IP</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>RTD Worst</TableHead>
-                <TableHead>RTD Median</TableHead>
-                <TableHead>Packet Loss</TableHead>
-                <TableHead>OS</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {paginaDispositivi.visibili.map((device) => (
-                <TableRow key={device.id}>
-                  <TableCell>
-                    <div>
-                      <p className="font-medium">{device.deviceName}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {device.type} · {device.vendor || "Vendor N/D"}
-                      </p>
-                    </div>
-                  </TableCell>
-                  <TableCell>{device.ipAddress || "Dato non disponibile"}</TableCell>
-                  <TableCell>
-                    <Badge className={statusBadgeClassName[device.statusType]}>
-                      {device.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{formatMillis(device.rtdWorstMs)}</TableCell>
-                  <TableCell>{formatMillis(device.rtdMedianMs)}</TableCell>
-                  <TableCell>{formatPercent(device.packetLossPercent)}</TableCell>
-                  <TableCell>
-                    {[device.osName, device.osVersion].filter(Boolean).join(" ") ||
-                      "Dato non disponibile"}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {data.monitoredDevices.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center text-sm text-muted-foreground">
-                    Nessun dispositivo gestito disponibile.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-          </div>
-          <Paginatore stato={paginaDispositivi} />
+          <DevicesSection hosts={hosts} organizationId={organizationId} />
         </CardContent>
       </Card>
 
@@ -373,6 +308,7 @@ export const HiTrackDashboard: React.FC = () => {
                 ))}
               </div>
             </div>
+            <div className="pt-3">{diskFilter.controls}</div>
           </CardHeader>
           <CardContent className="space-y-3">
             {data.logicalDisks.length === 0 && (
@@ -418,7 +354,7 @@ export const HiTrackDashboard: React.FC = () => {
                     <p className="text-xs text-muted-foreground">
                       {disk.ipAddress || "IP non disponibile"}
                     </p>
-                    <Sparkline values={pickTrend(disk, trendWindow)} />
+                    <Sparkline values={pickTrend(disk, trendWindow)} onClick={() => setTrendOpen({ title: `Disco · ${disk.diskLabel} (${disk.deviceName})`, values: pickTrend(disk, trendWindow) })} />
                   </div>
                 </div>
               );
@@ -428,8 +364,9 @@ export const HiTrackDashboard: React.FC = () => {
         </Card>
 
         <Card id="ht-ram" className="scroll-mt-20 border-border">
-          <CardHeader className="pb-4">
+          <CardHeader className="pb-4 space-y-3">
             <CardTitle className="text-lg">RAM Monitoring</CardTitle>
+            {ramFilter.controls}
           </CardHeader>
           <CardContent className="space-y-3">
             {data.ramMonitoring.length === 0 && (
@@ -480,7 +417,7 @@ export const HiTrackDashboard: React.FC = () => {
                     <Badge className={statusBadgeClassName[ram.statusType]}>
                       {ram.status}
                     </Badge>
-                    <Sparkline values={pickTrend(ram, trendWindow)} />
+                    <Sparkline values={pickTrend(ram, trendWindow)} onClick={() => setTrendOpen({ title: `RAM · ${ram.dimensionLabel || ram.deviceName}`, values: pickTrend(ram, trendWindow) })} />
                   </div>
                 </div>
               );
