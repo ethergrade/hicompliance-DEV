@@ -1,3 +1,4 @@
+import { useModuleAccess } from "@/hooks/useModuleAccess";
 import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -88,6 +89,7 @@ const Dashboard: React.FC = () => {
 	const activeGroupId = selectedOrganization?.group_id ?? null;
 	const isDemoOrganization = isInnovatechDemo(selectedOrganization?.name);
 	const { integrations } = useServiceIntegrations();
+	const { isServiceActive } = useModuleAccess();
 	const { isSuperAdmin, isSales } = useUserRoles();
 	const { data: hiTrackDashboard } = useHiTrackDashboard();
 	const canManageIntegrationSettings = isSuperAdmin || isSales;
@@ -172,12 +174,14 @@ const Dashboard: React.FC = () => {
 				{ code: "hitrack", label: "HiTrack" },
 				{ code: "surfacescan", label: "SurfaceScan360" },
 				{ code: "darkrisk", label: "DarkRisk360" },
-			].map(({ code, label }) => ({
+			]
+				.filter(({ code }) => isServiceActive(code))
+				.map(({ code, label }) => ({
 				label,
 				health: resolveServiceHealthScore(code, null),
 			})),
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-		[isDemoOrganization, hiTrackDashboard?.overview.healthScore],
+		[isDemoOrganization, hiTrackDashboard?.overview.healthScore, isServiceActive],
 	);
 
 	const handleServiceClick = (service: { code: string; name: string }) => {
@@ -368,7 +372,13 @@ const Dashboard: React.FC = () => {
 					</div>
 				</div>
 
-				<ServiceRiskBreakdownCard items={serviceRiskItems} />
+				{serviceRiskItems.length > 0 ? (
+					<ServiceRiskBreakdownCard items={serviceRiskItems} />
+				) : (
+					<div className="rounded-lg border border-border p-6 text-center text-muted-foreground">
+						Nessun servizio di sicurezza attivo
+					</div>
+				)}
 
 				<Card className="border-border">
 					<CardHeader className="pb-6">
