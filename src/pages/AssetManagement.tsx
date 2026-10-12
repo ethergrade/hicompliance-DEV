@@ -18,6 +18,15 @@ import {
   managedAssetsApi, ASSET_COLUMNS, nearestExpiry, daysUntil,
   type ManagedAsset, type LookupKind,
 } from "@/lib/api/managed-assets";
+import { useHiTrackDashboard } from "@/hooks/useHiTrackDashboard";
+import { useUserRoles } from "@/hooks/useUserRoles";
+import { supabase } from "@/integrations/supabase/client";
+import type { HiTrackDashboardPayload } from "@/lib/hitrack/types";
+import type { AssetGroup } from "@/lib/api/managed-assets";
+import {
+  matchHiTrack, availabilityOf, AvailabilityDot, FlagButton, TagInput, HiTrackPanel, AVAIL_LABEL,
+  type HiTrackMatch, type Availability,
+} from "@/components/asset-management/AssetExtras";
 import { Plus, Upload, Download, RefreshCw, Trash2, Link2, Loader2, Check, X, Eye, EyeOff } from "lucide-react";
 
 const PAGE = 15;
@@ -32,13 +41,13 @@ const LOOKUP_LABEL: Record<LookupKind, string> = {
 };
 const SECTIONS: [string, (keyof ManagedAsset)[]][] = [
   ["Identificazione", ["internal_code", "asset_number", "asset_type", "model", "name", "serial_number", "status", "status_cliente", "pin", "puk"]],
-  ["Assegnazione", ["assignee", "date_of_assign", "site"]],
+  ["Assegnazione", ["assignee", "date_of_assign", "site", "ip_address"]],
   ["Acquisto e contratto", ["purchase_type", "supplier", "contract_number", "start_contract_date", "end_contract_date", "asset_cost"]],
   ["Garanzia", ["warranty_type", "warranty_cost", "warranty_start_date", "warranty_expiration"]],
   ["Documento di trasporto", ["ddt_number", "ddt_date"]],
   ["Note", ["note"]],
 ];
-const label = (f: keyof ManagedAsset) => ASSET_COLUMNS.find((c) => c[0] === f)?.[1] ?? f;
+const label = (f: keyof ManagedAsset) => ASSET_COLUMNS.find((c) => c[0] === f)?.[1] ?? (f === "ip_address" ? "Indirizzo IP" : f);
 const required = (f: keyof ManagedAsset) => !!ASSET_COLUMNS.find((c) => c[0] === f)?.[2];
 const eur = (n: number) => n.toLocaleString("it-IT", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 
@@ -62,6 +71,30 @@ export default function AssetManagement() {
   const [page, setPage] = useState(0);
   const [editing, setEditing] = useState<ManagedAsset | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [groups, setGroups] = useState<AssetGroup[]>([]);
+  const [members, setMembers] = useState<{ group_id: string; asset_id: string }[]>([]);
+  const [availFilter, setAvailFilter] = useState<"all" | Availability>("all");
+  const [groupFilter, setGroupFilter] = useState("all");
+  const [tagFilter, setTagFilter] = useState("all");
+  const [flagOnly, setFlagOnly] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const { isSuperAdmin, isSales } = useUserRoles();
+  const { data: hitrack } = useHiTrackDashboard();
+  useEffect(() => { supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null)); }, []);
+  const canEdit = useCallback((a: ManagedAsset) => isSuperAdmin || isSales || a.created_by === userId || a.source === "halo", [isSuperAdmin, isSales, userId]);
+  const matches = useMemo(() => matchHiTrack(assets, hitrack.monitoredDevices), [assets, hitrack.monitoredDevices]);
+  const allTags = useMemo(() => [...new Set(assets.flatMap((a) => a.tags ?? []))].sort(), [assets]);
+  const loadGroups = useCallback(async () => {
+    if (!organizationId) return;
+    const g = await managedAssetsApi.groups(organizationId);
+    setGroups(g); setMembers(await managedAssetsApi.groupMembers(g.map((x) => x.id)));
+  }, [organizationId]);
+  useEffect(() => { loadGroups().catch(() => {}); }, [loadGroups]);
+  const patchAsset = async (a: ManagedAsset, p: Partial<ManagedAsset>) => {
+    const next = { ...a, ...p };
+    setAssets((list) => list.map((x) => (x.id === a.id ? next : x)));
+    try { await managedAssetsApi.update(a.id, next); } catch (e) { toast({ title: "Errore", description: (e as Error).message, variant: "destructive" }); }
+  };
 
   const load = useCallback(async () => {
     if (!organizationId) return;
@@ -80,12 +113,16 @@ export default function AssetManagement() {
     return assets
       .filter((a) => !q || ASSET_COLUMNS.some(([f]) => f !== "pin" && f !== "puk" && String(a[f] ?? "").toLowerCase().includes(q)))
       .filter((a) => Object.entries(colFilters).every(([f, v]) => !v || String(a[f as keyof ManagedAsset] ?? "").toLowerCase().includes(v.toLowerCase())))
+      .filter((a) => availFilter === "all" || (matches.has(a.id) && availabilityOf(matches.get(a.id)!.device) === availFilter))
+      .filter((a) => groupFilter === "all" || members.some((m) => m.group_id === groupFilter && m.asset_id === a.id))
+      .filter((a) => tagFilter === "all" || (a.tags ?? []).includes(tagFilter))
+      .filter((a) => !flagOnly || !!a.flag_color)
       .sort((x, y) => {
         const ex = nearestExpiry(x), ey = nearestExpiry(y);
         const sx = ex !== null && ex <= 180 ? ex : 1e9, sy = ey !== null && ey <= 180 ? ey : 1e9;
-        return sx - sy || x.internal_code.localeCompare(y.internal_code);
+        return sx - sy || Number(!!y.flag_color) - Number(!!x.flag_color) || x.internal_code.localeCompare(y.internal_code);
       });
-  }, [assets, search, colFilters]);
+  }, [assets, search, colFilters, availFilter, groupFilter, tagFilter, flagOnly, matches, members]);
 
   const stats = useMemo(() => ({
     total: assets.length,
@@ -175,6 +212,7 @@ export default function AssetManagement() {
           <TabsList className="flex-wrap h-auto">
             <TabsTrigger value="registro">Registro</TabsTrigger>
             <TabsTrigger value="scadenze">Scadenze</TabsTrigger>
+            <TabsTrigger value="gruppi">Gruppi</TabsTrigger>
             <TabsTrigger value="liste">Liste</TabsTrigger>
             <TabsTrigger value="halo">Collegamento HaloPSA</TabsTrigger>
           </TabsList>
@@ -191,6 +229,34 @@ export default function AssetManagement() {
                   <SelectItem value="assignee">Per assegnatario</SelectItem>
                 </SelectContent>
               </Select>
+              {matches.size > 0 && (
+                <Select value={availFilter} onValueChange={(v) => { setAvailFilter(v as typeof availFilter); setPage(0); }}>
+                  <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Ogni disponibilità</SelectItem>
+                    {(["up", "warn", "down", "unknown"] as Availability[]).map((k) => <SelectItem key={k} value={k}>{AVAIL_LABEL[k]}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
+              {groups.length > 0 && (
+                <Select value={groupFilter} onValueChange={(v) => { setGroupFilter(v); setPage(0); }}>
+                  <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tutti i gruppi</SelectItem>
+                    {groups.map((g) => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
+              {allTags.length > 0 && (
+                <Select value={tagFilter} onValueChange={(v) => { setTagFilter(v); setPage(0); }}>
+                  <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tutti i tag</SelectItem>
+                    {allTags.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
+              <label className="flex items-center gap-2 text-sm"><Switch checked={flagOnly} onCheckedChange={(c) => { setFlagOnly(c); setPage(0); }} />Solo con flag</label>
               {Object.values(colFilters).some(Boolean) && <Button variant="ghost" size="sm" onClick={() => setColFilters({})}>Azzera filtri</Button>}
               <span className="text-xs text-muted-foreground">{filtered.length} su {assets.length}</span>
             </div>
@@ -208,19 +274,30 @@ export default function AssetManagement() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-8" />
+                      <TableHead className="align-top min-w-[140px]">
+                        <div>Nome</div>
+                        <Input className="h-7 mt-1 text-xs" value={colFilters.name ?? ""} onChange={(e) => { setColFilters((p) => ({ ...p, name: e.target.value })); setPage(0); }} />
+                      </TableHead>
                       {(["internal_code", "asset_type", "model", "serial_number", "status", "assignee", "site", "supplier"] as (keyof ManagedAsset)[]).map((f) => (
                         <TableHead key={f} className="align-top min-w-[110px]">
                           <div>{label(f)}</div>
                           <Input className="h-7 mt-1 text-xs" value={colFilters[f] ?? ""} onChange={(e) => { setColFilters((p) => ({ ...p, [f]: e.target.value })); setPage(0); }} />
                         </TableHead>
                       ))}
+                      <TableHead>Disponibilità</TableHead>
                       <TableHead>Scadenza</TableHead>
                       <TableHead>Origine</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {pageRows.map((a) => (
-                      <TableRow key={a.id} className="cursor-pointer" onClick={() => setEditing(a)}>
+                      <TableRow key={a.id}>
+                        <TableCell><FlagButton color={a.flag_color} note={a.flag_note} disabled={!canEdit(a)} onChange={(c, n) => patchAsset(a, { flag_color: c, flag_note: n })} /></TableCell>
+                        <TableCell>
+                          <button className="text-left font-medium text-primary hover:underline" onClick={() => setEditing(a)}>{a.name || a.model || `Asset ${a.internal_code}`}</button>
+                          {(a.tags ?? []).length > 0 && <div className="flex flex-wrap gap-1 mt-1">{a.tags.map((t) => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}</div>}
+                        </TableCell>
                         <TableCell className="font-mono">{a.internal_code}</TableCell>
                         <TableCell>{a.asset_type}</TableCell>
                         <TableCell>{a.model}</TableCell>
@@ -229,11 +306,15 @@ export default function AssetManagement() {
                         <TableCell>{a.assignee}</TableCell>
                         <TableCell>{a.site}</TableCell>
                         <TableCell>{a.supplier}</TableCell>
+                        <TableCell>{matches.has(a.id) ? <AvailabilityDot device={matches.get(a.id)!.device} /> : <span className="text-xs text-muted-foreground">—</span>}</TableCell>
                         <TableCell>{expiryBadge(nearestExpiry(a))}</TableCell>
-                        <TableCell><Badge variant={a.source === "halo" ? "default" : "secondary"}>{a.source === "halo" ? "Halo" : "Manuale"}</Badge></TableCell>
+                        <TableCell className="space-x-1 whitespace-nowrap">
+                          <Badge variant={a.source === "halo" ? "default" : "secondary"}>{a.source === "halo" ? "Halo" : "Manuale"}</Badge>
+                          {matches.has(a.id) && <Badge variant="outline">HiTrack</Badge>}
+                        </TableCell>
                       </TableRow>
                     ))}
-                    {!pageRows.length && <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">Nessun asset. Aggiungine uno o importa un Excel.</TableCell></TableRow>}
+                    {!pageRows.length && <TableRow><TableCell colSpan={13} className="text-center text-muted-foreground py-8">Nessun asset. Aggiungine uno o importa un Excel.</TableCell></TableRow>}
                   </TableBody>
                 </Table>
               )}
@@ -246,6 +327,7 @@ export default function AssetManagement() {
           </TabsContent>
 
           <TabsContent value="scadenze"><ExpiryTab orgId={organizationId} assets={assets} onOpen={setEditing} /></TabsContent>
+          <TabsContent value="gruppi"><GroupsTab orgId={organizationId} groups={groups} members={members} onChange={loadGroups} /></TabsContent>
           <TabsContent value="liste"><LookupsTab orgId={organizationId} lookups={lookups} onChange={load} /></TabsContent>
           <TabsContent value="halo"><HaloTab orgId={organizationId} onSynced={load} /></TabsContent>
         </Tabs>
@@ -253,6 +335,9 @@ export default function AssetManagement() {
 
       <AssetSheet
         asset={editing} lookups={lookups} onClose={() => setEditing(null)}
+        readOnly={!!editing && !canEdit(editing)} allTags={allTags} hitrack={hitrack}
+        match={editing ? matches.get(editing.id) : undefined}
+        groups={groups} members={members} onMembersChange={loadGroups}
         onSaved={(a) => setAssets((p) => p.map((x) => (x.id === a.id ? a : x)))}
         onDeleted={(id) => { setAssets((p) => p.filter((x) => x.id !== id)); setEditing(null); }}
       />
@@ -260,8 +345,10 @@ export default function AssetManagement() {
   );
 }
 
-function AssetSheet({ asset, lookups, onClose, onSaved, onDeleted }: {
+function AssetSheet({ asset, lookups, onClose, onSaved, onDeleted, readOnly, allTags, hitrack, match, groups, members, onMembersChange }: {
   asset: ManagedAsset | null; lookups: Record<LookupKind, string[]>;
+  readOnly: boolean; allTags: string[]; hitrack: HiTrackDashboardPayload; match?: HiTrackMatch;
+  groups: AssetGroup[]; members: { group_id: string; asset_id: string }[]; onMembersChange: () => void;
   onClose: () => void; onSaved: (a: ManagedAsset) => void; onDeleted: (id: string) => void;
 }) {
   const [form, setForm] = useState<ManagedAsset | null>(asset);
@@ -282,12 +369,12 @@ function AssetSheet({ asset, lookups, onClose, onSaved, onDeleted }: {
   };
 
   if (!form) return null;
-  const locked = (f: keyof ManagedAsset) => f === "internal_code" || (form.source === "halo" && HALO_LOCKED.has(f));
+  const locked = (f: keyof ManagedAsset) => readOnly || f === "internal_code" || (form.source === "halo" && HALO_LOCKED.has(f));
 
   const field = (f: keyof ManagedAsset) => {
     const lk = LOOKUP_FIELD[f];
     const lab = <Label className="text-xs">{label(f)}{required(f) && " *"}</Label>;
-    if (f === "note") return <div key={f} className="col-span-2 space-y-1">{lab}<Textarea value={form.note ?? ""} onChange={(e) => set("note", e.target.value)} /></div>;
+    if (f === "note") return <div key={f} className="col-span-2 space-y-1">{lab}<Textarea disabled={readOnly} value={form.note ?? ""} onChange={(e) => set("note", e.target.value)} /></div>;
     if (lk && !locked(f)) return (
       <div key={f} className="space-y-1">{lab}
         <Select value={(form[f] as string) ?? ""} onValueChange={(v) => set(f, v)}>
@@ -299,8 +386,8 @@ function AssetSheet({ asset, lookups, onClose, onSaved, onDeleted }: {
     if (f === "asset_cost") return (
       <div key={f} className="space-y-1">{lab}
         <div className="flex gap-2 items-center">
-          <Input type="number" disabled={form.asset_cost_nd} value={form.asset_cost ?? ""} onChange={(e) => set("asset_cost", e.target.value === "" ? null : Number(e.target.value))} />
-          <label className="flex items-center gap-1 text-xs"><Switch checked={form.asset_cost_nd} onCheckedChange={(c) => set("asset_cost_nd", c)} />N/D</label>
+          <Input type="number" disabled={readOnly || form.asset_cost_nd} value={form.asset_cost ?? ""} onChange={(e) => set("asset_cost", e.target.value === "" ? null : Number(e.target.value))} />
+          <label className="flex items-center gap-1 text-xs"><Switch disabled={readOnly} checked={form.asset_cost_nd} onCheckedChange={(c) => set("asset_cost_nd", c)} />N/D</label>
         </div>
       </div>
     );
@@ -328,7 +415,7 @@ function AssetSheet({ asset, lookups, onClose, onSaved, onDeleted }: {
             {status === "error" && <Badge variant="destructive">Errore</Badge>}
           </div>
           <SheetDescription>
-            {form.source === "halo" ? "Importato da HaloPSA: i campi sincronizzati sono in sola lettura." : "Le modifiche vengono salvate automaticamente."}
+            {readOnly ? "Sola lettura: puoi modificare solo gli asset creati da te." : form.source === "halo" ? "Importato da HaloPSA: i campi sincronizzati sono in sola lettura." : "Le modifiche vengono salvate automaticamente."}
           </SheetDescription>
         </SheetHeader>
         <div className="h-[calc(100vh-9rem)] overflow-y-auto pr-2 mt-4 space-y-5">
@@ -345,9 +432,34 @@ function AssetSheet({ asset, lookups, onClose, onSaved, onDeleted }: {
               <div className="grid grid-cols-2 gap-3">{fields.map(field)}</div>
             </div>
           ))}
-          <Button variant="destructive" size="sm" onClick={async () => { await managedAssetsApi.remove(form.id); onDeleted(form.id); }}>
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tag, gruppi e flag</p>
+            <TagInput value={form.tags ?? []} suggestions={allTags} disabled={readOnly} onChange={(v) => set("tags", v)} />
+            {groups.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {groups.map((g) => {
+                  const on = members.some((m) => m.group_id === g.id && m.asset_id === form.id);
+                  return (
+                    <Button key={g.id} size="sm" variant={on ? "default" : "outline"}
+                      onClick={async () => { await managedAssetsApi.setMembership(g.id, form.id, !on); onMembersChange(); }}>{g.name}</Button>
+                  );
+                })}
+              </div>
+            )}
+            <div className="flex items-center gap-2 text-sm">
+              <FlagButton color={form.flag_color} note={form.flag_note} disabled={readOnly}
+                onChange={(c, n) => { set("flag_color", c); setForm((f) => f && { ...f, flag_color: c, flag_note: n }); set("flag_note", n); }} />
+              {form.flag_color ? (form.flag_note || "Flag attivo") : <span className="text-muted-foreground">Nessun flag</span>}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">HiTrack</p>
+            <HiTrackPanel match={match} data={hitrack} asset={form} disabled={readOnly}
+              onLink={(id, mode) => { setForm((f) => f && { ...f, hitrack_device_id: id }); set("hitrack_device_id", id); set("hitrack_link_mode", mode); }} />
+          </div>
+          {!readOnly && <Button variant="destructive" size="sm" onClick={async () => { await managedAssetsApi.remove(form.id); onDeleted(form.id); }}>
             <Trash2 className="w-4 h-4 mr-1" />Elimina asset
-          </Button>
+          </Button>}
         </div>
       </SheetContent>
     </Sheet>
