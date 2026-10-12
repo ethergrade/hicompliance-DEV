@@ -1,4 +1,5 @@
 // @ts-nocheck -- type drift vs API contract, da riallineare
+import { useModuleAccess } from "@/hooks/useModuleAccess";
 import React, { useState, useEffect } from "react";
 import { NavLink, Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -189,32 +190,15 @@ export const AppSidebar: React.FC = () => {
 	const hitrackOn = !!orgFlags?.hitrack_enabled;
 	const { canViewRoute, hasCapability } = usePermissions();
 
+	const { isRouteAllowed } = useModuleAccess();
 	const isFeatureAllowed = (href: string) => {
 		// Supply Chain: demo solo per Innovatech
-		if (href === "/supply-chain") return isInnovatechDemo(selectedOrganization?.name);
-		// SuperAdmin/Sales without a selected org see everything (console view)
+		if (href === "/supply-chain" && !isInnovatechDemo(selectedOrganization?.name)) return false;
+		// SuperAdmin/Sales senza cliente selezionato vedono tutto (vista console)
 		if (isConsoleUser && !selectedOrganization) return true;
-		if (href === "/surface-scan" || href === "/surface-scan/exposure")
-			return surfaceScanOn;
-		if (href === "/dark-risk") return darkRiskOn;
-		if (href === "/dark-risk-esteso") return darkRiskOn && darkRiskExtendedOn;
-		if (href === "/dashboard/service/hipatch") return hipatchOn;
-		// HiTrack segue il contratto come gli altri moduli; il super-admin lo vede
-		// comunque, anche su un cliente dove il servizio non è ancora stato attivato.
-		if (href === "/dashboard/service/hitrack") return hitrackOn || isSuperAdmin;
-		// HiCompliance core modules
-		if (
-			[
-				"/assessment",
-				"/analytics",
-				"/remediation",
-				"/incident-response",
-				"/compliance-events",
-			].includes(href)
-		) {
-			return hicomplianceOn;
-		}
-		return true;
+		if (href === "/dark-risk-esteso") return isRouteAllowed(href) && darkRiskExtendedOn;
+		if (forceDemoAccessForSalesCliente1 && ["/assessment","/analytics","/remediation","/incident-response","/compliance-events"].includes(href)) return true;
+		return isRouteAllowed(href);
 	};
 
 	const isUserAllowed = (href: string) => canViewRoute(href);
@@ -222,7 +206,7 @@ export const AppSidebar: React.FC = () => {
 	const filteredNavigation = navigation.filter((item) => {
 		if ((item as { superAdminOnly?: boolean }).superAdminOnly && !isSuperAdmin)
 			return false;
-		return isModuleEnabled(item.href) && isUserAllowed(item.href);
+		return isModuleEnabled(item.href) && isFeatureAllowed(item.href) && isUserAllowed(item.href);
 	});
 
 	const visibleHiCompliance = hiComplianceModules.filter(
@@ -348,7 +332,7 @@ export const AppSidebar: React.FC = () => {
 									icon: Activity,
 								})}
 							{servicesStandalone.map((item) => renderNavItem(item))}
-							{hipatchOn &&
+							{isFeatureAllowed("/dashboard/service/hipatch") &&
 								isUserAllowed("/dashboard/service/hipatch") &&
 								renderNavItem({
 									title: "HiPatch",
@@ -365,9 +349,7 @@ export const AppSidebar: React.FC = () => {
 							]
 								.filter(
 									(m) =>
-										(isSuperAdmin ||
-											!!orgFlags?.[`${m.code}_enabled`] ||
-											isInnovatechDemo(selectedOrganization?.name)) &&
+										isFeatureAllowed(`/dashboard/service/${m.code}`) &&
 										isUserAllowed(`/dashboard/service/${m.code}`),
 								)
 								.map((m) =>

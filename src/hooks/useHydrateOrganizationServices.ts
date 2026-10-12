@@ -45,9 +45,9 @@ export function useHydrateOrganizationServices(
 	// Sync API response into Zustand when data arrives
 	useEffect(() => {
 		if (services) {
-			setTenantServices(services);
+			setTenantServices(services, organizationId ?? null);
 		}
-	}, [services, setTenantServices]);
+	}, [services, organizationId, setTenantServices]);
 
 	return { isLoading, error };
 }
