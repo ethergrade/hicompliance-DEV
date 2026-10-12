@@ -332,7 +332,7 @@ export default function AssetManagement() {
                         </TableCell>
                       </TableRow>
                     ))}
-                    {!pageRows.length && <TableRow><TableCell colSpan={13} className="text-center text-muted-foreground py-8">Nessun asset. Aggiungine uno o importa un Excel.</TableCell></TableRow>}
+                    {!pageRows.length && <TableRow><TableCell colSpan={14} className="text-center text-muted-foreground py-8">Nessun asset. Aggiungine uno o importa un Excel.</TableCell></TableRow>}
                   </TableBody>
                 </Table>
               )}
