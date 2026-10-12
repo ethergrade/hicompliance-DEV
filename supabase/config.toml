@@ -97,3 +97,6 @@ verify_jwt = false
 
 [functions.hitrack-retention]
 verify_jwt = false
+
+[functions.halo-asset-sync]
+verify_jwt = false

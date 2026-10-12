@@ -19,7 +19,8 @@ import ReportPreview from "./pages/ReportPreview";
 import Analytics from "./pages/Analytics";
 import Threats from "./pages/Threats";
 import Reports from "./pages/Reports";
-import Documents from "./pages/Documents";
+import Documents from "./pages/Documents"
+import AssetManagement from "./pages/AssetManagement";
 import AssetInventory from "./pages/AssetInventory";
 import IncidentResponse from "./pages/IncidentResponse";
 import ThreatManagement from "./pages/ThreatManagement";
@@ -326,6 +327,7 @@ const App = () => (
 									</ClientSelectionGuard>
 								}
 							/>
+							<Route path="/asset-management" element={<ClientSelectionGuard><AssetManagement /></ClientSelectionGuard>} />
 							<Route path="/business-impact-analysis" element={<ClientSelectionGuard><BusinessImpactAnalysis /></ClientSelectionGuard>} />
 							<Route path="/business-impact-analysis/services/:serviceId" element={<ClientSelectionGuard><BusinessImpactServiceDetail /></ClientSelectionGuard>} />
 							<Route path="/business-impact-analysis/services/:serviceId/bia/:biaId" element={<ClientSelectionGuard><BusinessImpactServiceDetail /></ClientSelectionGuard>} />

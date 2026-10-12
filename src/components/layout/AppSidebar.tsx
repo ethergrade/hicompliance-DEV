@@ -79,6 +79,7 @@ const navigation = [
 	{ title: "Minacce", href: "/threats", icon: AlertTriangle },
 	{ title: "Report", href: "/reports", icon: FileText },
 	{ title: "Gestione Documenti", href: "/documents", icon: FolderOpen },
+	{ title: "Asset Management", href: "/asset-management", icon: Package },
 	{ title: "Inventario Asset", href: "/asset-inventory", icon: Package },
 	{ title: "Consistenze", href: "/consistenze", icon: Package },
 ];
