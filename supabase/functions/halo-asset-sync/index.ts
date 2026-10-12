@@ -65,8 +65,9 @@ Deno.serve(async (req) => {
     const map = link.field_mapping ?? {};
     const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-    const { data: existing } = await admin.from("managed_assets").select("internal_code").eq("organization_id", organization_id);
+    const { data: existing } = await admin.from("managed_assets").select("id,internal_code,halo_asset_id").eq("organization_id", organization_id);
     let next = Math.max(0, ...(existing ?? []).map((e) => parseInt(e.internal_code) || 0)) + 1;
+    const byHalo = new Map((existing ?? []).filter((e) => e.halo_asset_id).map((e) => [e.halo_asset_id, e]));
 
     let page = 1, total = 0;
     while (page < 50) {
@@ -75,30 +76,36 @@ Deno.serve(async (req) => {
       const d = await r.json();
       const list = d.assets ?? [];
       if (!list.length) break;
-      for (const lite of list) {
-        const dr = await fetch(`${base}/api/Asset/${lite.id}?includedetails=true`, { headers: H });
-        const a = dr.ok ? { ...lite, ...(await dr.json()) } : lite;
-        const { data: ex } = await admin.from("managed_assets").select("id").eq("organization_id", organization_id).eq("halo_asset_id", String(a.id)).maybeSingle();
-        const row = {
-          organization_id, source: "halo", halo_asset_id: String(a.id), last_synced_at: new Date().toISOString(),
-          asset_number: cf(a, map.asset_number ?? "CFASAssetNumber") ?? cf(a, "CFnumerazioneas") ?? a.inventory_number ?? null,
-          asset_type: cf(a, "CFASsetType") ?? a.assettype_name ?? null,
-          model: cf(a, "CFASModelCustomer") ?? a.model ?? null,
-          name: cf(a, "CFASName") ?? cf(a, "CFtitolo") ?? a.inventory_number ?? a.key_field ?? null,
-          serial_number: cf(a, "CFASerialNumber") ?? a.key_field2 ?? null,
-          status: a.status_name ?? null,
-          status_cliente: cf(a, "CFStatus_Cliente") ?? cf(a, "CFstato") ?? null,
-          assignee: a.users?.[0]?.name ?? a.username ?? null,
-          site: a.site_name ?? null,
-          supplier: a.supplier_name ?? null,
-        };
-        if (ex) await admin.from("managed_assets").update(row).eq("id", ex.id);
-        else {
-          const code = cf(a, "CFASInternalCode") ?? String(next++).padStart(3, "0");
-          await admin.from("managed_assets").insert({ ...row, internal_code: code });
-        }
-        total++;
+      // deno-lint-ignore no-explicit-any
+      const detailed: any[] = [];
+      for (let i = 0; i < list.length; i += 10) {
+        detailed.push(...await Promise.all(list.slice(i, i + 10).map(async (lite: { id: number }) => {
+          const dr = await fetch(`${base}/api/Asset/${lite.id}?includedetails=true`, { headers: H });
+          return dr.ok ? { ...lite, ...(await dr.json()) } : lite;
+        })));
       }
+      const rows = detailed.map((a) => {
+        const ex = byHalo.get(String(a.id));
+        return {
+          ...(ex ? { id: ex.id, internal_code: ex.internal_code } : { internal_code: String(next++).padStart(3, "0") }),
+          organization_id, source: "halo", halo_asset_id: String(a.id), last_synced_at: new Date().toISOString(),
+          asset_number: cf(a, map.asset_number ?? "CFASAssetNumber") ?? cf(a, "CFnumerazioneas") ?? null,
+          asset_type: cf(a, "CFASsetType") ?? a.assettype_name ?? null,
+          model: cf(a, "CFASModelCustomer") ?? (a.model || null),
+          name: cf(a, "CFASName") ?? cf(a, "CFtitolo") ?? (a.inventory_number || null),
+          serial_number: cf(a, "CFASerialNumber") ?? (a.key_field2 || null),
+          status: a.status_name || null,
+          status_cliente: cf(a, "CFStatus_Cliente") ?? cf(a, "CFstato") ?? null,
+          assignee: a.users?.[0]?.name ?? (a.username || null),
+          site: a.site_name || null,
+          supplier: a.supplier_name || null,
+        };
+      });
+      const { error: ue } = await admin.from("managed_assets").upsert(rows.filter((x) => "id" in x));
+      if (ue) throw new Error(ue.message);
+      const { error: ie } = await admin.from("managed_assets").insert(rows.filter((x) => !("id" in x)));
+      if (ie) throw new Error(ie.message);
+      total += rows.length;
       if (list.length < 50 || (d.record_count && page * 50 >= d.record_count)) break;
       page++;
     }
