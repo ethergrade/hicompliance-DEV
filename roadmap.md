@@ -1,4 +1,5 @@
 # Roadmap BIA
+- [x] Asset Management: uniform column headers and Excel-style column resizing; isolated browser checks passed (drag, keyboard, reset, aligned filters). Authenticated client view remains unverified because authentication is externally managed.
 - [x] Schema DB, calcolo, workflow, audit
 - [x] Tipi, API, calcoli, test
 - [x] Panoramica e dettaglio servizio, export PDF
