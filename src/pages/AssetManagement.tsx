@@ -28,6 +28,8 @@ import {
   type HiTrackMatch, type Availability,
 } from "@/components/asset-management/AssetExtras";
 import { Plus, Upload, Download, RefreshCw, Trash2, Link2, Loader2, Check, X, Eye, EyeOff } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { BulkEditBar } from "@/components/asset-management/BulkEditBar";
 
 const PAGE = 15;
 const DATE_FIELDS = new Set(["date_of_assign", "start_contract_date", "end_contract_date", "warranty_start_date", "warranty_expiration", "ddt_date"]);
@@ -78,6 +80,7 @@ export default function AssetManagement() {
   const [tagFilter, setTagFilter] = useState("all");
   const [flagOnly, setFlagOnly] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const { isSuperAdmin, isSales } = useUserRoles();
   const { data: hitrack } = useHiTrackDashboard();
   useEffect(() => { supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null)); }, []);
@@ -269,11 +272,25 @@ export default function AssetManagement() {
                 ))}
               </div>
             )}
+            <BulkEditBar
+              selected={assets.filter((a) => selectedIds.has(a.id))}
+              assignees={[...new Set([...lookups.assignee, ...assets.map((a) => a.assignee).filter((x): x is string => !!x)])].sort()}
+              sites={[...new Set(assets.map((a) => a.site).filter((x): x is string => !!x))].sort()}
+              allTags={allTags} groups={groups} canEdit={canEdit}
+              onDone={async () => { await Promise.all([load(), loadGroups()]); }}
+              onClear={() => setSelectedIds(new Set())}
+              notify={(title, description, error) => toast({ title, description, variant: error ? "destructive" : undefined })}
+            />
             <Card><CardContent className="p-0 overflow-x-auto">
               {loading ? <div className="p-10 flex justify-center"><Loader2 className="animate-spin" /></div> : (
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-8 align-top">
+                        <Checkbox aria-label="Seleziona tutti i filtrati" className="mt-1"
+                          checked={filtered.length > 0 && filtered.every((a) => selectedIds.has(a.id))}
+                          onCheckedChange={(v) => setSelectedIds((s) => { const n = new Set(s); filtered.forEach((a) => (v ? n.add(a.id) : n.delete(a.id))); return n; })} />
+                      </TableHead>
                       <TableHead className="w-8" />
                       <TableHead className="align-top min-w-[140px]">
                         <div>Nome</div>
@@ -292,7 +309,8 @@ export default function AssetManagement() {
                   </TableHeader>
                   <TableBody>
                     {pageRows.map((a) => (
-                      <TableRow key={a.id}>
+                      <TableRow key={a.id} data-state={selectedIds.has(a.id) ? "selected" : undefined}>
+                        <TableCell><Checkbox aria-label={`Seleziona ${a.name ?? a.internal_code}`} checked={selectedIds.has(a.id)} onCheckedChange={() => setSelectedIds((s) => { const n = new Set(s); n.has(a.id) ? n.delete(a.id) : n.add(a.id); return n; })} /></TableCell>
                         <TableCell><FlagButton color={a.flag_color} note={a.flag_note} disabled={!canEdit(a)} onChange={(c, n) => patchAsset(a, { flag_color: c, flag_note: n })} /></TableCell>
                         <TableCell>
                           <button className="text-left font-medium text-primary hover:underline" onClick={() => setEditing(a)}>{a.name || a.model || `Asset ${a.internal_code}`}</button>
@@ -314,7 +332,7 @@ export default function AssetManagement() {
                         </TableCell>
                       </TableRow>
                     ))}
-                    {!pageRows.length && <TableRow><TableCell colSpan={13} className="text-center text-muted-foreground py-8">Nessun asset. Aggiungine uno o importa un Excel.</TableCell></TableRow>}
+                    {!pageRows.length && <TableRow><TableCell colSpan={14} className="text-center text-muted-foreground py-8">Nessun asset. Aggiungine uno o importa un Excel.</TableCell></TableRow>}
                   </TableBody>
                 </Table>
               )}

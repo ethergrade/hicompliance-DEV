@@ -191,3 +191,13 @@ Regole di sync:
 2. Cliente AKC: collegato a Halo 265, "Sincronizza ora" due volte -> totale invariato (119).
 3. Utente cliente (non sales): prova a modificare un asset Halo o di un altro utente -> negato.
 4. Import del file Excel AKC e successivo export -> colonne identiche.
+
+## 11. Modifica multipla (bulk edit)
+
+File: `src/components/asset-management/BulkEditBar.tsx`, integrata in `AssetManagement.tsx`.
+
+- Casella di selezione per riga e "seleziona tutti i filtrati" in intestazione (seleziona tutti i risultati del filtro, non solo la pagina).
+- Barra fissa con azioni: aggiungi tag, rimuovi tag, aggiungi a gruppo, togli dal gruppo, assegna a persona (`assignee`, imposta `date_of_assign` a oggi se cambia), imposta location (`site`).
+- Suggerimenti: persone da lista "assignee" + valori presenti; location e tag dai valori esistenti.
+- Regole: asset non modificabili dall'utente vengono saltati; su asset Halo assegnatario e location sono sincronizzati e non vengono toccati (tag e gruppi sì). Il messaggio finale indica aggiornati e saltati.
+- Produzione: oggi gli aggiornamenti sono uno per asset dal browser. Per volumi grandi creare una RPC `bulk_update_managed_assets(ids uuid[], patch jsonb)` che applichi le stesse regole lato DB in un'unica transazione e scriva l'audit.
