@@ -157,6 +157,7 @@ const Documents: React.FC = () => {
         description: '', tags: [],
       });
       setShowUploadDetails(false);
+      setUploadOrigin('manual');
       fetchDocuments();
     } catch (error) {
       console.error('Error uploading document:', error);
@@ -365,6 +366,12 @@ const Documents: React.FC = () => {
                       </div>
                     )}
                   </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 items-center">
+                  <Label className="mr-2">Tipo documento</Label>
+                  <Button size="sm" variant={uploadOrigin === 'manual' ? 'default' : 'outline'} onClick={() => setUploadOrigin('manual')}>Documento generico</Button>
+                  <Button size="sm" variant={uploadOrigin === 'irp' ? 'default' : 'outline'} onClick={() => { setUploadOrigin('irp'); setUploadForm(f => ({ ...f, category: 'Piano Generale' })); }}>IRP compilato/modificato dal cliente</Button>
                 </div>
 
                 <Button variant="ghost" size="sm" onClick={() => setShowUploadDetails(!showUploadDetails)}>
