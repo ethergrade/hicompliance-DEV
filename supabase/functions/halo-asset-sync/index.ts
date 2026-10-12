@@ -44,23 +44,6 @@ Deno.serve(async (req) => {
       // deno-lint-ignore no-explicit-any
       return json({ clients: (d.clients ?? d).map((c: any) => ({ id: String(c.id), name: c.name })) });
     }
-    if (action === "asset") {
-      const r = await fetch(`${base}/api/Asset/${encodeURIComponent(String(search))}?includedetails=true`, { headers: H });
-      return json(await r.json());
-    }
-    if (action === "preview") {
-      const cid = encodeURIComponent(String(search ?? ""));
-      const get = async (p: string) => { const r = await fetch(`${base}${p}`, { headers: H }); return r.ok ? await r.json() : { status: r.status, body: await r.text() }; };
-      const cj = await get(`/api/Client/${cid}`);
-      const aj = await get(`/api/Asset?client_id=${cid}&pageinate=true&page_size=200&page_no=1`);
-      const first = aj.assets?.[0]?.id;
-      return json({
-        client: { id: cj.id, name: cj.name },
-        assets: aj,
-        detail: first ? await get(`/api/Asset/${first}?includedetails=true`) : null,
-        licences: await get(`/api/SoftwareLicence?client_id=${cid}`),
-      });
-    }
     if (action !== "sync" || !organization_id) return json({ error: "Richiesta non valida" }, 400);
 
     // verifica accesso al cliente con il token dell'utente
@@ -96,7 +79,7 @@ Deno.serve(async (req) => {
           asset_number: cf(a, map.asset_number ?? "CFASAssetNumber") ?? cf(a, "CFnumerazioneas") ?? null,
           asset_type: cf(a, "CFASsetType") ?? a.assettype_name ?? null,
           model: cf(a, "CFASModelCustomer") ?? (a.model || null),
-          name: cf(a, "CFASName") ?? cf(a, "CFtitolo") ?? (a.inventory_number || null),
+          name: cf(a, "CFASName") ?? cf(a, "CFtitolo") ?? (a.inventory_number || `${a.assettype_name ?? "Asset"} #${a.device_number ?? a.id}`),
           serial_number: cf(a, "CFASerialNumber") ?? (a.key_field2 || null),
           status: a.status_name || null,
           status_cliente: cf(a, "CFStatus_Cliente") ?? cf(a, "CFstato") ?? null,
