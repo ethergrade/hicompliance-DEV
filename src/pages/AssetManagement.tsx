@@ -133,7 +133,7 @@ export default function AssetManagement() {
     expiring: assets.filter((a) => { const d = nearestExpiry(a); return d !== null && d <= 180; }).length,
   }), [assets]);
 
-  const groups = useMemo(() => {
+  const buckets = useMemo(() => {
     if (groupBy === "none") return null;
     const m = new Map<string, number>();
     filtered.forEach((a) => m.set(String(a[groupBy] ?? "—"), (m.get(String(a[groupBy] ?? "—")) ?? 0) + 1));
@@ -260,9 +260,9 @@ export default function AssetManagement() {
               {Object.values(colFilters).some(Boolean) && <Button variant="ghost" size="sm" onClick={() => setColFilters({})}>Azzera filtri</Button>}
               <span className="text-xs text-muted-foreground">{filtered.length} su {assets.length}</span>
             </div>
-            {groups && (
+            {buckets && (
               <div className="flex flex-wrap gap-2">
-                {groups.map(([g, n]) => (
+                {buckets.map(([g, n]) => (
                   <Button key={g} size="sm" variant={colFilters[groupBy] === g ? "default" : "outline"} onClick={() => { setColFilters((p) => ({ ...p, [groupBy]: p[groupBy] === g ? "" : g })); setPage(0); }}>
                     {g} <Badge variant="secondary" className="ml-2">{n}</Badge>
                   </Button>
