@@ -14,6 +14,7 @@ export const MODULE_SERVICE_MAP: Array<{ prefix: string; service: string }> = [
 	{ prefix: "/dark-risk-esteso", service: "darkrisk" },
 	{ prefix: "/dark-risk", service: "darkrisk" },
 	{ prefix: "/asset-management", service: "assetmanagement" },
+	{ prefix: "/documents", service: "documents" },
 	{ prefix: "/dashboard/service/hitrack", service: "hitrack" },
 	{ prefix: "/dashboard/service/hipatch", service: "hipatch" },
 	{ prefix: "/dashboard/service/hiendpoint", service: "hiendpoint" },

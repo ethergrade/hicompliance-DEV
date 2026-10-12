@@ -56,6 +56,7 @@ export function deriveOrganizationFlags(
 		himobile_enabled: isActive("himobile"),
 		hilog_enabled: isActive("hilog"),
 		assetmanagement_enabled: isActive("assetmanagement"),
+		documents_enabled: isActive("documents"),
 	};
 }
 
