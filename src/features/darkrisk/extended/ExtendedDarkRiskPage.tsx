@@ -416,7 +416,7 @@ export default function ExtendedDarkRiskPage() {
 							</CardContent>
 						</Card>
 						<DarkRiskMonitoringCoverage coverage={overviewQuery.data?.monitoringCoverage} />
-						{organizationId && <DarkRiskFindingsList companyId={organizationId} groupId={groupId} />}
+						{organizationId && <DarkRiskFindingsList companyId={organizationId} groupId={groupId} scope="extended" />}
 
 						<ReportList
 							title="Report per scansione"

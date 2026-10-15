@@ -357,7 +357,7 @@ export default function StandardDarkRiskPage() {
 						)}
 
 						<DarkRiskMonitoringCoverage coverage={overview?.monitoringCoverage} />
-						{organizationId && <DarkRiskFindingsList companyId={organizationId} groupId={groupId} />}
+						{organizationId && <DarkRiskFindingsList companyId={organizationId} groupId={groupId} scope="standard" />}
 
 						<ReportList
 							title="Report mensili"

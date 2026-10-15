@@ -14,18 +14,24 @@ import { Label } from "@/components/ui/label";
 import { CheckCircle2, History, Loader2 } from "lucide-react";
 import { useCapabilities } from "@/hooks/useCapabilities";
 import { darkRiskGateway } from "../api/darkRiskGateway";
+import { presentDarkRiskFindingType } from "@/lib/darkrisk/presentation";
 import type { DarkRiskFinding } from "../domain/contracts";
 import { AckDialog, AckHistoryDialog, type AckTarget } from "./DarkRiskAckDialogs";
 
 const PER_PAGE = 25;
 
+// Tipi come li manda il backend (`darkrisk_*`: il prefisso del fornitore non
+// arriva mai al cliente). I due `_leak` li produce solo lo stadio Esteso.
 export const FINDING_TYPE_LABEL: Record<string, string> = {
-	credential_exposure: "Credenziale esposta",
-	identity_exposure: "Identità esposta",
-	domain_exposure: "Dominio esposto",
-	domain_leak: "Dominio in un leak",
-	intelx_exposure_signal: "Segnale di esposizione",
+	darkrisk_credential_exposure: "Credenziale esposta",
+	darkrisk_identity_exposure: "Identità esposta",
+	darkrisk_domain_exposure: "Dominio esposto",
+	darkrisk_exposure_signal: "Segnale di esposizione",
+	darkrisk_domain_leak: "DarkRisk_domain_leak",
+	darkrisk_identity_leak: "DarkRisk_identity_leak",
 };
+
+const EXTENDED_ONLY_TYPES = new Set(["darkrisk_domain_leak", "darkrisk_identity_leak"]);
 
 const SEVERITY: Record<string, { label: string; variant: "destructive" | "secondary" | "outline" }> = {
 	critical: { label: "Critica", variant: "destructive" },
@@ -53,9 +59,11 @@ function useDebounced<T>(value: T, ms = 400): T {
 interface Props {
 	companyId: string;
 	groupId?: string | null;
+	/** Lo standard non riceve mai i risultati dello stadio Esteso (account e credenziali). */
+	scope: "standard" | "extended";
 }
 
-export function DarkRiskFindingsList({ companyId, groupId }: Props) {
+export function DarkRiskFindingsList({ companyId, groupId, scope }: Props) {
 	const { hasCapability } = useCapabilities();
 	const canAck = hasCapability("darkrisk.findings.ack");
 
@@ -72,7 +80,7 @@ export function DarkRiskFindingsList({ companyId, groupId }: Props) {
 
 	const qDebounced = useDebounced(q);
 
-	const filters: Record<string, string | number> = { per_page: PER_PAGE, page };
+	const filters: Record<string, string | number> = { per_page: PER_PAGE, page, scope };
 	if (qDebounced.trim()) filters.q = qDebounced.trim();
 	if (type !== "all") filters["finding_type[]"] = type;
 	if (severity !== "all") filters["severity[]"] = severity;
@@ -113,7 +121,7 @@ export function DarkRiskFindingsList({ companyId, groupId }: Props) {
 							<SelectTrigger><SelectValue /></SelectTrigger>
 							<SelectContent>
 								<SelectItem value="all">Tutti</SelectItem>
-								{Object.entries(FINDING_TYPE_LABEL).map(([k, label]) => (
+								{Object.entries(FINDING_TYPE_LABEL).filter(([k]) => scope === "extended" || !EXTENDED_ONLY_TYPES.has(k)).map(([k, label]) => (
 									<SelectItem key={k} value={k}>{label}</SelectItem>
 								))}
 							</SelectContent>
@@ -236,7 +244,7 @@ function FindingRow({
 		<TableRow className="align-top">
 			<TableCell className="max-w-sm">
 				<div className="font-medium">{f.title}</div>
-				<div className="text-xs text-muted-foreground">{FINDING_TYPE_LABEL[f.findingType] ?? f.findingType}</div>
+				<div className="text-xs text-muted-foreground">{FINDING_TYPE_LABEL[f.findingType] ?? presentDarkRiskFindingType(f.findingType)}</div>
 			</TableCell>
 			<TableCell><Badge variant={sev.variant}>{sev.label}</Badge></TableCell>
 			<TableCell className="text-xs">{f.asset ?? "—"}</TableCell>

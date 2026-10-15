@@ -235,7 +235,8 @@ export const darkRiskGateway = {
 		mode: "standard" | "extended",
 		groupId?: string | null,
 	): Promise<DarkRiskReport[]> {
-		const endpoint = mode === "extended" ? `reports?mode=extended` : `reports`;
+		// Sempre con il mode: senza, il backend restituisce anche i report Esteso.
+		const endpoint = `reports?mode=${mode}`;
 		return parseReports(
 			await getData(`/companies/${companyId}/darkrisk/${endpoint}`, groupId),
 		);
