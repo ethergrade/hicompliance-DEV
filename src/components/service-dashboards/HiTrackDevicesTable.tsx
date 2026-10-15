@@ -189,12 +189,15 @@ export function HiTrackDevicesTable({ devices }: { devices: HiTrackMonitoredDevi
 					{visible.map((device) => (
 						<TableRow key={device.id}>
 							<TableCell>
-								{/* Ogni device ha almeno l'andamento della qualità rete da aprire. */}
+								{/* Ogni device si apre (c'è almeno l'andamento della qualità rete), ma
+								    il viola resta il segno dei dati SNMP: interfacce o inventario. */}
 								<button
 									type="button"
-									className="flex items-center gap-1 text-left font-medium text-primary hover:underline"
+									className={`flex items-center gap-1 text-left font-medium hover:underline ${
+										(device.interfaceCount ?? 0) + (device.inventoryCount ?? 0) > 0 ? "text-primary" : "text-foreground"
+									}`}
 									onClick={() => setOpened(device)}
-									title="Apri il dettaglio"
+									title={(device.interfaceCount ?? 0) + (device.inventoryCount ?? 0) > 0 ? "Apri interfacce e dettaglio" : "Apri il dettaglio"}
 								>
 									{device.deviceName}
 									<ChevronRight className="h-3.5 w-3.5" />
