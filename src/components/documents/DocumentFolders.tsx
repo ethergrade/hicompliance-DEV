@@ -110,16 +110,19 @@ export const DocumentFolderPanel: React.FC<PanelProps> = ({ folders, selected, o
 interface MoveProps {
   open: boolean;
   initialTarget?: string | null;
+  /** Categorie documentali mostrate come cartelle di sistema. */
+  categories?: string[];
   mode: 'move' | 'copy';
   count: number;
   folders: DocumentFolder[];
   onOpenChange: (o: boolean) => void;
-  onConfirm: (folderId: string | null) => Promise<void>;
+  onConfirm: (folderId: string | null, category?: string) => Promise<void>;
 }
 
-export const MoveCopyDialog: React.FC<MoveProps> = ({ open, mode, count, folders, initialTarget = null, onOpenChange, onConfirm }) => {
+export const MoveCopyDialog: React.FC<MoveProps> = ({ open, mode, count, folders, categories = [], initialTarget = null, onOpenChange, onConfirm }) => {
   const [target, setTarget] = useState<string | null>(null);
-  React.useEffect(() => { if (open) setTarget(initialTarget && folders.some(f => f.id === initialTarget) ? initialTarget : null); }, [open]);
+  const [category, setCategory] = useState<string | null>(null);
+  React.useEffect(() => { if (open) { setCategory(null); setTarget(initialTarget && folders.some(f => f.id === initialTarget) ? initialTarget : null); } }, [open]);
   const [busy, setBusy] = useState(false);
   const row = (f: DocumentFolder, depth: number): React.ReactNode => (
     <div key={f.id}>
@@ -133,16 +136,30 @@ export const MoveCopyDialog: React.FC<MoveProps> = ({ open, mode, count, folders
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader><DialogTitle>{mode === 'move' ? 'Sposta' : 'Copia'} {count} document{count === 1 ? 'o' : 'i'} in…</DialogTitle></DialogHeader>
-        <div className="max-h-80 overflow-auto border border-border rounded-md p-1">
-          <button className={`w-full flex items-center gap-2 rounded px-2 py-1.5 text-sm text-left ${target === null ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`} onClick={() => setTarget(null)}>
-            <Home className="w-4 h-4" />Radice
-          </button>
-          {childrenOf(folders, null).map(f => row(f, 0))}
+        <div className="max-h-96 overflow-auto border border-border rounded-md p-1 space-y-2">
+          <div>
+            <p className="px-2 pt-1 text-[11px] uppercase tracking-wide text-muted-foreground">Cartelle</p>
+            <button className={`w-full flex items-center gap-2 rounded px-2 py-1.5 text-sm text-left ${target === null ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`} onClick={() => setTarget(null)}>
+              <Home className="w-4 h-4" />Radice
+            </button>
+            {childrenOf(folders, null).map(f => row(f, 0))}
+            {folders.length === 0 && <p className="px-2 py-1 text-xs text-muted-foreground">Nessuna cartella creata: usa "Nuova" nel pannello Cartelle.</p>}
+          </div>
+          {categories.length > 0 && (
+            <div>
+              <p className="px-2 pt-1 text-[11px] uppercase tracking-wide text-muted-foreground">Categoria (opzionale)</p>
+              {categories.map(c => (
+                <button key={c} className={`w-full flex items-center gap-2 rounded px-2 py-1.5 text-sm text-left ${category === c ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`} onClick={() => setCategory(category === c ? null : c)}>
+                  <FolderOpen className="w-4 h-4" />{c}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-        <p className="text-xs text-muted-foreground">Destinazione: <b>{folderPath(folders, target)}</b></p>
+        <p className="text-xs text-muted-foreground">Destinazione: <b>{folderPath(folders, target)}</b>{category && <> · categoria <b>{category}</b></>}</p>
         {mode === 'copy' && <p className="text-xs text-muted-foreground">La copia riceve un nuovo codice, Rev01 e stato Bozza; il file viene duplicato.</p>}
         <DialogFooter>
-          <Button disabled={busy} onClick={async () => { setBusy(true); try { await onConfirm(target); } finally { setBusy(false); } }}>
+          <Button disabled={busy} onClick={async () => { setBusy(true); try { await onConfirm(target, category ?? undefined); } finally { setBusy(false); } }}>
             {busy ? 'In corso…' : mode === 'move' ? 'Sposta qui' : 'Copia qui'}
           </Button>
         </DialogFooter>

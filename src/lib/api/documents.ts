@@ -161,19 +161,19 @@ export const documentsApi = {
     return buildGeneratedPdf(doc);
   },
 
-  async move(companyId: string, ids: string[], folderId: string | null): Promise<void> {
+  async move(companyId: string, ids: string[], folderId: string | null, category?: string): Promise<void> {
     if (folderId) {
       const { data: f } = await supabase.from("document_folders").select("id").eq("id", folderId).eq("organization_id", companyId).maybeSingle();
       if (!f) throw new Error("Cartella non trovata per questo cliente");
     }
     const { error } = await supabase.from("incident_documents")
-      .update({ folder_id: folderId, updated_at: new Date().toISOString() })
+      .update({ folder_id: folderId, ...(category ? { category } : {}), updated_at: new Date().toISOString() })
       .in("id", ids).eq("organization_id", companyId);
     if (error) throw error;
   },
 
   /** Copia: nuovo record con nuovo codice, Rev01, Bozza; il file viene duplicato nello storage. */
-  async copy(companyId: string, ids: string[], folderId: string | null): Promise<void> {
+  async copy(companyId: string, ids: string[], folderId: string | null, category?: string): Promise<void> {
     const { data: docs, error } = await supabase.from("incident_documents").select("*")
       .in("id", ids).eq("organization_id", companyId);
     if (error) throw error;
@@ -193,7 +193,8 @@ export const documentsApi = {
       const { id, document_code, uploaded_at, updated_at, source_id, ...rest } = d;
       const { error: iErr } = await supabase.from("incident_documents").insert({
         ...rest, file_path, folder_id: folderId, name: `${d.name} (copia)`,
-        document_code: await nextCode(companyId, d.category || "Varie"),
+        category: category || d.category || "Varie",
+        document_code: await nextCode(companyId, category || d.category || "Varie"),
         revision: 1, status: "Bozza", source_type: "manual", source_id: null,
         uploaded_by: await currentUserRowId(),
       });
