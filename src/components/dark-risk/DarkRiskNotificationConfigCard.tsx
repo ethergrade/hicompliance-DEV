@@ -92,8 +92,10 @@ export function DarkRiskNotificationConfigCard() {
 					<CardTitle>Notifiche email DarkRisk360</CardTitle>
 				</div>
 				<CardDescription>
-					Alert sui nuovi finding a fine scansione e riepilogo settimanale, inviati ai
-					destinatari indicati per il cliente selezionato.
+					Alert sui nuovi finding a fine scansione, riepilogo settimanale e avviso
+					mensile quando il report è disponibile in piattaforma, inviati ai
+					destinatari indicati per il cliente selezionato. Le impostazioni sono le
+					stesse per DarkRisk360 ed Esteso.
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-5">
