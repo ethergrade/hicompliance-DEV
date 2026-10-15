@@ -4,6 +4,7 @@ import {
   fetchHiTrackCollectors,
   fetchHiTrackDashboard,
   fetchHiTrackDeviceDetail,
+  fetchHiTrackDeviceStatus,
   fetchHiTrackInterfaceHistory,
   fetchHiTrackNetworkQualityHistory,
   queueHiTrackSyncNow,
@@ -96,6 +97,23 @@ export function useHiTrackInterfaceHistory(
     queryFn: () => fetchHiTrackInterfaceHistory(organizationId!, deviceId!, interfaceId!, range, groupId),
     enabled: abilitato && !!deviceId && !!interfaceId,
     staleTime: 5 * 60_000,
+  });
+}
+
+/**
+ * Stato online/offline dei device, solo nella vista HiTrack: ogni 4 minuti
+ * finché la pagina è aperta e visibile. Se il backend sta rileggendo lo stato
+ * da Domotz (`refreshing`), si richiede dopo pochi secondi.
+ */
+export function useHiTrackDeviceStatus() {
+  const { organizationId, groupId, abilitato } = useHiTrackAbilitato();
+
+  return useQuery({
+    queryKey: ["hitrack-device-status", organizationId, groupId],
+    queryFn: () => fetchHiTrackDeviceStatus(organizationId!, groupId),
+    enabled: abilitato,
+    refetchInterval: (query) => (query.state.data?.refreshing ? 10_000 : 4 * 60_000),
+    refetchIntervalInBackground: false,
   });
 }
 

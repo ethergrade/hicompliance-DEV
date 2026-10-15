@@ -5,6 +5,7 @@ import {
   type HiTrackCollector,
   type HiTrackDashboardPayload,
   type HiTrackDeviceDetail,
+  type HiTrackDeviceStatus,
   type HiTrackHistoryRange,
   type HiTrackInterfaceHistory,
   type HiTrackNetworkQualityHistory,
@@ -76,6 +77,19 @@ export async function fetchHiTrackDeviceDetail(
 ): Promise<HiTrackDeviceDetail> {
   const res = await complianceApiClient.get<ApiResponse<HiTrackDeviceDetail>>(
     `/companies/${organizationId}/hitrack/devices/${deviceId}`,
+    undefined,
+    groupHeader(groupId),
+  );
+
+  return res.data;
+}
+
+export async function fetchHiTrackDeviceStatus(
+  organizationId: string,
+  groupId?: string | null,
+): Promise<HiTrackDeviceStatus> {
+  const res = await complianceApiClient.get<ApiResponse<HiTrackDeviceStatus>>(
+    `/companies/${organizationId}/hitrack/status`,
     undefined,
     groupHeader(groupId),
   );

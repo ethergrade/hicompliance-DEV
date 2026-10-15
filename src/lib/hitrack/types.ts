@@ -32,8 +32,10 @@ export interface HiTrackMonitoredDevice {
   deviceName: string;
   type: string;
   ipAddress: string | null;
+  /** online | offline | unknown (stato non ancora letto). */
   status: string;
   statusType: "success" | "warning" | "error" | "muted";
+  statusCheckedAt?: string | null;
   rtdWorstMs: number | null;
   rtdMedianMs: number | null;
   packetLossPercent: number | null;
@@ -48,6 +50,13 @@ export interface HiTrackMonitoredDevice {
   interfaceCount?: number;
   /** Host, datastore e VM letti dal device (vCenter). */
   inventoryCount?: number;
+}
+
+/** Stato online/offline dei device, riletto ogni 4 minuti con la dashboard aperta. */
+export interface HiTrackDeviceStatus {
+  refreshing: boolean;
+  devices: Array<Pick<HiTrackMonitoredDevice, "id" | "status" | "statusType" | "lastStatusChangeAt" | "statusCheckedAt">>;
+  overview: { onlineDevices: number; offlineDevices: number } | null;
 }
 
 /** Stato attuale di un'interfaccia di rete. Traffico in bit/s. */

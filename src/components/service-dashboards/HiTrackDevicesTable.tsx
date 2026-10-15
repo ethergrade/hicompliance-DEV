@@ -161,8 +161,9 @@ export function HiTrackDevicesTable({ devices }: { devices: HiTrackMonitoredDevi
 								<SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
 								<SelectContent>
 									<SelectItem value="all">Tutti</SelectItem>
-									<SelectItem value="managed">managed</SelectItem>
-									<SelectItem value="unmanaged">unmanaged</SelectItem>
+									<SelectItem value="online">Online</SelectItem>
+									<SelectItem value="offline">Offline</SelectItem>
+									<SelectItem value="unknown">Non disponibile</SelectItem>
 								</SelectContent>
 							</Select>
 						</TableHead>
@@ -209,7 +210,7 @@ export function HiTrackDevicesTable({ devices }: { devices: HiTrackMonitoredDevi
 							</TableCell>
 							<TableCell>{device.ipAddress || "Dato non disponibile"}</TableCell>
 							<TableCell>
-								<Badge className={statusBadgeClassName[device.statusType]}>{device.status}</Badge>
+								<DeviceStatusBadge device={device} />
 							</TableCell>
 							<TableCell className="min-w-[170px]">
 								<NetworkQualityCell quality={device.networkQuality} />
@@ -324,5 +325,27 @@ function Sparkline({ values }: { values: Array<number | null> }) {
 			</svg>
 			<span className="text-[10px] leading-none text-muted-foreground">24h</span>
 		</div>
+	);
+}
+
+const STATUS_LABEL: Record<string, string> = { online: "Online", offline: "Offline", unknown: "Non disponibile" };
+
+/** Online/offline del device; nel tooltip da quando è in quello stato. */
+function DeviceStatusBadge({ device }: { device: HiTrackMonitoredDevice }) {
+	const label = STATUS_LABEL[device.status] ?? device.status;
+	const since = device.lastStatusChangeAt ? new Date(device.lastStatusChangeAt) : null;
+	const badge = <Badge className={statusBadgeClassName[device.statusType]}>{label}</Badge>;
+
+	if (!since || Number.isNaN(since.getTime()) || device.status === "unknown") return badge;
+
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<span className="cursor-help">{badge}</span>
+			</TooltipTrigger>
+			<TooltipContent className="text-xs">
+				{label} dal {since.toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}
+			</TooltipContent>
+		</Tooltip>
 	);
 }

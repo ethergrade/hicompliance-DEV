@@ -20,7 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useHiTrackDashboard, useHiTrackSyncNow } from "@/hooks/useHiTrackDashboard";
+import { useHiTrackDashboard, useHiTrackDeviceStatus, useHiTrackSyncNow } from "@/hooks/useHiTrackDashboard";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HiTrackDevicesTable } from "./HiTrackDevicesTable";
 import type { HiTrackDataCoverage } from "@/lib/hitrack/types";
@@ -131,8 +131,21 @@ const Sparkline: React.FC<{ values: number[] }> = ({ values }) => {
 };
 
 export const HiTrackDashboard: React.FC = () => {
-  const { data, isLoading, isFetching } = useHiTrackDashboard();
+  const { data: payload, isLoading, isFetching } = useHiTrackDashboard();
+  const { data: stato } = useHiTrackDeviceStatus();
   const syncMutation = useHiTrackSyncNow();
+
+  // Lo stato online/offline arriva a parte, più fresco della dashboard: si
+  // sovrappone ai device e ai contatori quando c'è.
+  const data = useMemo(() => {
+    if (!stato) return payload;
+    const byId = new Map(stato.devices.map((d) => [d.id, d]));
+    return {
+      ...payload,
+      overview: stato.overview ? { ...payload.overview, ...stato.overview } : payload.overview,
+      monitoredDevices: payload.monitoredDevices.map((d) => ({ ...d, ...(byId.get(d.id) ?? {}) })),
+    };
+  }, [payload, stato]);
   const [trendWindow, setTrendWindow] = useState<HiTrackTrendWindow>("24h");
   const paginaDischi = usePagina(data.logicalDisks);
   const paginaRam = usePagina(data.ramMonitoring);
