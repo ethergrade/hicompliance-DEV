@@ -120,7 +120,7 @@ export interface HiTrackInterfaceHistory {
   points: HiTrackInterfacePoint[];
 }
 
-/** Qualità rete dal collector verso il device (network-quality-v1). Non è una banda. */
+/** Qualità rete dal collector verso il device (network-quality). Non è una banda. */
 export interface HiTrackNetworkQuality {
   algorithmVersion: string;
   score: number | null;
@@ -128,6 +128,24 @@ export interface HiTrackNetworkQuality {
   dataQuality: "ok" | "provisional";
   reasons: string[];
   observedAt: string | null;
+  /** Score delle misure delle ultime 24 ore, dalla più vecchia: la mini-linea della tabella. */
+  trend?: Array<number | null>;
+}
+
+/** Una misura dell'andamento della qualità rete (una ogni 30 minuti circa). */
+export interface HiTrackNetworkQualityPoint {
+  at: string;
+  score: number | null;
+  health: HiTrackNetworkQuality["health"];
+  medianMs: number | null;
+  worstMs: number | null;
+  lossPercent: number | null;
+}
+
+export interface HiTrackNetworkQualityHistory {
+  deviceId: string;
+  range: HiTrackHistoryRange;
+  points: HiTrackNetworkQualityPoint[];
 }
 
 export interface HiTrackDiskMetric {

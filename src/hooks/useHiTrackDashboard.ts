@@ -5,6 +5,7 @@ import {
   fetchHiTrackDashboard,
   fetchHiTrackDeviceDetail,
   fetchHiTrackInterfaceHistory,
+  fetchHiTrackNetworkQualityHistory,
   queueHiTrackSyncNow,
 } from "@/lib/hitrack/client";
 import { EMPTY_HITRACK_DASHBOARD, type HiTrackHistoryRange } from "@/lib/hitrack/types";
@@ -94,6 +95,18 @@ export function useHiTrackInterfaceHistory(
     queryKey: ["hitrack-interface-history", organizationId, groupId, deviceId, interfaceId, range],
     queryFn: () => fetchHiTrackInterfaceHistory(organizationId!, deviceId!, interfaceId!, range, groupId),
     enabled: abilitato && !!deviceId && !!interfaceId,
+    staleTime: 5 * 60_000,
+  });
+}
+
+/** Andamento della qualità rete di un device: una misura ogni 30 minuti circa. */
+export function useHiTrackNetworkQualityHistory(deviceId: string | null, range: HiTrackHistoryRange) {
+  const { organizationId, groupId, abilitato } = useHiTrackAbilitato();
+
+  return useQuery({
+    queryKey: ["hitrack-network-quality-history", organizationId, groupId, deviceId, range],
+    queryFn: () => fetchHiTrackNetworkQualityHistory(organizationId!, deviceId!, range, groupId),
+    enabled: abilitato && !!deviceId,
     staleTime: 5 * 60_000,
   });
 }

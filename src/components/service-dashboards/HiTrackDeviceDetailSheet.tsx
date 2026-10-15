@@ -1,8 +1,8 @@
-// Dettaglio di un device HiTrack: interfacce di rete con stato, traffico e
-// storico (riassunti orari e giornalieri del backend), e per i vCenter host,
-// datastore e macchine virtuali.
+// Dettaglio di un device HiTrack: andamento della qualità rete, interfacce di
+// rete con stato, traffico e storico (riassunti orari e giornalieri del
+// backend), e per i vCenter host, datastore e macchine virtuali.
 import React, { useMemo, useState } from "react";
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis } from "recharts";
+import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis } from "recharts";
 import { Loader2, Search } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -11,8 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useHiTrackDeviceDetail, useHiTrackInterfaceHistory } from "@/hooks/useHiTrackDashboard";
-import { formatBps } from "@/lib/hitrack/formatters";
+import { useHiTrackDeviceDetail, useHiTrackInterfaceHistory, useHiTrackNetworkQualityHistory } from "@/hooks/useHiTrackDashboard";
+import { formatBps, formatMillis, formatPercent } from "@/lib/hitrack/formatters";
 import type { HiTrackHistoryRange, HiTrackInterface, HiTrackInventoryItem, HiTrackMonitoredDevice } from "@/lib/hitrack/types";
 
 const RANGES: Array<[HiTrackHistoryRange, string]> = [
@@ -59,7 +59,8 @@ export function HiTrackDeviceDetailSheet({
 					</SheetDescription>
 				</SheetHeader>
 
-				<div className="mt-4">
+				<div className="mt-4 space-y-6">
+					{device && <NetworkQualityTrend deviceId={device.id} />}
 					{query.isLoading && (
 						<div className="flex items-center gap-2 text-sm text-muted-foreground">
 							<Loader2 className="h-4 w-4 animate-spin" /> Caricamento del dettaglio…
@@ -67,7 +68,7 @@ export function HiTrackDeviceDetailSheet({
 					)}
 					{query.isError && <p className="text-sm text-muted-foreground">Dettaglio non disponibile.</p>}
 					{detail && !hasInterfaces && !hasInventory && (
-						<p className="text-sm text-muted-foreground">Nessuna interfaccia o inventario disponibile per questo device.</p>
+						<p className="text-sm text-muted-foreground">Nessuna interfaccia o inventario di virtualizzazione per questo device.</p>
 					)}
 					{detail && (hasInterfaces || hasInventory) && (
 						<Tabs defaultValue={hasInterfaces ? "interfaces" : "inventory"}>
@@ -284,6 +285,80 @@ function InterfaceHistory({ deviceId, iface }: { deviceId: string; iface: HiTrac
 			{data.length > 0 && (
 				<p className="text-xs text-muted-foreground">
 					Linee continue: media {daily ? "giornaliera" : "oraria"}. Tratteggio: picco. Inattiva nel periodo: {downTotal} minuti.
+				</p>
+			)}
+		</div>
+	);
+}
+
+const HEALTH_LABEL: Record<string, string> = { green: "Verde", amber: "Attenzione", red: "Critico", unknown: "Dato non disponibile" };
+
+function NetworkQualityTrend({ deviceId }: { deviceId: string }) {
+	const [range, setRange] = useState<HiTrackHistoryRange>("24h");
+	const query = useHiTrackNetworkQualityHistory(deviceId, range);
+	const points = query.data?.points ?? [];
+
+	const data = points.map((p) => ({
+		label: new Date(p.at).toLocaleString("it-IT", range === "24h" ? { hour: "2-digit", minute: "2-digit" } : { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }),
+		score: p.score,
+		point: p,
+	}));
+
+	return (
+		<div className="space-y-2 rounded-md border p-3">
+			<div className="flex flex-wrap items-center justify-between gap-2">
+				<p className="text-sm font-medium">Qualità rete nel tempo</p>
+				<div className="flex gap-1">
+					{RANGES.map(([key, label]) => (
+						<Button key={key} size="sm" variant={range === key ? "default" : "outline"} className="h-7 px-2" onClick={() => setRange(key)}>
+							{label}
+						</Button>
+					))}
+				</div>
+			</div>
+			{query.isLoading ? (
+				<div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
+					<Loader2 className="mr-2 h-4 w-4 animate-spin" /> Caricamento…
+				</div>
+			) : data.length === 0 ? (
+				<p className="py-8 text-center text-sm text-muted-foreground">
+					Nessuna misura ancora disponibile per questo periodo: se ne aggiunge una ogni 30 minuti circa.
+				</p>
+			) : (
+				<div className="h-48">
+					<ResponsiveContainer width="100%" height="100%">
+						<LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+							<CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+							<XAxis dataKey="label" tick={{ fontSize: 10 }} minTickGap={24} />
+							<YAxis domain={[0, 100]} ticks={[0, 50, 80, 100]} tick={{ fontSize: 10 }} width={32} />
+							<ReferenceLine y={80} stroke="#f59e0b" strokeDasharray="4 3" strokeOpacity={0.6} />
+							<ReferenceLine y={50} stroke="#ef4444" strokeDasharray="4 3" strokeOpacity={0.6} />
+							<ChartTooltip
+								contentStyle={{ background: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", fontSize: 12 }}
+								content={({ active, payload }) => {
+									const p = active ? payload?.[0]?.payload?.point : null;
+									if (!p) return null;
+									return (
+										<div className="space-y-0.5 rounded-md border bg-popover p-2 text-xs">
+											<p className="font-medium">{fmtDateTime(p.at)}</p>
+											<p>
+												{p.score !== null ? `${p.score}/100` : "Dato non disponibile"} · {HEALTH_LABEL[p.health] ?? p.health}
+											</p>
+											<p className="text-muted-foreground">
+												RTD mediana {formatMillis(p.medianMs)} · picco {formatMillis(p.worstMs)} · perdita {formatPercent(p.lossPercent)}
+											</p>
+										</div>
+									);
+								}}
+							/>
+							<Line type="monotone" dataKey="score" name="Qualità rete" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} connectNulls={false} />
+						</LineChart>
+					</ResponsiveContainer>
+				</div>
+			)}
+			{data.length > 0 && (
+				<p className="text-xs text-muted-foreground">
+					Una misura ogni 30 minuti circa. Sopra 80 la rete è buona, sotto 50 è critica. Non misura la banda.
 				</p>
 			)}
 		</div>
