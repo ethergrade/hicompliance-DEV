@@ -13,6 +13,8 @@ export interface HipatchDashboardData {
   remediations: HipatchRemediation[];
   cves: HipatchCve[];
   epssVulnerabilities: HipatchCve[];
+  /** La chiamata delle CVE è fallita: non è "nessuna CVE". */
+  cvesFailed: boolean;
 }
 
 const emptyData: HipatchDashboardData = {
@@ -25,7 +27,25 @@ const emptyData: HipatchDashboardData = {
   remediations: [],
   cves: [],
   epssVulnerabilities: [],
+  cvesFailed: false,
 };
+
+/**
+ * Il backend manda per ogni CVE solo gli id degli asset (con le righe intere,
+ * su un cliente grande la risposta superava la memoria del server): gli asset
+ * si ricollegano qui dall'elenco asset, che si scarica comunque.
+ */
+function withAssets(cves: HipatchCve[], assets: HipatchAsset[]): HipatchCve[] {
+  const byId = new Map(assets.map((a) => [String(a['data.id'] ?? ''), a]));
+  return cves.map((c) => (c.asset_ids
+    ? {
+        ...c,
+        assets: c.asset_ids
+          .map((id) => byId.get(String(id)))
+          .filter((a): a is HipatchAsset => !!a) as HipatchCve['assets'],
+      }
+    : c));
+}
 
 export function useHipatchDashboard(date?: string) {
   const { organizationId, groupId } = useClientOrganization();
@@ -44,7 +64,7 @@ export function useHipatchDashboard(date?: string) {
           hipatchApi.softwarePatchesPending(organizationId, groupId, date).catch(() => []),
           hipatchApi.softwarePatchesInstalled(organizationId, groupId, date).catch(() => []),
           hipatchApi.remediations(organizationId, groupId, date).catch(() => []),
-          hipatchApi.cves(organizationId, groupId, date).catch(() => []),
+          hipatchApi.cves(organizationId, groupId, date).catch(() => null),
           hipatchApi.epssVulnerabilities(organizationId, groupId, date).catch(() => []),
         ]);
 
@@ -56,8 +76,9 @@ export function useHipatchDashboard(date?: string) {
         softwarePatchesPending: swPending,
         softwarePatchesInstalled: swInstalled,
         remediations,
-        cves,
-        epssVulnerabilities: epss,
+        cves: withAssets(cves ?? [], assets),
+        epssVulnerabilities: withAssets(epss, assets),
+        cvesFailed: cves === null,
       };
     },
     enabled: !!organizationId,

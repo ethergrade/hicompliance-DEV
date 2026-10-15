@@ -337,12 +337,19 @@ export const HiPatchDashboard: React.FC = () => {
                     const devicePart = affectedIds.size > 0 ? ` su ${affectedIds.size} device` : '';
                     return `${mappedCves.length} CVE${devicePart} — ordinate per severità`;
                   })()
-                : 'Nessuna CVE rilevata'}
+                : data?.cvesFailed
+                  ? 'Elenco delle CVE non disponibile'
+                  : 'Nessuna CVE rilevata'}
             </p>
           </CardHeader>
           <CardContent>
             {mappedCves.length > 0 ? (
               <VulnerabilitiesTable vulnerabilities={mappedCves} />
+            ) : data?.cvesFailed ? (
+              <div className="text-center py-8 text-sm text-destructive">
+                <AlertTriangle className="w-10 h-10 mx-auto mb-2 opacity-60" />
+                Non è stato possibile caricare l'elenco delle CVE. Riprova più tardi.
+              </div>
             ) : (
               <div className="text-center py-8 text-muted-foreground text-sm">
                 <Info className="w-10 h-10 mx-auto mb-2 opacity-30" />

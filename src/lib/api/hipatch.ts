@@ -122,6 +122,8 @@ export interface HipatchCve {
 	problem_name: string;
 	severity: string;
 	total_count: string | number;
+	/** Id degli asset coinvolti: il backend manda solo questi, gli asset si ricollegano dall'elenco asset. */
+	asset_ids?: Array<string | number>;
 	assets?: HipatchCveAsset[];
 }
 
