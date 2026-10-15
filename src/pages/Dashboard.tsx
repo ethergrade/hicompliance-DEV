@@ -91,12 +91,14 @@ const Dashboard: React.FC = () => {
 	const canManageIntegrationSettings = isSuperAdmin || isSales;
 	const [modulesDialogOpen, setModulesDialogOpen] = useState(false);
 
-	// Chi ha HiTrack senza HiCompliance (HiConsole) non ha assessment: i blocchi
-	// di conformità, rischio e trend sarebbero vuoti o fuorvianti. Si nascondono
-	// solo quando i servizi sono noti, per non farli sparire e ricomparire.
+	// HiCompliance è il servizio che abilita assessment e True Risk Score: chi non
+	// ce l'ha (per esempio un cliente con solo HiTrack) non vede conformità,
+	// rischio e trend, che sarebbero vuoti o fuorvianti. Si nascondono solo quando
+	// i servizi del cliente sono caricati, per non farli sparire e ricomparire.
 	const orgFlags = useOrganizationStore((s) => s.orgFlags);
-	const hiTrackOnly = !!orgFlags?.hitrack_enabled && !orgFlags?.hicompliance_enabled;
-	const complianceOrgId = hiTrackOnly ? null : activeOrgId;
+	const servicesLoaded = useOrganizationStore((s) => s.tenantServices.length > 0);
+	const noCompliance = servicesLoaded && !orgFlags?.hicompliance_enabled;
+	const complianceOrgId = noCompliance ? null : activeOrgId;
 
 	// Per-tenant assessment metrics + trends for dashboard widgets
 	const { completionScore, riskScore, assessmentId } = useDashboardMetrics(
@@ -291,7 +293,7 @@ const Dashboard: React.FC = () => {
 						</h1>
 						<p className="text-muted-foreground">{activeOrgName}</p>
 					</div>
-					{!hiTrackOnly && (
+					{!noCompliance && (
 						<div className="text-right">
 							<div className="text-4xl font-bold text-red-500 mb-1">
 								{totalIssues}
@@ -301,7 +303,7 @@ const Dashboard: React.FC = () => {
 					)}
 				</div>
 
-				{!hiTrackOnly && (
+				{!noCompliance && (
 				<div className="space-y-3">
 					<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 						<ComplianceMetricCard
@@ -452,7 +454,7 @@ const Dashboard: React.FC = () => {
 				</Card>
 
 				{/* Analisi e Trend — dati dal report mensile dell'assessment */}
-				{!hiTrackOnly && (
+				{!noCompliance && (
 				<Card className="border-border">
 					<CardHeader className="pb-3">
 						<CardTitle className="text-lg">Analisi e Trend</CardTitle>
