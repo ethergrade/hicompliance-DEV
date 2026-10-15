@@ -13,7 +13,10 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { useContactDirectory } from '@/hooks/useContactDirectory';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { documentsApi } from '@/lib/api';
-import { SOURCE_LABELS } from '@/lib/api/documents';
+import { SOURCE_LABELS, foldersApi, type DocumentFolder } from '@/lib/api/documents';
+import { DocumentFolderPanel, MoveCopyDialog, BulkTagDialog, folderPath, ROOT, type FolderSelection } from '@/components/documents/DocumentFolders';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Copy, FolderInput, Folder, Tag } from 'lucide-react';
 import type { DocumentResource } from '@/types/api';
 import DocumentSearchBar, { DocumentFilters } from '@/components/documents/DocumentSearchBar';
 import DocumentMetadataDialog, { DocumentMetadata } from '@/components/documents/DocumentMetadataDialog';
@@ -96,13 +99,40 @@ const Documents: React.FC = () => {
     }
   };
 
+  const [folders, setFolders] = useState<DocumentFolder[]>([]);
+  const [folderSel, setFolderSel] = useState<FolderSelection>('all');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [moveMode, setMoveMode] = useState<'move' | 'copy' | null>(null);
+  const [moveIds, setMoveIds] = useState<string[]>([]);
+  const [tagDialogOpen, setTagDialogOpen] = useState(false);
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const toggleSel = (id: string) => setSelectedIds(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
+
+  const fetchFolders = async () => {
+    if (!organizationId) return;
+    try { setFolders(await foldersApi.list(organizationId)); } catch (e) { console.error('Error fetching folders:', e); }
+  };
+
   useEffect(() => {
-    if (organizationId) fetchDocuments();
+    if (organizationId) { fetchDocuments(); fetchFolders(); setFolderSel('all'); setSelectedIds([]); setTagFilter(null); }
   }, [organizationId]);
+
+  const descendantIds = (id: string): Set<string> => {
+    const out = new Set<string>([id]);
+    let added = true;
+    while (added) { added = false; for (const f of folders) if (f.parent_id && out.has(f.parent_id) && !out.has(f.id)) { out.add(f.id); added = true; } }
+    return out;
+  };
+
+  const allTags = useMemo(() => Array.from(new Set(documents.flatMap(d => d.tags || []))).sort((a, b) => a.localeCompare(b)), [documents]);
 
   // Filter documents
   const filteredDocuments = useMemo(() => {
+    const inFolder = folderSel !== 'all' && folderSel !== ROOT ? descendantIds(folderSel) : null;
     return documents.filter(doc => {
+      if (folderSel === ROOT && doc.folder_id) return false;
+      if (inFolder && !inFolder.has(doc.folder_id)) return false;
+      if (tagFilter && !doc.tags?.includes(tagFilter)) return false;
       if (sourceFilter !== 'all' && doc.source_type !== sourceFilter) return false;
       if (filters.category !== 'all' && doc.category !== filters.category) return false;
       if (filters.status !== 'all' && doc.status !== filters.status) return false;
@@ -117,7 +147,7 @@ const Documents: React.FC = () => {
       }
       return true;
     });
-  }, [documents, filters]);
+  }, [documents, filters, sourceFilter, folderSel, folders, tagFilter]);
 
   const getCategoryCount = (category: DocumentCategory | 'all') => {
     if (category === 'all') return documents.length;
@@ -148,6 +178,7 @@ const Documents: React.FC = () => {
         description: uploadForm.description,
         tags: uploadOrigin === 'irp' ? Array.from(new Set([...uploadForm.tags, 'IRP', 'modificato dal cliente'])) : uploadForm.tags,
         source_type: uploadOrigin,
+        folder_id: folderSel !== 'all' && folderSel !== ROOT ? folderSel : null,
       });
 
       toast({ title: "Successo", description: "Documento caricato con successo" });
@@ -265,8 +296,14 @@ const Documents: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          <div className="lg:col-span-1 space-y-6">
+          <DocumentFolderPanel folders={folders} selected={folderSel} onSelect={(s) => { setFolderSel(s); setSelectedIds([]); }}
+            counts={(s) => s === 'all' ? documents.length : s === ROOT ? documents.filter(d => !d.folder_id).length : documents.filter(d => descendantIds(s).has(d.folder_id)).length}
+            onCreate={async (name, parent) => { try { await foldersApi.create(organizationId, name, parent); fetchFolders(); } catch (e: any) { toast({ title: 'Errore', description: e?.message?.includes('duplicate') ? 'Esiste già una cartella con questo nome' : e?.message, variant: 'destructive' }); } }}
+            onRename={async (id, name) => { await foldersApi.rename(id, name); fetchFolders(); }}
+            onDelete={async (id) => { await foldersApi.remove(id); if (folderSel === id) setFolderSel('all'); fetchFolders(); fetchDocuments(); }} />
           {/* Categories Sidebar */}
-          <Card className="border-border bg-card lg:col-span-1">
+          <Card className="border-border bg-card">
             <CardHeader>
               <CardTitle className="text-foreground flex items-center gap-2">
                 <FolderOpen className="w-5 h-5" />
@@ -295,6 +332,7 @@ const Documents: React.FC = () => {
               ))}
             </CardContent>
           </Card>
+          </div>
 
           {/* Main Content */}
           <div className="lg:col-span-3 space-y-6">
@@ -418,14 +456,34 @@ const Documents: React.FC = () => {
                 </Button>
               ))}
             </div>
+            {allTags.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Tag className="w-4 h-4 text-muted-foreground" />
+                <Button size="sm" variant={tagFilter === null ? 'default' : 'outline'} className="h-7" onClick={() => setTagFilter(null)}>Tutti i tag</Button>
+                {allTags.map(t => (
+                  <Button key={t} size="sm" variant={tagFilter === t ? 'default' : 'outline'} className="h-7" onClick={() => setTagFilter(tagFilter === t ? null : t)}>#{t}</Button>
+                ))}
+              </div>
+            )}
 
             {/* Documents List */}
             <Card className="border-border bg-card">
-              <CardHeader>
-                <CardTitle className="text-foreground">
-                  {filters.category === 'all' ? 'Tutti i Documenti' : filters.category}
-                  <span className="text-muted-foreground text-sm font-normal ml-2">({filteredDocuments.length})</span>
+              <CardHeader className="space-y-3">
+                <CardTitle className="text-foreground flex items-center gap-3 flex-wrap">
+                  <Checkbox checked={filteredDocuments.length > 0 && filteredDocuments.every(d => selectedIds.includes(d.id))}
+                    onCheckedChange={(v) => setSelectedIds(v ? filteredDocuments.map(d => d.id) : [])} aria-label="Seleziona tutti" />
+                  <span>{folderSel === 'all' ? (filters.category === 'all' ? 'Tutti i Documenti' : filters.category) : folderSel === ROOT ? 'Radice' : folderPath(folders, folderSel)}</span>
+                  <span className="text-muted-foreground text-sm font-normal">({filteredDocuments.length})</span>
                 </CardTitle>
+                {selectedIds.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/40 bg-primary/5 p-2">
+                    <span className="text-sm font-medium">{selectedIds.length} selezionati</span>
+                    <Button size="sm" variant="outline" onClick={() => { setMoveIds(selectedIds); setMoveMode('move'); }}><FolderInput className="w-4 h-4 mr-1" />Sposta</Button>
+                    <Button size="sm" variant="outline" onClick={() => { setMoveIds(selectedIds); setMoveMode('copy'); }}><Copy className="w-4 h-4 mr-1" />Copia</Button>
+                    <Button size="sm" variant="outline" onClick={() => setTagDialogOpen(true)}><Tag className="w-4 h-4 mr-1" />Tag</Button>
+                    <Button size="sm" variant="ghost" onClick={() => setSelectedIds([])}>Annulla</Button>
+                  </div>
+                )}
               </CardHeader>
               <CardContent>
                 {loading ? (
@@ -438,8 +496,9 @@ const Documents: React.FC = () => {
                 ) : (
                   <div className="space-y-2">
                     {filteredDocuments.map(doc => (
-                      <div key={doc.id} className="flex items-start justify-between p-4 border border-border rounded-lg hover:bg-accent/50 transition-colors">
+                      <div key={doc.id} className={`flex items-start justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors ${selectedIds.includes(doc.id) ? 'border-primary' : 'border-border'}`}>
                         <div className="flex items-start space-x-3 flex-1 min-w-0">
+                          <Checkbox className="mt-0.5" checked={selectedIds.includes(doc.id)} onCheckedChange={() => toggleSel(doc.id)} aria-label="Seleziona" />
                           <FileText className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
                           <div className="min-w-0 flex-1 space-y-1">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -460,16 +519,23 @@ const Documents: React.FC = () => {
                               <Badge variant="secondary" className="text-xs">{doc.category}</Badge>
                               <Badge className="text-xs">{SOURCE_LABELS[doc.source_type] || 'Manuale'}</Badge>
                               {doc.tags && doc.tags.length > 0 && doc.tags.map(t => (
-                                <Badge key={t} variant="outline" className="text-xs">{t}</Badge>
+                                <Badge key={t} variant="outline" className="text-xs cursor-pointer" onClick={() => setTagFilter(t)} title="Filtra per tag">#{t}</Badge>
                               ))}
                             </div>
                             <div className="text-xs text-muted-foreground space-y-0.5">
+                              {doc.folder_id && <span className="inline-flex items-center gap-1 mr-1"><Folder className="w-3 h-3" />{folderPath(folders, doc.folder_id)} •</span>}
                               <span>{doc.file_size ? `${formatFileSize(doc.file_size)} • ` : 'Report generato • '}{new Date(doc.created_at).toLocaleString('it-IT')}</span>
                               {doc.revision_date && <span> • Rev. {formatDate(doc.revision_date)}</span>}
                             </div>
                           </div>
                         </div>
                         <div className="flex items-center space-x-1 flex-shrink-0 ml-2">
+                          <Button size="sm" variant="ghost" onClick={() => { setMoveIds([doc.id]); setMoveMode('move'); }} title="Sposta">
+                            <FolderInput className="w-4 h-4" />
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => { setMoveIds([doc.id]); setMoveMode('copy'); }} title="Copia">
+                            <Copy className="w-4 h-4" />
+                          </Button>
                           <Button size="sm" variant="ghost" onClick={() => openPreview(doc)} title="Anteprima">
                             <Eye className="w-4 h-4" />
                           </Button>
@@ -492,6 +558,28 @@ const Documents: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <MoveCopyDialog open={!!moveMode} mode={moveMode || 'move'} count={moveIds.length} folders={folders}
+        onOpenChange={o => !o && setMoveMode(null)}
+        onConfirm={async (target) => {
+          try {
+            if (moveMode === 'copy') await documentsApi.copy(organizationId, moveIds, target);
+            else await documentsApi.move(organizationId, moveIds, target);
+            toast({ title: moveMode === 'copy' ? 'Documenti copiati' : 'Documenti spostati', description: folderPath(folders, target) });
+            setMoveMode(null); setSelectedIds([]); fetchDocuments();
+          } catch (e: any) { toast({ title: 'Errore', description: e?.message || 'Operazione non riuscita', variant: 'destructive' }); }
+        }} />
+
+      <BulkTagDialog open={tagDialogOpen} count={selectedIds.length} suggestions={allTags} onOpenChange={setTagDialogOpen}
+        onConfirm={async (add, remove) => {
+          try {
+            for (const d of documents.filter(x => selectedIds.includes(x.id))) {
+              const next = Array.from(new Set([...(d.tags || []).filter(t => !remove.includes(t)), ...add]));
+              await documentsApi.setTags(organizationId, d.id, next);
+            }
+            toast({ title: 'Tag aggiornati' }); setTagDialogOpen(false); fetchDocuments();
+          } catch (e: any) { toast({ title: 'Errore', description: e?.message, variant: 'destructive' }); }
+        }} />
 
       {/* Metadata Dialog */}
       <DocumentMetadataDialog
