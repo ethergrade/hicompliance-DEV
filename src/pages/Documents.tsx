@@ -14,7 +14,7 @@ import { useContactDirectory } from '@/hooks/useContactDirectory';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { documentsApi } from '@/lib/api';
 import { SOURCE_LABELS, foldersApi, type DocumentFolder } from '@/lib/api/documents';
-import { DocumentFolderPanel, MoveCopyDialog, BulkTagDialog, folderPath, ROOT, type FolderSelection } from '@/components/documents/DocumentFolders';
+import { DocumentFolderPanel, MoveCopyDialog, BulkTagDialog, folderPath, ROOT, DOC_DRAG_MIME, type FolderSelection } from '@/components/documents/DocumentFolders';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Copy, FolderInput, Folder, Tag } from 'lucide-react';
 import type { DocumentResource } from '@/types/api';
@@ -106,6 +106,14 @@ const Documents: React.FC = () => {
   const [moveIds, setMoveIds] = useState<string[]>([]);
   const [tagDialogOpen, setTagDialogOpen] = useState(false);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const runMoveCopy = async (mode: 'move' | 'copy', ids: string[], target: string | null) => {
+    try {
+      if (mode === 'copy') await documentsApi.copy(organizationId, ids, target);
+      else await documentsApi.move(organizationId, ids, target);
+      toast({ title: mode === 'copy' ? 'Documenti copiati' : 'Documenti spostati', description: folderPath(folders, target) });
+      setMoveMode(null); setSelectedIds([]); fetchDocuments();
+    } catch (e: any) { toast({ title: 'Errore', description: e?.message || 'Operazione non riuscita', variant: 'destructive' }); }
+  };
   const toggleSel = (id: string) => setSelectedIds(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
 
   const fetchFolders = async () => {
@@ -301,6 +309,7 @@ const Documents: React.FC = () => {
             counts={(s) => s === 'all' ? documents.length : s === ROOT ? documents.filter(d => !d.folder_id).length : documents.filter(d => descendantIds(s).has(d.folder_id)).length}
             onCreate={async (name, parent) => { try { await foldersApi.create(organizationId, name, parent); fetchFolders(); } catch (e: any) { toast({ title: 'Errore', description: e?.message?.includes('duplicate') ? 'Esiste già una cartella con questo nome' : e?.message, variant: 'destructive' }); } }}
             onRename={async (id, name) => { await foldersApi.rename(id, name); fetchFolders(); }}
+            onDropDocs={(ids, target, copy) => runMoveCopy(copy ? 'copy' : 'move', ids, target)}
             onDelete={async (id) => { await foldersApi.remove(id); if (folderSel === id) setFolderSel('all'); fetchFolders(); fetchDocuments(); }} />
           {/* Categories Sidebar */}
           <Card className="border-border bg-card">
@@ -496,7 +505,9 @@ const Documents: React.FC = () => {
                 ) : (
                   <div className="space-y-2">
                     {filteredDocuments.map(doc => (
-                      <div key={doc.id} className={`flex items-start justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors ${selectedIds.includes(doc.id) ? 'border-primary' : 'border-border'}`}>
+                      <div key={doc.id} draggable title="Trascina su una cartella per spostare (Ctrl/Alt per copiare)"
+                        onDragStart={(e) => { const ids = selectedIds.includes(doc.id) ? selectedIds : [doc.id]; e.dataTransfer.setData(DOC_DRAG_MIME, JSON.stringify(ids)); e.dataTransfer.effectAllowed = 'copyMove'; }}
+                        className={`cursor-grab flex items-start justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors ${selectedIds.includes(doc.id) ? 'border-primary' : 'border-border'}`}>
                         <div className="flex items-start space-x-3 flex-1 min-w-0">
                           <Checkbox className="mt-0.5" checked={selectedIds.includes(doc.id)} onCheckedChange={() => toggleSel(doc.id)} aria-label="Seleziona" />
                           <FileText className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
@@ -559,16 +570,9 @@ const Documents: React.FC = () => {
         </div>
       </div>
 
-      <MoveCopyDialog open={!!moveMode} mode={moveMode || 'move'} count={moveIds.length} folders={folders}
+      <MoveCopyDialog open={!!moveMode} initialTarget={folderSel !== 'all' && folderSel !== ROOT ? folderSel : null} mode={moveMode || 'move'} count={moveIds.length} folders={folders}
         onOpenChange={o => !o && setMoveMode(null)}
-        onConfirm={async (target) => {
-          try {
-            if (moveMode === 'copy') await documentsApi.copy(organizationId, moveIds, target);
-            else await documentsApi.move(organizationId, moveIds, target);
-            toast({ title: moveMode === 'copy' ? 'Documenti copiati' : 'Documenti spostati', description: folderPath(folders, target) });
-            setMoveMode(null); setSelectedIds([]); fetchDocuments();
-          } catch (e: any) { toast({ title: 'Errore', description: e?.message || 'Operazione non riuscita', variant: 'destructive' }); }
-        }} />
+        onConfirm={(target) => runMoveCopy(moveMode || 'move', moveIds, target)} />
 
       <BulkTagDialog open={tagDialogOpen} count={selectedIds.length} suggestions={allTags} onOpenChange={setTagDialogOpen}
         onConfirm={async (add, remove) => {
