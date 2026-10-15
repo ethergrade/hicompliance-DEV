@@ -238,10 +238,6 @@ function NetworkQualityCell({ quality }: { quality?: HiTrackNetworkQuality }) {
 	const { isSuperAdmin } = useUserRoles();
 	const q = quality ?? { algorithmVersion: "network-quality-v1", score: null, health: "unknown" as const, dataQuality: "provisional" as const, reasons: ["missing_metrics"], observedAt: null };
 	const h = HEALTH[q.health] ?? HEALTH.unknown;
-	const observed = q.observedAt ? new Date(q.observedAt) : null;
-	// Senza l'ora della misura (la sorgente manda `timestamp` vuoto) l'ora salvata è
-	// quella della nostra lettura, non della misura.
-	const observedLabel = q.reasons.includes("no_observed_at") ? "Ultima lettura" : "Ultima misura";
 	const reasons = isSuperAdmin ? q.reasons : q.reasons.filter((r) => !DATA_QUALITY_REASONS.has(r));
 
 	return (
@@ -273,10 +269,10 @@ function NetworkQualityCell({ quality }: { quality?: HiTrackNetworkQuality }) {
 						))}
 					</ul>
 				)}
-				<p className="text-muted-foreground">
-					{observedLabel}: {observed && !Number.isNaN(observed.getTime()) ? observed.toLocaleString("it-IT") : "non disponibile"}
-					{isSuperAdmin && ` · ${q.algorithmVersion}`}
-				</p>
+				{/* L'ora dell'ultima misura per ora non si mostra: la misura arriva ogni
+				    30 minuti e finché non c'è un dato più vicino al tempo reale l'ora
+				    fa sembrare il dato vecchio. Resta nel grafico del dettaglio. */}
+				{isSuperAdmin && <p className="text-muted-foreground">{q.algorithmVersion}</p>}
 			</TooltipContent>
 		</Tooltip>
 	);
