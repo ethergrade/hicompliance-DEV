@@ -2,29 +2,7 @@ import React from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Database } from 'lucide-react';
-
-const BUCKET_LABELS: Record<string, string> = {
-  leaks_restricted:        'Leaks › Restricted',
-  leaks_logs:              'Leaks › Logs',
-  leaks_public:            'Leaks › Public',
-  'leaks.logs':            'Leaks › Logs',
-  'leaks.private.general': 'Leaks › Private',
-  'leaks.public.general':  'Leaks › Public',
-  'leaks.restricted':      'Leaks › Restricted',
-  'web.public.com':        'Web: .com',
-  'web.public.it':         'Web: .it',
-  'web.public.org':        'Web: .org',
-  'web.public.net':        'Web: .net',
-  whois:                   'WHOIS',
-  dns:                     'DNS',
-  DNS:                     'DNS',
-  paste:                   'Paste Sites',
-  social:                  'Social Media',
-  forum:                   'Forum',
-  darkweb:                 'Dark Web',
-  '.com':                  'Web: .com',
-  '.it':                   'Web: .it',
-};
+import { SOURCE_GLOSSARY, aggregateBySourceCategory } from '../domain/sourceCategory';
 
 const BUCKET_COLORS = [
   '#ef4444', '#f97316', '#eab308', '#22c55e',
@@ -38,10 +16,11 @@ interface Props {
 }
 
 export function DarkRiskSourcePieChart({ data, title = 'Results per Data Source' }: Props) {
-  const chartData = Object.entries(data)
+  // Categorie del glossario, mai i bucket del fornitore.
+  const chartData = Object.entries(aggregateBySourceCategory(data))
     .sort((a, b) => b[1] - a[1])
     .map(([key, value], idx) => ({
-      name: BUCKET_LABELS[key] ?? key,
+      name: key,
       value,
       color: BUCKET_COLORS[idx % BUCKET_COLORS.length],
     }));
@@ -105,7 +84,25 @@ export function DarkRiskSourcePieChart({ data, title = 'Results per Data Source'
             />
           </PieChart>
         </ResponsiveContainer>
+        <SourceGlossary />
       </CardContent>
     </Card>
+  );
+}
+
+/** Glossario delle categorie, sotto il grafico: le stesse voci in fondo al report PDF. */
+function SourceGlossary() {
+  return (
+    <details className="mt-3 rounded-md border border-border/60 p-2 text-xs">
+      <summary className="cursor-pointer text-muted-foreground">Glossario delle sorgenti</summary>
+      <dl className="mt-2 grid gap-x-3 gap-y-1.5 sm:grid-cols-[max-content_1fr]">
+        {SOURCE_GLOSSARY.map(([category, meaning]) => (
+          <React.Fragment key={category}>
+            <dt className="font-medium">{category}</dt>
+            <dd className="text-muted-foreground">{meaning}</dd>
+          </React.Fragment>
+        ))}
+      </dl>
+    </details>
   );
 }
