@@ -52,7 +52,7 @@ export interface HiTrackMonitoredDevice {
   inventoryCount?: number;
 }
 
-/** Stato online/offline dei device, riletto ogni 4 minuti con la dashboard aperta. */
+/** Stato online/offline dei device, riletto ogni 2 minuti con la dashboard aperta. */
 export interface HiTrackDeviceStatus {
   refreshing: boolean;
   devices: Array<Pick<HiTrackMonitoredDevice, "id" | "status" | "statusType" | "lastStatusChangeAt" | "statusCheckedAt">>;

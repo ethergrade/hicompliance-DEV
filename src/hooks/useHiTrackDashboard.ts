@@ -101,7 +101,7 @@ export function useHiTrackInterfaceHistory(
 }
 
 /**
- * Stato online/offline dei device, solo nella vista HiTrack: ogni 4 minuti
+ * Stato online/offline dei device, solo nella vista HiTrack: ogni 2 minuti
  * finché la pagina è aperta e visibile. Se il backend sta rileggendo lo stato
  * da Domotz (`refreshing`), si richiede dopo pochi secondi.
  */
@@ -112,7 +112,7 @@ export function useHiTrackDeviceStatus() {
     queryKey: ["hitrack-device-status", organizationId, groupId],
     queryFn: () => fetchHiTrackDeviceStatus(organizationId!, groupId),
     enabled: abilitato,
-    refetchInterval: (query) => (query.state.data?.refreshing ? 10_000 : 4 * 60_000),
+    refetchInterval: (query) => (query.state.data?.refreshing ? 10_000 : 2 * 60_000),
     refetchIntervalInBackground: false,
   });
 }
