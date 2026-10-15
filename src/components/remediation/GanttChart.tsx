@@ -72,7 +72,10 @@ interface GanttChartProps {
 	onReorderTasks: (taskId: string, newIndex: number) => void;
 	onProgressChange?: (taskId: string, progress: number) => void;
 	onDoneChange?: (taskId: string, isDone: boolean) => void;
+	/** Modificare le attività: ghiera, date, riordino. */
 	canEdit?: boolean;
+	/** Eliminare un'attività (il cestino accanto alla ghiera); di default come canEdit. */
+	canDelete?: boolean;
 	canUpdateProgress?: boolean;
 }
 
@@ -114,6 +117,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 	onProgressChange,
 	onDoneChange,
 	canEdit = true,
+	canDelete = canEdit,
 	canUpdateProgress = false,
 }) => {
 	const canMarkDone = Boolean(onDoneChange) && (canEdit || canUpdateProgress);
@@ -617,13 +621,15 @@ export const GanttChart: React.FC<GanttChartProps> = ({
 														>
 															<Settings className="h-3 w-3 text-muted-foreground" />
 														</button>
-														<button
-															type="button"
-															className="p-1 rounded hover:bg-destructive/10"
-															onClick={() => onDeleteTask(task.id)}
-														>
-															<Trash2 className="h-3 w-3 text-destructive/70" />
-														</button>
+														{canDelete && (
+															<button
+																type="button"
+																className="p-1 rounded hover:bg-destructive/10"
+																onClick={() => onDeleteTask(task.id)}
+															>
+																<Trash2 className="h-3 w-3 text-destructive/70" />
+															</button>
+														)}
 													</div>
 												)}
 												{canUpdateProgress && !canEdit && (

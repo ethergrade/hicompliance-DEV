@@ -182,7 +182,10 @@ const Remediation: React.FC = () => {
 		}
 	}, [planCompanyName]);
 	const { capabilities } = useAuth();
+	// .edit crea, elimina e ripristina; .update (il commerciale) modifica soltanto
+	// le attività che ci sono: ghiera, budget, date, ordine.
 	const canEdit = capabilities?.["hicompliance.remediation_tasks.edit"] ?? true;
+	const canModify = canEdit || (capabilities?.["hicompliance.remediation_tasks.update"] ?? false);
 	const canUpdateProgress =
 		capabilities?.["hicompliance.remediation_tasks.view"] ?? false;
 	const [baseGanttWindow] = useState(createGanttWindow);
@@ -940,7 +943,8 @@ const Remediation: React.FC = () => {
 								onReorderTasks={handleReorderTasks}
 								onProgressChange={handleProgressChange}
 								onDoneChange={handleDoneChange}
-								canEdit={canEdit}
+								canEdit={canModify}
+								canDelete={canEdit}
 								canUpdateProgress={canUpdateProgress}
 							/>
 						)}
@@ -1022,6 +1026,7 @@ const Remediation: React.FC = () => {
 														</div>
 													</div>
 												</div>
+												{canEdit && (
 												<Button
 													onClick={() => handleRestoreTask(t.id)}
 													variant="outline"
@@ -1031,6 +1036,7 @@ const Remediation: React.FC = () => {
 													<CheckCircle className="w-4 h-4 mr-2" />
 													Ripristina
 												</Button>
+												)}
 											</div>
 										))}
 									</div>
