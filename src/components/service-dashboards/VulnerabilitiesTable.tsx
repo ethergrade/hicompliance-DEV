@@ -32,6 +32,7 @@ import { cn } from '@/lib/utils';
 import type { HipatchCveAsset } from '@/lib/api/hipatch';
 import { nvdLink } from '@/lib/findingTaxonomy';
 import { severityColors } from './vulnerabilitySeverity';
+import { CveDetailDialog } from '@/components/surface-scan/CveDetailDialog';
 
 interface Vulnerability {
   id: string;
@@ -51,8 +52,28 @@ interface VulnerabilitiesTableProps {
  * campo può contenere anche nomi di problemi senza CVE. L'etichetta non nomina
  * la sorgente.
  */
+const isCveId = (id: string) => /^CVE-\d{4}-\d+$/i.test(id);
+
+/**
+ * L'identificativo della CVE: se è una CVE vera apre il dettaglio completo
+ * (descrizione ufficiale, CVSS, EPSS, KEV, riferimenti), altrimenti è testo.
+ */
+export const CveIdButton: React.FC<{ id: string; onOpen: (id: string) => void }> = ({ id, onOpen }) =>
+  isCveId(id) ? (
+    <button
+      type="button"
+      className="text-left hover:text-primary hover:underline"
+      title="Dettaglio della CVE"
+      onClick={() => onOpen(id.toUpperCase())}
+    >
+      {id}
+    </button>
+  ) : (
+    <>{id}</>
+  );
+
 export const CveLink: React.FC<{ id: string }> = ({ id }) =>
-  /^CVE-\d{4}-\d+$/i.test(id) ? (
+  isCveId(id) ? (
     <a
       href={nvdLink(id.toUpperCase())}
       target="_blank"
@@ -115,6 +136,7 @@ export const VulnerabilitiesTable: React.FC<VulnerabilitiesTableProps> = ({
 }) => {
   const [page, setPage] = useState(0);
   const [modalVuln, setModalVuln] = useState<Vulnerability | null>(null);
+  const [detailCve, setDetailCve] = useState<string | null>(null);
   const [assetFilter, setAssetFilter] = useState<string>('all');
 
   // Build unique asset list from all CVEs that have assets
@@ -180,7 +202,7 @@ export const VulnerabilitiesTable: React.FC<VulnerabilitiesTableProps> = ({
             <TableRow key={index}>
               <TableCell className="font-medium">
                 <div className="flex items-center gap-2">
-                  {vuln.id}
+                  <CveIdButton id={vuln.id} onOpen={setDetailCve} />
                   <CveLink id={vuln.id} />
                   {vuln.description && (
                     <Tooltip>
@@ -237,6 +259,7 @@ export const VulnerabilitiesTable: React.FC<VulnerabilitiesTableProps> = ({
           onClose={() => setModalVuln(null)}
         />
       )}
+      <CveDetailDialog cveId={detailCve} open={!!detailCve} onOpenChange={(open) => !open && setDetailCve(null)} />
     </div>
   );
 };

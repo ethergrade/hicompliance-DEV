@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Info, AlertTriangle, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { RiskScoreCard } from './RiskScoreCard';
-import { CveLink, VulnerabilitiesTable } from './VulnerabilitiesTable';
+import { CveIdButton, CveLink, VulnerabilitiesTable } from './VulnerabilitiesTable';
+import { CveDetailDialog } from '@/components/surface-scan/CveDetailDialog';
 import { severityColors } from './vulnerabilitySeverity';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
@@ -105,6 +106,7 @@ export const HiPatchDashboard: React.FC = () => {
 
   const [assetPage, setAssetPage] = useState(0);
   const [assetCvesOpen, setAssetCvesOpen] = useState<{ name: string; cves: MappedCve[] } | null>(null);
+  const [detailCve, setDetailCve] = useState<string | null>(null);
   const assetPageSize = 10;
 
   // Map CVEs → VulnerabilitiesTable format
@@ -453,7 +455,7 @@ export const HiPatchDashboard: React.FC = () => {
                 <TableRow key={v.id}>
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
-                      {v.id}
+                      <CveIdButton id={v.id} onOpen={setDetailCve} />
                       <CveLink id={v.id} />
                     </div>
                     {v.description && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{v.description}</p>}
@@ -468,6 +470,8 @@ export const HiPatchDashboard: React.FC = () => {
           </Table>
         </DialogContent>
       </Dialog>
+
+      <CveDetailDialog cveId={detailCve} open={!!detailCve} onOpenChange={(open) => !open && setDetailCve(null)} />
 
       {/* OS Patches */}
       <section className="space-y-4">
