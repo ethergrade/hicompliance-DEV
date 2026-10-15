@@ -255,8 +255,12 @@ Archivio su database Supabase (`incident_documents`) e storage `incident-documen
 - Pannello **Cartelle**: Tutte / Radice / albero; per ogni cartella: nuova sottocartella, rinomina, elimina; contatore documenti (inclusi i discendenti).
 - Selezionando una cartella si vedono i documenti suoi e delle sottocartelle; l'upload finisce nella cartella selezionata.
 - Per documento: **Sposta**, **Copia**. Selezione multipla (checkbox, "seleziona tutti") con barra: Sposta, Copia, Tag.
+- Sposta/Copia funzionano verso **qualsiasi cartella del cliente**, incluse quelle create dagli utenti cliente e le sottocartelle a ogni livello, e verso la Radice. Verificato a DB impersonando un utente cliente (crea cartella + sposta documento consentiti da RLS).
+- **Trascina e rilascia:** trascinando un documento (o tutti i selezionati) su una cartella o su Radice lo si sposta; tenendo premuto Ctrl/Alt lo si copia.
+- La finestra Sposta/Copia mostra l'albero completo, propone come destinazione la cartella aperta e indica il percorso scelto.
 - **Sposta**: aggiorna solo `folder_id` (codice e revisione invariati).
-- **Copia**: duplica il file nello storage e crea un nuovo record con nuovo codice, `Rev01`, stato **Bozza**, origine manuale, nome "(copia)" → coerente con ISO (la copia è un nuovo documento, non una revisione).
+- Lo spostamento verifica che la cartella di destinazione appartenga allo stesso cliente.
+- **Copia**: duplica il file nello storage (se la copia diretta non è permessa, ad es. file legacy fuori da `org/{id}/`, il file viene scaricato e ricaricato nel percorso del cliente; se il salvataggio del record fallisce il file copiato viene rimosso) e crea un nuovo record con nuovo codice, `Rev01`, stato **Bozza**, origine manuale, nome "(copia)" → coerente con ISO (la copia è un nuovo documento, non una revisione).
 - **Tag**: aggiunta/rimozione multipla, barra filtro per tag, clic su un tag di un documento per filtrare; il tag resta ricercabile dalla ricerca testuale.
 
 ### API (`src/lib/api/documents.ts`)
@@ -274,3 +278,4 @@ Archivio su database Supabase (`incident_documents`) e storage `incident-documen
 3. Seleziona 3 documenti → Tag "audit": filtro #audit mostra 3 documenti.
 4. Utente cliente B non vede cartelle né documenti di A.
 5. Elimina "Procedure": documenti in Radice, nessun file perso.
+6. Utente cliente: crea una cartella, trascina 2 documenti selezionati sopra (spostati), poi con Ctrl trascinane uno su una sottocartella (copiato).

@@ -162,6 +162,10 @@ export const documentsApi = {
   },
 
   async move(companyId: string, ids: string[], folderId: string | null): Promise<void> {
+    if (folderId) {
+      const { data: f } = await supabase.from("document_folders").select("id").eq("id", folderId).eq("organization_id", companyId).maybeSingle();
+      if (!f) throw new Error("Cartella non trovata per questo cliente");
+    }
     const { error } = await supabase.from("incident_documents")
       .update({ folder_id: folderId, updated_at: new Date().toISOString() })
       .in("id", ids).eq("organization_id", companyId);
@@ -177,8 +181,14 @@ export const documentsApi = {
       let file_path = null;
       if (d.file_path) {
         file_path = `org/${companyId}/${Date.now()}_copia_${d.file_path.split("/").pop()}`;
+        // copy() fallisce sui file legacy fuori da org/{id}/: fallback download + upload nel percorso del cliente
         const { error: cErr } = await supabase.storage.from(BUCKET).copy(d.file_path, file_path);
-        if (cErr) throw cErr;
+        if (cErr) {
+          const { data: blob, error: dErr } = await supabase.storage.from(BUCKET).download(d.file_path);
+          if (dErr || !blob) throw new Error(`File di "${d.name}" non accessibile per la copia`);
+          const { error: uErr } = await supabase.storage.from(BUCKET).upload(file_path, blob, { contentType: d.file_type || undefined });
+          if (uErr) throw uErr;
+        }
       }
       const { id, document_code, uploaded_at, updated_at, source_id, ...rest } = d;
       const { error: iErr } = await supabase.from("incident_documents").insert({
@@ -187,7 +197,7 @@ export const documentsApi = {
         revision: 1, status: "Bozza", source_type: "manual", source_id: null,
         uploaded_by: await currentUserRowId(),
       });
-      if (iErr) throw iErr;
+      if (iErr) { if (file_path) await supabase.storage.from(BUCKET).remove([file_path]); throw iErr; }
     }
   },
 
