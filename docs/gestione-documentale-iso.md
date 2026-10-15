@@ -257,7 +257,8 @@ Archivio su database Supabase (`incident_documents`) e storage `incident-documen
 - Per documento: **Sposta**, **Copia**. Selezione multipla (checkbox, "seleziona tutti") con barra: Sposta, Copia, Tag.
 - Sposta/Copia funzionano verso **qualsiasi cartella del cliente**, incluse quelle create dagli utenti cliente e le sottocartelle a ogni livello, e verso la Radice. Verificato a DB impersonando un utente cliente (crea cartella + sposta documento consentiti da RLS).
 - **Trascina e rilascia:** trascinando un documento (o tutti i selezionati) su una cartella o su Radice lo si sposta; tenendo premuto Ctrl/Alt lo si copia.
-- La finestra Sposta/Copia mostra l'albero completo, propone come destinazione la cartella aperta e indica il percorso scelto.
+- La finestra Sposta/Copia elenca **tutte** le destinazioni: Radice, albero completo delle cartelle del cliente (ogni livello) e le **categorie documentali** (Piano Generale, SOP, Template, Processo, Legal, ISO & Audit, NIS2, Tecnico, Varie). Cartella e categoria si possono combinare; la riga "Destinazione" riassume la scelta. Se il cliente non ha ancora cartelle compare l'invito a crearle dal pannello Cartelle.
+- Spostando in una categoria cambia solo `category` (codice e revisione restano invariati). Copiando in una categoria la copia prende il prefisso della nuova categoria (es. `TEC-004`).
 - **Sposta**: aggiorna solo `folder_id` (codice e revisione invariati).
 - Lo spostamento verifica che la cartella di destinazione appartenga allo stesso cliente.
 - **Copia**: duplica il file nello storage (se la copia diretta non è permessa, ad es. file legacy fuori da `org/{id}/`, il file viene scaricato e ricaricato nel percorso del cliente; se il salvataggio del record fallisce il file copiato viene rimosso) e crea un nuovo record con nuovo codice, `Rev01`, stato **Bozza**, origine manuale, nome "(copia)" → coerente con ISO (la copia è un nuovo documento, non una revisione).
