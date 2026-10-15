@@ -106,11 +106,11 @@ const Documents: React.FC = () => {
   const [moveIds, setMoveIds] = useState<string[]>([]);
   const [tagDialogOpen, setTagDialogOpen] = useState(false);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
-  const runMoveCopy = async (mode: 'move' | 'copy', ids: string[], target: string | null) => {
+  const runMoveCopy = async (mode: 'move' | 'copy', ids: string[], target: string | null, category?: string) => {
     try {
-      if (mode === 'copy') await documentsApi.copy(organizationId, ids, target);
-      else await documentsApi.move(organizationId, ids, target);
-      toast({ title: mode === 'copy' ? 'Documenti copiati' : 'Documenti spostati', description: folderPath(folders, target) });
+      if (mode === 'copy') await documentsApi.copy(organizationId, ids, target, category);
+      else await documentsApi.move(organizationId, ids, target, category);
+      toast({ title: mode === 'copy' ? 'Documenti copiati' : 'Documenti spostati', description: folderPath(folders, target) + (category ? ` · ${category}` : '') });
       setMoveMode(null); setSelectedIds([]); fetchDocuments();
     } catch (e: any) { toast({ title: 'Errore', description: e?.message || 'Operazione non riuscita', variant: 'destructive' }); }
   };
@@ -572,7 +572,7 @@ const Documents: React.FC = () => {
 
       <MoveCopyDialog open={!!moveMode} initialTarget={folderSel !== 'all' && folderSel !== ROOT ? folderSel : null} mode={moveMode || 'move'} count={moveIds.length} folders={folders}
         onOpenChange={o => !o && setMoveMode(null)}
-        onConfirm={(target) => runMoveCopy(moveMode || 'move', moveIds, target)} />
+        categories={DOCUMENT_CATEGORIES} onConfirm={(target, cat) => runMoveCopy(moveMode || 'move', moveIds, target, cat)} />
 
       <BulkTagDialog open={tagDialogOpen} count={selectedIds.length} suggestions={allTags} onOpenChange={setTagDialogOpen}
         onConfirm={async (add, remove) => {
