@@ -5,7 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Info, AlertTriangle, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { RiskScoreCard } from './RiskScoreCard';
-import { VulnerabilitiesTable } from './VulnerabilitiesTable';
+import { CveLink, VulnerabilitiesTable } from './VulnerabilitiesTable';
+import { severityColors } from './vulnerabilitySeverity';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { cn } from '@/lib/utils';
 import { OsPatchesTable } from './OsPatchesTable';
 import { SoftwarePatchesTable } from './SoftwarePatchesTable';
 import { useHipatchDashboard } from '@/hooks/useHipatch';
@@ -82,6 +85,14 @@ const SeverityBadge: React.FC<{ label: string; count: number; color: string }> =
   </div>
 );
 
+type MappedCve = {
+  id: string;
+  description?: string;
+  score: number;
+  severity: 'Low' | 'Medium' | 'High' | 'Critical';
+  assets?: import('@/lib/api/hipatch').HipatchCveAsset[];
+};
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const HiPatchDashboard: React.FC = () => {
@@ -93,22 +104,52 @@ export const HiPatchDashboard: React.FC = () => {
   };
 
   const [assetPage, setAssetPage] = useState(0);
+  const [assetCvesOpen, setAssetCvesOpen] = useState<{ name: string; cves: MappedCve[] } | null>(null);
   const assetPageSize = 10;
-  const assetTotalPages = Math.ceil(assets.length / assetPageSize);
-  const assetSlice = assets.slice(assetPage * assetPageSize, (assetPage + 1) * assetPageSize);
 
   // Map CVEs → VulnerabilitiesTable format
-  const mappedCves = useMemo(() =>
+  const mappedCves: MappedCve[] = useMemo(() =>
     [...cves]
       .sort((a, b) => (SEVERITY_ORDER[b.severity?.toLowerCase()] ?? 0) - (SEVERITY_ORDER[a.severity?.toLowerCase()] ?? 0))
       .map((c) => ({
         id: c.problem_name,
         description: c.description,
-        score: Number(c.epss_score) ?? 0,
+        score: Number(c.epss_score) || 0,
         severity: normalizeSeverity(c.severity),
         assets: c.assets,
       })),
   [cves]);
+
+  // Le CVE di ogni asset, ricavate dagli asset di ogni CVE: la tabella asset
+  // mostra quante ne ha e la peggiore, e da lì si apre l'elenco. Gli asset più
+  // esposti salgono in cima.
+  const cvesByAsset = useMemo(() => {
+    const map = new Map<string, MappedCve[]>();
+    for (const cve of mappedCves) {
+      for (const asset of cve.assets ?? []) {
+        const id = asset['data.id'];
+        if (!id) continue;
+        if (!map.has(id)) map.set(id, []);
+        map.get(id)!.push(cve);
+      }
+    }
+    return map;
+  }, [mappedCves]);
+
+  const sortedAssets = useMemo(() => {
+    const worst = (a: typeof assets[number]) => {
+      const list = cvesByAsset.get(a['data.id'] ?? '') ?? [];
+      return [SEVERITY_ORDER[list[0]?.severity.toLowerCase() ?? ''] ?? 0, list.length] as const;
+    };
+    return [...assets].sort((a, b) => {
+      const [sa, na] = worst(a);
+      const [sb, nb] = worst(b);
+      return sb - sa || nb - na;
+    });
+  }, [assets, cvesByAsset]);
+
+  const assetTotalPages = Math.ceil(sortedAssets.length / assetPageSize);
+  const assetSlice = sortedAssets.slice(assetPage * assetPageSize, (assetPage + 1) * assetPageSize);
 
   // Map OS patches → OsPatchesTable format
   const mappedOsPending = useMemo(() =>
@@ -328,6 +369,7 @@ export const HiPatchDashboard: React.FC = () => {
                     <TableHead>OS</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Importance</TableHead>
+                    <TableHead>CVE</TableHead>
                     <TableHead>Last ping</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -352,6 +394,23 @@ export const HiPatchDashboard: React.FC = () => {
                           </Badge>
                         ) : '-'}
                       </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const list = cvesByAsset.get(a['data.id'] ?? '') ?? [];
+                          if (list.length === 0) return <span className="text-muted-foreground">-</span>;
+                          return (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-2"
+                              onClick={() => setAssetCvesOpen({ name: a['data.name'] || a['data.ip'] || '-', cves: list })}
+                            >
+                              {list.length} CVE
+                              <Badge className={cn('font-medium', severityColors[list[0].severity])}>{list[0].severity}</Badge>
+                            </Button>
+                          );
+                        })()}
+                      </TableCell>
                       <TableCell>{a['data.last_ping_time'] || '-'}</TableCell>
                     </TableRow>
                   ))}
@@ -375,6 +434,40 @@ export const HiPatchDashboard: React.FC = () => {
           </Card>
         </section>
       )}
+
+      <Dialog open={!!assetCvesOpen} onOpenChange={(open) => !open && setAssetCvesOpen(null)}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>CVE dell'asset — {assetCvesOpen?.name}</DialogTitle>
+          </DialogHeader>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>CVE</TableHead>
+                <TableHead>EPSS Score</TableHead>
+                <TableHead>Severity</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {assetCvesOpen?.cves.map((v) => (
+                <TableRow key={v.id}>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      {v.id}
+                      <CveLink id={v.id} />
+                    </div>
+                    {v.description && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{v.description}</p>}
+                  </TableCell>
+                  <TableCell>{Number(v.score).toFixed(4)}</TableCell>
+                  <TableCell>
+                    <Badge className={cn('font-medium', severityColors[v.severity])}>{v.severity}</Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </DialogContent>
+      </Dialog>
 
       {/* OS Patches */}
       <section className="space-y-4">

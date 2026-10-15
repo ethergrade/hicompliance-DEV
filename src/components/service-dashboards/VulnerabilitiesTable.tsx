@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight, Info } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, Info } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -30,6 +30,8 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import type { HipatchCveAsset } from '@/lib/api/hipatch';
+import { nvdLink } from '@/lib/findingTaxonomy';
+import { severityColors } from './vulnerabilitySeverity';
 
 interface Vulnerability {
   id: string;
@@ -44,12 +46,27 @@ interface VulnerabilitiesTableProps {
   pageSize?: number;
 }
 
-const severityColors = {
-  Low: 'bg-green-500/20 text-green-500',
-  Medium: 'bg-yellow-500/20 text-yellow-500',
-  High: 'bg-red-500/20 text-red-500',
-  Critical: 'bg-red-700/20 text-red-700',
-};
+/**
+ * Apre la scheda pubblica della CVE. Solo per identificativi CVE veri: il
+ * campo può contenere anche nomi di problemi senza CVE. L'etichetta non nomina
+ * la sorgente.
+ */
+export const CveLink: React.FC<{ id: string }> = ({ id }) =>
+  /^CVE-\d{4}-\d+$/i.test(id) ? (
+    <a
+      href={nvdLink(id.toUpperCase())}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Apri la scheda della CVE"
+      aria-label={`Scheda CVE ${id}`}
+      className="text-muted-foreground hover:text-primary shrink-0"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <ExternalLink className="w-4 h-4" />
+    </a>
+  ) : null;
+
+
 
 const AssetsModal: React.FC<{ assets: HipatchCveAsset[]; title: string; open: boolean; onClose: () => void }> = ({ assets, title, open, onClose }) => (
   <Dialog open={open} onOpenChange={onClose}>
@@ -164,6 +181,7 @@ export const VulnerabilitiesTable: React.FC<VulnerabilitiesTableProps> = ({
               <TableCell className="font-medium">
                 <div className="flex items-center gap-2">
                   {vuln.id}
+                  <CveLink id={vuln.id} />
                   {vuln.description && (
                     <Tooltip>
                       <TooltipTrigger asChild>
