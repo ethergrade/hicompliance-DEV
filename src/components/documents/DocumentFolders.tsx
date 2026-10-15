@@ -28,9 +28,22 @@ interface PanelProps {
   onCreate: (name: string, parent: string | null) => Promise<void>;
   onRename: (id: string, name: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  /** Drop di documenti trascinati: copy = true se si tiene premuto Ctrl/Alt. */
+  onDropDocs?: (ids: string[], folderId: string | null, copy: boolean) => void;
 }
 
-export const DocumentFolderPanel: React.FC<PanelProps> = ({ folders, selected, onSelect, counts, onCreate, onRename, onDelete }) => {
+export const DOC_DRAG_MIME = 'application/x-hicompliance-docs';
+const dropProps = (target: string | null, onDropDocs?: PanelProps['onDropDocs']) => onDropDocs ? {
+  onDragOver: (e: React.DragEvent) => { if (e.dataTransfer.types.includes(DOC_DRAG_MIME)) { e.preventDefault(); e.dataTransfer.dropEffect = e.ctrlKey || e.altKey ? 'copy' : 'move'; (e.currentTarget as HTMLElement).classList.add('ring-2', 'ring-primary'); } },
+  onDragLeave: (e: React.DragEvent) => (e.currentTarget as HTMLElement).classList.remove('ring-2', 'ring-primary'),
+  onDrop: (e: React.DragEvent) => {
+    (e.currentTarget as HTMLElement).classList.remove('ring-2', 'ring-primary');
+    const raw = e.dataTransfer.getData(DOC_DRAG_MIME); if (!raw) return;
+    e.preventDefault(); onDropDocs(JSON.parse(raw), target, e.ctrlKey || e.altKey);
+  },
+} : {};
+
+export const DocumentFolderPanel: React.FC<PanelProps> = ({ folders, selected, onSelect, counts, onCreate, onRename, onDelete, onDropDocs }) => {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [dialog, setDialog] = useState<{ mode: 'create' | 'rename'; id?: string; parent: string | null; name: string } | null>(null);
 
@@ -39,7 +52,7 @@ export const DocumentFolderPanel: React.FC<PanelProps> = ({ folders, selected, o
     const isOpen = open[f.id] ?? true;
     return (
       <div key={f.id}>
-        <div className={`group flex items-center gap-1 rounded-md pr-1 ${selected === f.id ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`} style={{ paddingLeft: depth * 12 }}>
+        <div className={`group flex items-center gap-1 rounded-md pr-1 ${selected === f.id ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`} style={{ paddingLeft: depth * 12 }} {...dropProps(f.id, onDropDocs)}>
           <button className="p-1" onClick={() => setOpen(o => ({ ...o, [f.id]: !isOpen }))} aria-label="Espandi">
             {kids.length ? (isOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />) : <span className="w-3 inline-block" />}
           </button>
@@ -66,10 +79,11 @@ export const DocumentFolderPanel: React.FC<PanelProps> = ({ folders, selected, o
         <Button size="sm" variant="outline" onClick={() => setDialog({ mode: 'create', parent: null, name: '' })}><FolderPlus className="w-4 h-4 mr-1" />Nuova</Button>
       </CardHeader>
       <CardContent className="space-y-0.5">
+        {onDropDocs && <p className="text-[11px] text-muted-foreground pb-1">Trascina i documenti su una cartella per spostarli (Ctrl/Alt per copiarli).</p>}
         <Button variant={selected === 'all' ? 'default' : 'ghost'} className="w-full justify-between" onClick={() => onSelect('all')}>
           <span>Tutte le cartelle</span><Badge variant="secondary">{counts('all')}</Badge>
         </Button>
-        <Button variant={selected === ROOT ? 'default' : 'ghost'} className="w-full justify-between" onClick={() => onSelect(ROOT)}>
+        <Button variant={selected === ROOT ? 'default' : 'ghost'} className="w-full justify-between" onClick={() => onSelect(ROOT)} {...dropProps(null, onDropDocs)}>
           <span className="flex items-center gap-2"><Home className="w-4 h-4" />Radice (senza cartella)</span><Badge variant="secondary">{counts(ROOT)}</Badge>
         </Button>
         {childrenOf(folders, null).map(f => node(f, 0))}
@@ -95,6 +109,7 @@ export const DocumentFolderPanel: React.FC<PanelProps> = ({ folders, selected, o
 
 interface MoveProps {
   open: boolean;
+  initialTarget?: string | null;
   mode: 'move' | 'copy';
   count: number;
   folders: DocumentFolder[];
@@ -102,8 +117,9 @@ interface MoveProps {
   onConfirm: (folderId: string | null) => Promise<void>;
 }
 
-export const MoveCopyDialog: React.FC<MoveProps> = ({ open, mode, count, folders, onOpenChange, onConfirm }) => {
+export const MoveCopyDialog: React.FC<MoveProps> = ({ open, mode, count, folders, initialTarget = null, onOpenChange, onConfirm }) => {
   const [target, setTarget] = useState<string | null>(null);
+  React.useEffect(() => { if (open) setTarget(initialTarget && folders.some(f => f.id === initialTarget) ? initialTarget : null); }, [open]);
   const [busy, setBusy] = useState(false);
   const row = (f: DocumentFolder, depth: number): React.ReactNode => (
     <div key={f.id}>
@@ -123,6 +139,7 @@ export const MoveCopyDialog: React.FC<MoveProps> = ({ open, mode, count, folders
           </button>
           {childrenOf(folders, null).map(f => row(f, 0))}
         </div>
+        <p className="text-xs text-muted-foreground">Destinazione: <b>{folderPath(folders, target)}</b></p>
         {mode === 'copy' && <p className="text-xs text-muted-foreground">La copia riceve un nuovo codice, Rev01 e stato Bozza; il file viene duplicato.</p>}
         <DialogFooter>
           <Button disabled={busy} onClick={async () => { setBusy(true); try { await onConfirm(target); } finally { setBusy(false); } }}>
