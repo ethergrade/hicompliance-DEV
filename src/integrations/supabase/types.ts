@@ -3525,6 +3525,58 @@ export type Database = {
           },
         ]
       }
+      document_folders: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          organization_id: string
+          parent_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          organization_id: string
+          parent_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          organization_id?: string
+          parent_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_folders_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "document_folders_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "document_folders_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "document_folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       emergency_contacts: {
         Row: {
           category: string
@@ -4096,6 +4148,7 @@ export type Database = {
           file_path: string | null
           file_size: number | null
           file_type: string | null
+          folder_id: string | null
           id: string
           is_generated: boolean
           name: string
@@ -4123,6 +4176,7 @@ export type Database = {
           file_path?: string | null
           file_size?: number | null
           file_type?: string | null
+          folder_id?: string | null
           id?: string
           is_generated?: boolean
           name: string
@@ -4150,6 +4204,7 @@ export type Database = {
           file_path?: string | null
           file_size?: number | null
           file_type?: string | null
+          folder_id?: string | null
           id?: string
           is_generated?: boolean
           name?: string
@@ -4167,6 +4222,13 @@ export type Database = {
           uploaded_by?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "incident_documents_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "document_folders"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "incident_documents_organization_id_fkey"
             columns: ["organization_id"]
