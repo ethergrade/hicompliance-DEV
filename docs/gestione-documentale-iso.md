@@ -236,3 +236,41 @@ Archivio su database Supabase (`incident_documents`) e storage `incident-documen
 - Il report di conformità riporta: data snapshot, classificazione NIS2, punteggio complessivo, livello di aderenza (Buono ≥70, Parziale 40–69, Insufficiente <40), domande risposte, punteggio per area.
 - I report e snapshot già esistenti sono stati importati.
 - In pagina Documenti: filtro per origine con contatori e badge di origine su ogni documento.
+
+---
+
+## 13. Cartelle, Sposta/Copia e Tag [ATTIVO]
+
+### Dati
+- Tabella `document_folders` (`organization_id`, `parent_id` → sottocartelle illimitate, `name`, `created_by`, timestamp). Nome univoco per stesso padre e cliente.
+- Colonna `incident_documents.folder_id` (null = **Radice**). Eliminando una cartella le sottocartelle vengono eliminate e i documenti tornano in Radice (`ON DELETE SET NULL`), nessun file viene cancellato.
+- Tag: colonna esistente `incident_documents.tags text[]`.
+
+### Accesso (anche ruoli cliente)
+- RLS `document_folders` e `incident_documents`: `doc_can_access_org(organization_id)` = utente del cliente (`users.organization_id`) **oppure** super admin/sales (`can_manage_all_organizations`).
+- Storage `incident-documents`: percorsi `org/{organization_id}/...` con la stessa funzione → l'utente cliente crea cartelle, carica, sposta, copia e tagga solo nel proprio archivio.
+- Super admin/sales lavorano sul cliente scelto in Selezione Cliente; cambio cliente azzera cartella, selezione e filtro tag.
+
+### Funzioni UI (`src/pages/Documents.tsx`, `src/components/documents/DocumentFolders.tsx`)
+- Pannello **Cartelle**: Tutte / Radice / albero; per ogni cartella: nuova sottocartella, rinomina, elimina; contatore documenti (inclusi i discendenti).
+- Selezionando una cartella si vedono i documenti suoi e delle sottocartelle; l'upload finisce nella cartella selezionata.
+- Per documento: **Sposta**, **Copia**. Selezione multipla (checkbox, "seleziona tutti") con barra: Sposta, Copia, Tag.
+- **Sposta**: aggiorna solo `folder_id` (codice e revisione invariati).
+- **Copia**: duplica il file nello storage e crea un nuovo record con nuovo codice, `Rev01`, stato **Bozza**, origine manuale, nome "(copia)" → coerente con ISO (la copia è un nuovo documento, non una revisione).
+- **Tag**: aggiunta/rimozione multipla, barra filtro per tag, clic su un tag di un documento per filtrare; il tag resta ricercabile dalla ricerca testuale.
+
+### API (`src/lib/api/documents.ts`)
+`documentsApi.move(org, ids, folderId)`, `documentsApi.copy(org, ids, folderId)`, `documentsApi.setTags(org, id, tags)`, `foldersApi.list/create/rename/remove`.
+
+### Da fare per la produzione
+- Registrare sposta/copia/tag nel registro eventi (`document_audit_log`, §7).
+- Copia e tag multipli in un'unica RPC transazionale (oggi un'operazione per documento).
+- Permessi per ruolo cliente più fini (es. sola lettura vs modifica) tramite `has_module_permission(..., 'documents', ...)`.
+- Impedire lo spostamento di documenti Confidenziali da chi non è responsabile (§9).
+
+### Test manuali
+1. Utente cliente A: crea "Procedure" → sottocartella "2026", carica un file dentro: lo vede solo lì e in "Tutte".
+2. Sposta in Radice, poi copia in "Procedure": la copia ha nuovo codice, Rev01, Bozza, file scaricabile.
+3. Seleziona 3 documenti → Tag "audit": filtro #audit mostra 3 documenti.
+4. Utente cliente B non vede cartelle né documenti di A.
+5. Elimina "Procedure": documenti in Radice, nessun file perso.
