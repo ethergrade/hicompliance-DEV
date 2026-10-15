@@ -91,7 +91,6 @@ const hiComplianceServices = [
 	{ title: "SurfaceScan360", href: "/surface-scan", icon: Globe },
 	{ title: "DarkRisk360", href: "/dark-risk", icon: Eye },
 	{ title: "DarkRisk360 Esteso", href: "/dark-risk-esteso", icon: ShieldAlert },
-	{ title: "HiTrack", href: "/dashboard/service/hitrack", icon: Activity },
 ];
 
 const incidentMainItems = [
@@ -209,9 +208,10 @@ export const AppSidebar: React.FC = () => {
 		if (href === "/dashboard/service/himobile") return himobileOn;
 		if (href === "/dashboard/service/hidetect") return hidetectOn;
 		if (href === "/dashboard/service/himail") return himailOn;
-		// HiTrack segue il contratto come gli altri moduli; il super-admin lo vede
-		// comunque, anche su un cliente dove il servizio non è ancora stato attivato.
-		if (href === "/dashboard/service/hitrack") return hitrackOn || isSuperAdmin;
+		// HiTrack segue il contratto come gli altri servizi HiSolution, anche per il
+		// super-admin: vederlo su un cliente senza servizio, e vuoto, confondeva.
+		// La pagina resta raggiungibile dal super-admin con l'indirizzo diretto.
+		if (href === "/dashboard/service/hitrack") return hitrackOn;
 		// HiCompliance core modules
 		if (
 			[
@@ -356,6 +356,13 @@ export const AppSidebar: React.FC = () => {
 									title: "HiPatch",
 									href: "/dashboard/service/hipatch",
 									icon: Download,
+								})}
+							{hitrackOn &&
+								isUserAllowed("/dashboard/service/hitrack") &&
+								renderNavItem({
+									title: "HiTrack",
+									href: "/dashboard/service/hitrack",
+									icon: Activity,
 								})}
 							{hiendpointOn &&
 								isUserAllowed("/dashboard/service/hiendpoint") &&
