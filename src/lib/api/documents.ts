@@ -160,4 +160,63 @@ export const documentsApi = {
     }
     return buildGeneratedPdf(doc);
   },
+
+  async move(companyId: string, ids: string[], folderId: string | null): Promise<void> {
+    const { error } = await supabase.from("incident_documents")
+      .update({ folder_id: folderId, updated_at: new Date().toISOString() })
+      .in("id", ids).eq("organization_id", companyId);
+    if (error) throw error;
+  },
+
+  /** Copia: nuovo record con nuovo codice, Rev01, Bozza; il file viene duplicato nello storage. */
+  async copy(companyId: string, ids: string[], folderId: string | null): Promise<void> {
+    const { data: docs, error } = await supabase.from("incident_documents").select("*")
+      .in("id", ids).eq("organization_id", companyId);
+    if (error) throw error;
+    for (const d of docs || []) {
+      let file_path = null;
+      if (d.file_path) {
+        file_path = `org/${companyId}/${Date.now()}_copia_${d.file_path.split("/").pop()}`;
+        const { error: cErr } = await supabase.storage.from(BUCKET).copy(d.file_path, file_path);
+        if (cErr) throw cErr;
+      }
+      const { id, document_code, uploaded_at, updated_at, source_id, ...rest } = d;
+      const { error: iErr } = await supabase.from("incident_documents").insert({
+        ...rest, file_path, folder_id: folderId, name: `${d.name} (copia)`,
+        document_code: await nextCode(companyId, d.category || "Varie"),
+        revision: 1, status: "Bozza", source_type: "manual", source_id: null,
+        uploaded_by: await currentUserRowId(),
+      });
+      if (iErr) throw iErr;
+    }
+  },
+
+  async setTags(companyId: string, id: string, tags: string[]): Promise<void> {
+    const { error } = await supabase.from("incident_documents").update({ tags }).eq("id", id).eq("organization_id", companyId);
+    if (error) throw error;
+  },
+};
+
+export interface DocumentFolder { id: string; organization_id: string; parent_id: string | null; name: string; }
+
+export const foldersApi = {
+  async list(orgId: string): Promise<DocumentFolder[]> {
+    const { data, error } = await supabase.from("document_folders").select("*").eq("organization_id", orgId).order("name");
+    if (error) throw error;
+    return data || [];
+  },
+  async create(orgId: string, name: string, parentId: string | null) {
+    const { data: auth } = await supabase.auth.getUser();
+    const { error } = await supabase.from("document_folders").insert({ organization_id: orgId, name, parent_id: parentId, created_by: auth.user?.id });
+    if (error) throw error;
+  },
+  async rename(id: string, name: string) {
+    const { error } = await supabase.from("document_folders").update({ name }).eq("id", id);
+    if (error) throw error;
+  },
+  /** I documenti contenuti tornano nella radice (folder_id = null); le sottocartelle vengono eliminate. */
+  async remove(id: string) {
+    const { error } = await supabase.from("document_folders").delete().eq("id", id);
+    if (error) throw error;
+  },
 };
