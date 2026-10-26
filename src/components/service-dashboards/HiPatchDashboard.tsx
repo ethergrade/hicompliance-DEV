@@ -143,10 +143,13 @@ export const HiPatchDashboard: React.FC = () => {
       const list = cvesByAsset.get(a['data.id'] ?? '') ?? [];
       return [SEVERITY_ORDER[list[0]?.severity.toLowerCase() ?? ''] ?? 0, list.length] as const;
     };
+    // Gli "other_asset" (IP senza hostname né OS) vanno in fondo: sono la
+    // maggioranza su alcuni clienti e coprirebbero i dispositivi veri.
+    const unrecognized = (a: typeof assets[number]) => (a['data.asset_type'] === 'other_asset' ? 1 : 0);
     return [...assets].sort((a, b) => {
       const [sa, na] = worst(a);
       const [sb, nb] = worst(b);
-      return sb - sa || nb - na;
+      return unrecognized(a) - unrecognized(b) || sb - sa || nb - na;
     });
   }, [assets, cvesByAsset]);
 
@@ -398,7 +401,7 @@ export const HiPatchDashboard: React.FC = () => {
                       </TableCell>
                       <TableCell>{a['data.ip'] || '-'}</TableCell>
                       <TableCell>{a['data.os_full_name'] || a['data.os_name'] || '-'}</TableCell>
-                      <TableCell>{a['data.asset_type'] || '-'}</TableCell>
+                      <TableCell>{a['data.asset_type'] === 'other_asset' ? 'non riconosciuto' : a['data.asset_type'] || '-'}</TableCell>
                       <TableCell>
                         {a['data.importance'] ? (
                           <Badge className={a['data.importance'].toLowerCase() === 'critical'
