@@ -22,6 +22,8 @@ export interface HipatchSummary {
 	};
 	total_cves: number;
 	total_assets: number;
+	/** IP senza hostname né sistema operativo, esclusi da total_assets. Assente con backend precedenti. */
+	unrecognized_assets?: number;
 	pending_os_patches: number;
 	patch_risk_percent: number | null;
 }

@@ -261,6 +261,11 @@ export const HiPatchDashboard: React.FC = () => {
               <CardContent className="pt-6 text-center">
                 <p className="text-3xl font-bold">{summary.total_assets}</p>
                 <p className="text-sm text-muted-foreground mt-1">Asset monitorati</p>
+                {(summary.unrecognized_assets ?? 0) > 0 && (
+                  <p className="text-xs text-muted-foreground/70 mt-1">
+                    + {summary.unrecognized_assets} non riconosciuti
+                  </p>
+                )}
               </CardContent>
             </Card>
             <Card className="border-border">
