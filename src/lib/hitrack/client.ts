@@ -5,10 +5,13 @@ import {
   type HiTrackCollector,
   type HiTrackDashboardPayload,
   type HiTrackDeviceDetail,
+  type HiTrackDeviceGroup,
   type HiTrackDeviceStatus,
+  type HiTrackHealthHistory,
   type HiTrackHistoryRange,
   type HiTrackInterfaceHistory,
   type HiTrackNetworkQualityHistory,
+  type HiTrackOrganize,
 } from "@/lib/hitrack/types";
 
 /**
@@ -127,3 +130,72 @@ export async function fetchHiTrackInterfaceHistory(
 
   return res.data;
 }
+
+export async function fetchHiTrackHealthHistory(
+  organizationId: string,
+  days: HiTrackHealthHistory["days"],
+  groupId?: string | null,
+): Promise<HiTrackHealthHistory> {
+  const res = await complianceApiClient.get<ApiResponse<HiTrackHealthHistory>>(
+    `/companies/${organizationId}/hitrack/health/history`,
+    { days },
+    groupHeader(groupId),
+  );
+
+  return res.data;
+}
+
+/** Gruppi personali e tag del cliente. */
+export async function fetchHiTrackOrganize(
+  organizationId: string,
+  groupId?: string | null,
+): Promise<HiTrackOrganize> {
+  const res = await complianceApiClient.get<ApiResponse<HiTrackOrganize>>(
+    `/companies/${organizationId}/hitrack/organize`,
+    undefined,
+    groupHeader(groupId),
+  );
+
+  return res.data ?? { groups: [], tags: [] };
+}
+
+export const hitrackOrganizeApi = {
+  createGroup: (organizationId: string, name: string, groupId?: string | null) =>
+    complianceApiClient.post<ApiResponse<HiTrackDeviceGroup>>(
+      `/companies/${organizationId}/hitrack/groups`,
+      { name },
+      groupHeader(groupId),
+    ),
+
+  deleteGroup: (organizationId: string, deviceGroupId: string, groupId?: string | null) =>
+    complianceApiClient.delete<void>(
+      `/companies/${organizationId}/hitrack/groups/${deviceGroupId}`,
+      groupHeader(groupId),
+    ),
+
+  updateGroupDevices: (
+    organizationId: string,
+    deviceGroupId: string,
+    change: { add?: string[]; remove?: string[] },
+    groupId?: string | null,
+  ) =>
+    complianceApiClient.put<ApiResponse<HiTrackDeviceGroup>>(
+      `/companies/${organizationId}/hitrack/groups/${deviceGroupId}/devices`,
+      change,
+      groupHeader(groupId),
+    ),
+
+  addTag: (organizationId: string, deviceIds: string[], tag: string, groupId?: string | null) =>
+    complianceApiClient.post<ApiResponse<unknown>>(
+      `/companies/${organizationId}/hitrack/tags`,
+      { deviceIds, tag },
+      groupHeader(groupId),
+    ),
+
+  // Il delete del client non inoltra i parametri: vanno nell'indirizzo.
+  removeTag: (organizationId: string, deviceId: string, tag: string, groupId?: string | null) =>
+    complianceApiClient.delete<void>(
+      `/companies/${organizationId}/hitrack/tags?${new URLSearchParams({ deviceId, tag })}`,
+      groupHeader(groupId),
+    ),
+};

@@ -23,6 +23,8 @@ import {
 import { useHiTrackDashboard, useHiTrackDeviceStatus, useHiTrackSyncNow } from "@/hooks/useHiTrackDashboard";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HiTrackDevicesTable } from "./HiTrackDevicesTable";
+import { HealthSheet, UsageSparkline, UsageTrendDialog, useCardFilter } from "./HiTrackExtras";
+import { computeAllHosts } from "@/lib/hitrack/hostHealth";
 import type { HiTrackDataCoverage } from "@/lib/hitrack/types";
 import {
   classifyUsageStatus,
@@ -107,29 +109,6 @@ const Paginatore: React.FC<{ stato: ReturnType<typeof usePagina<unknown>> }> = (
   );
 };
 
-const Sparkline: React.FC<{ values: number[] }> = ({ values }) => {
-  const normalized = values.length > 0 ? values : [0];
-  const max = Math.max(...normalized, 1);
-  const points = normalized.map((value, index) => {
-    const x = normalized.length === 1 ? 0 : (index / (normalized.length - 1)) * 100;
-    const y = 100 - (value / max) * 100;
-    return `${x},${y}`;
-  });
-
-  return (
-    <svg viewBox="0 0 100 100" className="h-10 w-28 text-emerald-400">
-      <polyline
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="4"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-        points={points.join(" ")}
-      />
-    </svg>
-  );
-};
-
 export const HiTrackDashboard: React.FC = () => {
   const { data: payload, isLoading, isFetching } = useHiTrackDashboard();
   const { data: stato } = useHiTrackDeviceStatus();
@@ -147,8 +126,13 @@ export const HiTrackDashboard: React.FC = () => {
     };
   }, [payload, stato]);
   const [trendWindow, setTrendWindow] = useState<HiTrackTrendWindow>("24h");
-  const paginaDischi = usePagina(data.logicalDisks);
-  const paginaRam = usePagina(data.ramMonitoring);
+  const [healthOpen, setHealthOpen] = useState(false);
+  const [trendOpen, setTrendOpen] = useState<{ title: string; values: number[] } | null>(null);
+  const hosts = useMemo(() => computeAllHosts(data), [data]);
+  const filtroDischi = useCardFilter(data.logicalDisks, (d) => `${d.diskLabel} ${d.deviceName}`, (d) => d.usagePercent);
+  const filtroRam = useCardFilter(data.ramMonitoring, (r) => `${r.dimensionLabel ?? ""} ${r.deviceName}`, (r) => r.usagePercent);
+  const paginaDischi = usePagina(filtroDischi.rows);
+  const paginaRam = usePagina(filtroRam.rows);
 
   const onlineRatio = useMemo(() => {
     if (data.overview.monitoredDevices === 0) return 0;
@@ -186,7 +170,14 @@ export const HiTrackDashboard: React.FC = () => {
             <p className="mt-2 text-3xl font-bold">{formatPercent(onlineRatio)}</p>
           </CardContent>
         </Card>
-        <Card className="border-border">
+        <Card
+          className="cursor-pointer border-border transition-colors hover:bg-muted/30"
+          role="button"
+          tabIndex={0}
+          title="Perché questo punteggio"
+          onClick={() => setHealthOpen(true)}
+          onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setHealthOpen(true)}
+        >
           <CardContent className="p-5">
             <div className="mb-3 flex items-center justify-between">
               <div className="rounded-lg bg-amber-500/10 p-2 text-amber-300">
@@ -194,7 +185,9 @@ export const HiTrackDashboard: React.FC = () => {
               </div>
               <Badge variant="outline">{data.overview.openAlerts} open</Badge>
             </div>
-            <p className="text-sm text-muted-foreground">Health Score</p>
+            <p className="flex items-center gap-1 text-sm text-muted-foreground">
+              Health Score <Info className="h-3.5 w-3.5" />
+            </p>
             <p className="mt-2 text-3xl font-bold">
               {formatPercent(data.overview.healthScore)}
             </p>
@@ -316,7 +309,7 @@ export const HiTrackDashboard: React.FC = () => {
           <CardTitle className="text-lg">Monitored Devices</CardTitle>
         </CardHeader>
         <CardContent>
-          <HiTrackDevicesTable devices={data.monitoredDevices} />
+          <HiTrackDevicesTable devices={data.monitoredDevices} hosts={hosts} />
         </CardContent>
       </Card>
 
@@ -340,6 +333,10 @@ export const HiTrackDashboard: React.FC = () => {
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
+            {data.logicalDisks.length > 0 && filtroDischi.controls}
+            {data.logicalDisks.length > 0 && filtroDischi.rows.length === 0 && (
+              <p className="text-sm text-muted-foreground">Nessun disco corrisponde ai filtri.</p>
+            )}
             {data.logicalDisks.length === 0 && (
               <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
                 Nessun dato sui dischi per questa rete. Compaiono qui i dispositivi
@@ -383,7 +380,11 @@ export const HiTrackDashboard: React.FC = () => {
                     <p className="text-xs text-muted-foreground">
                       {disk.ipAddress || "IP non disponibile"}
                     </p>
-                    <Sparkline values={pickTrend(disk, trendWindow)} />
+                    <UsageSparkline
+                      values={pickTrend(disk, trendWindow)}
+                      window={trendWindow}
+                      onOpen={() => setTrendOpen({ title: `Disco ${disk.diskLabel} (${disk.deviceName})`, values: pickTrend(disk, trendWindow) })}
+                    />
                   </div>
                 </div>
               );
@@ -397,6 +398,10 @@ export const HiTrackDashboard: React.FC = () => {
             <CardTitle className="text-lg">RAM Monitoring</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            {data.ramMonitoring.length > 0 && filtroRam.controls}
+            {data.ramMonitoring.length > 0 && filtroRam.rows.length === 0 && (
+              <p className="text-sm text-muted-foreground">Nessuna memoria corrisponde ai filtri.</p>
+            )}
             {data.ramMonitoring.length === 0 && (
               <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
                 Nessun dato sulla memoria per questa rete. Compaiono qui i dispositivi
@@ -445,7 +450,11 @@ export const HiTrackDashboard: React.FC = () => {
                     <Badge className={statusBadgeClassName[ram.statusType]}>
                       {ram.status}
                     </Badge>
-                    <Sparkline values={pickTrend(ram, trendWindow)} />
+                    <UsageSparkline
+                      values={pickTrend(ram, trendWindow)}
+                      window={trendWindow}
+                      onOpen={() => setTrendOpen({ title: `RAM ${ram.dimensionLabel || ram.deviceName}`, values: pickTrend(ram, trendWindow) })}
+                    />
                   </div>
                 </div>
               );
@@ -469,6 +478,15 @@ export const HiTrackDashboard: React.FC = () => {
           </CardContent>
         </Card>
       )}
+
+      <HealthSheet open={healthOpen} onOpenChange={setHealthOpen} overview={data.overview} hosts={hosts} />
+      <UsageTrendDialog
+        open={trendOpen !== null}
+        onOpenChange={(open) => !open && setTrendOpen(null)}
+        title={trendOpen?.title ?? ""}
+        values={trendOpen?.values ?? []}
+        window={trendWindow}
+      />
     </div>
   );
 };

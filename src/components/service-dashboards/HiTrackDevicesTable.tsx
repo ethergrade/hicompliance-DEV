@@ -1,16 +1,23 @@
-// Elenco dei device HiTrack: ricerca, filtri per colonna, paginazione
-// 10/30/50/100 con i comandi sopra e sotto la lista, e la qualità rete di
-// ogni device (network-quality, calcolata dal backend).
+// Elenco dei device HiTrack: ricerca, filtri e ordinamento per colonna,
+// paginazione 10/30/50/100 con i comandi sopra e sotto la lista, la qualità rete
+// di ogni device (network-quality, calcolata dal backend), la salute dell'host,
+// gruppi personali e tag condivisi.
 import React, { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { ChevronRight, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, FolderPlus, Search, Tag, Trash2, X } from "lucide-react";
 import { HiTrackDeviceDetailSheet } from "./HiTrackDeviceDetailSheet";
+import { scoreSeverity, severityClass } from "./HiTrackExtras";
 import { formatMillis, formatPercent } from "@/lib/hitrack/formatters";
+import { hitrackOrganizeApi } from "@/lib/hitrack/client";
+import type { HostHealth } from "@/lib/hitrack/hostHealth";
+import { useHiTrackOrganize } from "@/hooks/useHiTrackDashboard";
+import { usePermissions } from "@/hooks/usePermissions";
 import { useUserRoles } from "@/hooks/useUserRoles";
 import type { HiTrackMonitoredDevice, HiTrackNetworkQuality } from "@/lib/hitrack/types";
 
@@ -56,25 +63,92 @@ const REASON: Record<string, string> = {
 // non c'è più per nessuno (richiesta del 15 ottobre 2026).
 const DATA_QUALITY_REASONS = new Set(["mixed_window", "no_observed_at", "few_samples", "no_probe_counts"]);
 
-type Filters = { device: string; ip: string; status: string; health: string; os: string };
-const EMPTY_FILTERS: Filters = { device: "", ip: "", status: "all", health: "all", os: "" };
+type Filters = {
+	device: string;
+	ip: string;
+	status: string;
+	health: string;
+	os: string;
+	maxScore: string;
+	minLoss: string;
+	group: string;
+	tag: string;
+};
+const EMPTY_FILTERS: Filters = { device: "", ip: "", status: "all", health: "all", os: "", maxScore: "", minLoss: "", group: "all", tag: "all" };
 
 const includes = (value: string | null | undefined, needle: string) =>
 	!needle || (value ?? "").toLowerCase().includes(needle.toLowerCase());
 
-export function HiTrackDevicesTable({ devices }: { devices: HiTrackMonitoredDevice[] }) {
+type SortKey = "device" | "ip" | "status" | "score" | "quality" | "rtdWorst" | "rtdMedian" | "loss" | "os";
+type SortDir = "asc" | "desc";
+
+/** 10.0.0.9 prima di 10.0.0.10: l'IP si confronta ottetto per ottetto, non come testo. */
+const ipKey = (ip: string | null) => {
+	const parts = (ip ?? "").split(".").map(Number);
+	return parts.length === 4 && parts.every((n) => Number.isInteger(n) && n >= 0 && n <= 255)
+		? parts.reduce((acc, n) => acc * 256 + n, 0)
+		: null;
+};
+
+const STATUS_ORDER: Record<string, number> = { offline: 0, unknown: 1, online: 2 };
+
+function sortValue(d: HiTrackMonitoredDevice, h: HostHealth | undefined, key: SortKey): string | number | null {
+	switch (key) {
+		case "device": return d.deviceName;
+		case "ip": return ipKey(d.ipAddress) ?? d.ipAddress;
+		case "status": return STATUS_ORDER[d.status] ?? 1;
+		case "score": return h?.score ?? null;
+		case "quality": return d.networkQuality?.score ?? null;
+		case "rtdWorst": return d.rtdWorstMs;
+		case "rtdMedian": return d.rtdMedianMs;
+		case "loss": return d.packetLossPercent;
+		case "os": return [d.osName, d.osVersion].filter(Boolean).join(" ") || null;
+	}
+}
+
+export function HiTrackDevicesTable({ devices, hosts }: { devices: HiTrackMonitoredDevice[]; hosts: HostHealth[] }) {
 	const [search, setSearch] = useState("");
 	const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+	// Di default in cima l'host messo peggio: è quello da guardare per primo.
+	const [sort, setSort] = useState<{ key: SortKey; dir: SortDir } | null>({ key: "score", dir: "asc" });
 	const [pageSize, setPageSize] = useState(10);
 	const [page, setPage] = useState(1);
 	const [opened, setOpened] = useState<HiTrackMonitoredDevice | null>(null);
+	const [selected, setSelected] = useState<Set<string>>(new Set());
+	const [groupBy, setGroupBy] = useState(false);
+	const [newGroup, setNewGroup] = useState("");
+	const [newTag, setNewTag] = useState("");
+
+	const { data: organize, change } = useHiTrackOrganize();
+	const { hasCapability } = usePermissions();
+	const canTag = hasCapability("hitrack.organize");
+
+	const healthById = useMemo(() => new Map(hosts.map((h) => [h.device.id, h])), [hosts]);
+	const tagsOf = useMemo(() => {
+		const m = new Map<string, string[]>();
+		organize.tags.forEach((t) => m.set(t.deviceId, [...(m.get(t.deviceId) ?? []), t.tag]));
+		return (id: string) => m.get(id) ?? [];
+	}, [organize.tags]);
+	const groupsOf = useMemo(() => {
+		const m = new Map<string, string[]>();
+		organize.groups.forEach((g) => g.deviceIds.forEach((id) => m.set(id, [...(m.get(id) ?? []), g.id])));
+		return (id: string) => m.get(id) ?? [];
+	}, [organize.groups]);
+	const allTags = useMemo(() => [...new Set(organize.tags.map((t) => t.tag))].sort((a, b) => a.localeCompare(b, "it")), [organize.tags]);
+
+	// Un filtro su un gruppo cancellato non deve lasciare la tabella vuota.
+	useEffect(() => {
+		if (filters.group !== "all" && !organize.groups.some((g) => g.id === filters.group)) {
+			setFilters((f) => ({ ...f, group: "all" }));
+		}
+	}, [organize.groups, filters.group]);
 
 	const filtered = useMemo(() => {
 		const q = search.trim().toLowerCase();
-		return devices.filter((d) => {
+		const rows = devices.filter((d) => {
 			if (
 				q &&
-				![d.deviceName, d.ipAddress, d.type, d.vendor, d.model, d.osName, d.osVersion, d.location].some((v) =>
+				![d.deviceName, d.ipAddress, d.type, d.vendor, d.model, d.osName, d.osVersion, d.location, ...tagsOf(d.id)].some((v) =>
 					(v ?? "").toLowerCase().includes(q),
 				)
 			) {
@@ -85,17 +159,53 @@ export function HiTrackDevicesTable({ devices }: { devices: HiTrackMonitoredDevi
 			if (filters.status !== "all" && d.status !== filters.status) return false;
 			if (filters.health !== "all" && (d.networkQuality?.health ?? "unknown") !== filters.health) return false;
 			if (!includes([d.osName, d.osVersion].filter(Boolean).join(" "), filters.os)) return false;
+			const score = healthById.get(d.id)?.score ?? null;
+			if (filters.maxScore !== "" && (score === null || score > Number(filters.maxScore))) return false;
+			if (filters.minLoss !== "" && (d.packetLossPercent ?? -1) < Number(filters.minLoss)) return false;
+			if (filters.group !== "all" && !groupsOf(d.id).includes(filters.group)) return false;
+			if (filters.tag !== "all" && !tagsOf(d.id).includes(filters.tag)) return false;
 			return true;
 		});
-	}, [devices, search, filters]);
+		if (!sort) return rows;
 
-	useEffect(() => setPage(1), [search, filters, pageSize]);
+		// Un valore che manca va in fondo in entrambe le direzioni: in cima
+		// sembrerebbe il migliore, o il peggiore, senza esserlo.
+		return [...rows].sort((a, b) => {
+			const x = sortValue(a, healthById.get(a.id), sort.key);
+			const y = sortValue(b, healthById.get(b.id), sort.key);
+			if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
+			const c = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y), "it", { numeric: true });
+			return sort.dir === "asc" ? c : -c;
+		});
+	}, [devices, search, filters, sort, healthById, tagsOf, groupsOf]);
+
+	useEffect(() => setPage(1), [search, filters, pageSize, sort]);
 
 	const lastPage = Math.max(1, Math.ceil(filtered.length / pageSize));
 	const current = Math.min(page, lastPage);
 	const visible = filtered.slice((current - 1) * pageSize, current * pageSize);
 
 	const setFilter = (key: keyof Filters, value: string) => setFilters((f) => ({ ...f, [key]: value }));
+
+	// Crescente → decrescente → nessun ordinamento.
+	const clickSort = (key: SortKey) =>
+		setSort((s) => (s?.key !== key ? { key, dir: "asc" } : s.dir === "asc" ? { key, dir: "desc" } : null));
+
+	const head = (key: SortKey, label: string) => (
+		<button type="button" className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => clickSort(key)}>
+			{label}
+			{sort?.key !== key ? <ArrowUpDown className="h-3 w-3 opacity-50" /> : sort.dir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+		</button>
+	);
+
+	const toggle = (id: string) =>
+		setSelected((s) => {
+			const n = new Set(s);
+			n.has(id) ? n.delete(id) : n.add(id);
+			return n;
+		});
+	const selectedIds = [...selected];
+	const groupFiltered = organize.groups.find((g) => g.id === filters.group);
 
 	const pager = (
 		<div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
@@ -121,35 +231,257 @@ export function HiTrackDevicesTable({ devices }: { devices: HiTrackMonitoredDevi
 		</div>
 	);
 
+	const renderRow = (device: HiTrackMonitoredDevice) => {
+		const health = healthById.get(device.id);
+		return (
+			<TableRow key={device.id} data-state={selected.has(device.id) ? "selected" : undefined}>
+				<TableCell className="w-8">
+					<Checkbox checked={selected.has(device.id)} onCheckedChange={() => toggle(device.id)} aria-label={`Seleziona ${device.deviceName}`} />
+				</TableCell>
+				<TableCell>
+					{/* Ogni device si apre (c'è almeno l'andamento della qualità rete), ma
+					    il viola resta il segno dei dati SNMP: interfacce o inventario. */}
+					<button
+						type="button"
+						className={`flex items-center gap-1 text-left font-medium hover:underline ${
+							(device.interfaceCount ?? 0) + (device.inventoryCount ?? 0) > 0 ? "text-primary" : "text-foreground"
+						}`}
+						onClick={() => setOpened(device)}
+						title={(device.interfaceCount ?? 0) + (device.inventoryCount ?? 0) > 0 ? "Apri interfacce e dettaglio" : "Apri il dettaglio"}
+					>
+						{device.deviceName}
+						<ChevronRight className="h-3.5 w-3.5" />
+					</button>
+					<p className="text-xs text-muted-foreground">
+						{device.type} · {[device.vendor, device.model].filter(Boolean).join(" ") || "Vendor N/D"}
+						{(device.interfaceCount ?? 0) > 0 && ` · ${device.interfaceCount} interfacce`}
+					</p>
+					{(groupsOf(device.id).length > 0 || tagsOf(device.id).length > 0) && (
+						<div className="mt-1 flex flex-wrap gap-1">
+							{groupsOf(device.id).map((g) => (
+								<Badge key={g} variant="secondary" className="text-[10px]">
+									{organize.groups.find((x) => x.id === g)?.name}
+								</Badge>
+							))}
+							{tagsOf(device.id).map((t) => (
+								<Badge key={t} variant="outline" className="gap-1 text-[10px]">
+									#{t}
+									{canTag && (
+										<button
+											type="button"
+											aria-label={`Rimuovi il tag ${t}`}
+											onClick={() =>
+												change.mutate({ run: (org, grp) => hitrackOrganizeApi.removeTag(org, device.id, t, grp), done: "Tag rimosso" })
+											}
+										>
+											<X className="h-2.5 w-2.5" />
+										</button>
+									)}
+								</Badge>
+							))}
+						</div>
+					)}
+				</TableCell>
+				<TableCell>{device.ipAddress || "Dato non disponibile"}</TableCell>
+				<TableCell>
+					<DeviceStatusBadge device={device} />
+				</TableCell>
+				<TableCell>
+					<HostHealthBadge health={health} />
+				</TableCell>
+				<TableCell className="min-w-[170px]">
+					<NetworkQualityCell quality={device.networkQuality} />
+				</TableCell>
+				<TableCell>{formatMillis(device.rtdWorstMs)}</TableCell>
+				<TableCell>{formatMillis(device.rtdMedianMs)}</TableCell>
+				<TableCell>{formatPercent(device.packetLossPercent)}</TableCell>
+				<TableCell>{[device.osName, device.osVersion].filter(Boolean).join(" ") || "Dato non disponibile"}</TableCell>
+			</TableRow>
+		);
+	};
+
+	// "Raggruppa per gruppo": una sezione per gruppo, con quanti host e la salute
+	// media, più "Senza gruppo". Senza paginazione: si vuole vedere tutto il gruppo.
+	const sections = groupBy
+		? [
+				...organize.groups.map((g) => ({ id: g.id, name: g.name, rows: filtered.filter((d) => groupsOf(d.id).includes(g.id)) })),
+				{ id: "none", name: "Senza gruppo", rows: filtered.filter((d) => groupsOf(d.id).length === 0) },
+			].filter((s) => s.rows.length > 0)
+		: null;
+
+	const averageScore = (rows: HiTrackMonitoredDevice[]) => {
+		const scores = rows.map((d) => healthById.get(d.id)?.score).filter((x): x is number => x !== null && x !== undefined);
+		return scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+	};
+
+	const COLUMNS = 10;
+	const isFiltered = search !== "" || JSON.stringify(filters) !== JSON.stringify(EMPTY_FILTERS);
+
 	return (
 		<div className="space-y-3">
 			<div className="flex flex-wrap items-center gap-2">
 				<div className="relative min-w-[240px] flex-1">
 					<Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-					<Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cerca device, IP, vendor, modello, OS…" className="pl-8" />
+					<Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cerca device, IP, vendor, modello, OS, tag…" className="pl-8" />
 				</div>
-				{(search || JSON.stringify(filters) !== JSON.stringify(EMPTY_FILTERS)) && (
+				<Button size="sm" variant={sort?.key === "score" && sort.dir === "asc" ? "default" : "outline"} onClick={() => setSort({ key: "score", dir: "asc" })}>
+					Dal peggiore al migliore
+				</Button>
+				<Button size="sm" variant={sort?.key === "score" && sort.dir === "desc" ? "default" : "outline"} onClick={() => setSort({ key: "score", dir: "desc" })}>
+					Dal migliore al peggiore
+				</Button>
+				<Select value={filters.group} onValueChange={(v) => setFilter("group", v)}>
+					<SelectTrigger className="h-9 w-40"><SelectValue /></SelectTrigger>
+					<SelectContent>
+						<SelectItem value="all">Tutti i gruppi</SelectItem>
+						{organize.groups.map((g) => (
+							<SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+						))}
+					</SelectContent>
+				</Select>
+				<Select value={filters.tag} onValueChange={(v) => setFilter("tag", v)}>
+					<SelectTrigger className="h-9 w-36"><SelectValue /></SelectTrigger>
+					<SelectContent>
+						<SelectItem value="all">Tutti i tag</SelectItem>
+						{allTags.map((t) => (
+							<SelectItem key={t} value={t}>#{t}</SelectItem>
+						))}
+					</SelectContent>
+				</Select>
+				<label className="flex items-center gap-2 text-sm">
+					<Checkbox checked={groupBy} onCheckedChange={(v) => setGroupBy(!!v)} />
+					Raggruppa per gruppo
+				</label>
+				{isFiltered && (
 					<Button variant="ghost" size="sm" onClick={() => { setSearch(""); setFilters(EMPTY_FILTERS); }}>
 						Azzera filtri
 					</Button>
 				)}
 			</div>
 
-			{pager}
+			<div className="flex flex-wrap items-center gap-2 rounded-lg border border-border p-2">
+				<Input placeholder="Nuovo gruppo" value={newGroup} onChange={(e) => setNewGroup(e.target.value)} className="h-8 w-40" maxLength={80} />
+				<Button
+					size="sm"
+					variant="outline"
+					disabled={!newGroup.trim()}
+					onClick={() =>
+						change.mutate(
+							{ run: (org, grp) => hitrackOrganizeApi.createGroup(org, newGroup.trim(), grp), done: "Gruppo creato" },
+							{ onSuccess: () => setNewGroup("") },
+						)
+					}
+				>
+					<FolderPlus className="mr-1 h-4 w-4" />
+					Crea gruppo
+				</Button>
+				{groupFiltered && (
+					<Button
+						size="sm"
+						variant="ghost"
+						onClick={() =>
+							window.confirm(`Eliminare il gruppo "${groupFiltered.name}"? I dispositivi restano.`) &&
+							change.mutate({ run: (org, grp) => hitrackOrganizeApi.deleteGroup(org, groupFiltered.id, grp), done: "Gruppo eliminato" })
+						}
+					>
+						<Trash2 className="mr-1 h-4 w-4" />
+						Elimina "{groupFiltered.name}"
+					</Button>
+				)}
+				<span className="mx-1 text-xs text-muted-foreground">{selectedIds.length} selezionati</span>
+				{selectedIds.length > 0 && (
+					<>
+						{organize.groups.length > 0 && (
+							<Select
+								value=""
+								onValueChange={(id) =>
+									change.mutate(
+										{
+											run: (org, grp) => hitrackOrganizeApi.updateGroupDevices(org, id, { add: selectedIds }, grp),
+											done: `Aggiunti a ${organize.groups.find((g) => g.id === id)?.name}`,
+										},
+										{ onSuccess: () => setSelected(new Set()) },
+									)
+								}
+							>
+								<SelectTrigger className="h-8 w-44"><SelectValue placeholder="Aggiungi al gruppo…" /></SelectTrigger>
+								<SelectContent>
+									{organize.groups.map((g) => (
+										<SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						)}
+						{groupFiltered && (
+							<Button
+								size="sm"
+								variant="outline"
+								onClick={() =>
+									change.mutate(
+										{ run: (org, grp) => hitrackOrganizeApi.updateGroupDevices(org, groupFiltered.id, { remove: selectedIds }, grp), done: "Tolti dal gruppo" },
+										{ onSuccess: () => setSelected(new Set()) },
+									)
+								}
+							>
+								Togli da "{groupFiltered.name}"
+							</Button>
+						)}
+						{canTag && (
+							<>
+								<Input placeholder="Tag" value={newTag} onChange={(e) => setNewTag(e.target.value)} className="h-8 w-28" maxLength={40} />
+								<Button
+									size="sm"
+									variant="outline"
+									disabled={!newTag.trim()}
+									onClick={() =>
+										change.mutate(
+											{ run: (org, grp) => hitrackOrganizeApi.addTag(org, selectedIds, newTag.trim(), grp), done: "Tag aggiunto" },
+											{ onSuccess: () => { setNewTag(""); setSelected(new Set()); } },
+										)
+									}
+								>
+									<Tag className="mr-1 h-4 w-4" />
+									Aggiungi tag
+								</Button>
+							</>
+						)}
+						<Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+							Deseleziona
+						</Button>
+					</>
+				)}
+			</div>
+
+			{!sections && pager}
 
 			<Table>
 				<TableHeader>
 					<TableRow>
-						<TableHead>Device</TableHead>
-						<TableHead>IP</TableHead>
-						<TableHead>Status</TableHead>
-						<TableHead>Qualità rete</TableHead>
-						<TableHead>RTD Worst</TableHead>
-						<TableHead>RTD Median</TableHead>
-						<TableHead>Packet Loss</TableHead>
-						<TableHead>OS</TableHead>
+						<TableHead className="w-8">
+							<Checkbox
+								checked={visible.length > 0 && visible.every((d) => selected.has(d.id))}
+								onCheckedChange={(v) =>
+									setSelected((s) => {
+										const n = new Set(s);
+										(sections ? filtered : visible).forEach((d) => (v ? n.add(d.id) : n.delete(d.id)));
+										return n;
+									})
+								}
+								aria-label="Seleziona la pagina"
+							/>
+						</TableHead>
+						<TableHead>{head("device", "Device")}</TableHead>
+						<TableHead>{head("ip", "IP")}</TableHead>
+						<TableHead>{head("status", "Status")}</TableHead>
+						<TableHead>{head("score", "Salute")}</TableHead>
+						<TableHead>{head("quality", "Qualità rete")}</TableHead>
+						<TableHead>{head("rtdWorst", "RTD Worst")}</TableHead>
+						<TableHead>{head("rtdMedian", "RTD Median")}</TableHead>
+						<TableHead>{head("loss", "Packet Loss")}</TableHead>
+						<TableHead>{head("os", "OS")}</TableHead>
 					</TableRow>
 					<TableRow className="hover:bg-transparent">
+						<TableHead className="py-1" />
 						<TableHead className="py-1">
 							<Input value={filters.device} onChange={(e) => setFilter("device", e.target.value)} placeholder="Filtra" className="h-7 text-xs" />
 						</TableHead>
@@ -168,6 +500,9 @@ export function HiTrackDevicesTable({ devices }: { devices: HiTrackMonitoredDevi
 							</Select>
 						</TableHead>
 						<TableHead className="py-1">
+							<Input value={filters.maxScore} onChange={(e) => setFilter("maxScore", e.target.value)} placeholder="max" type="number" min={0} max={100} className="h-7 w-16 text-xs" title="Solo gli host con salute fino a questo valore" />
+						</TableHead>
+						<TableHead className="py-1">
 							<Select value={filters.health} onValueChange={(v) => setFilter("health", v)}>
 								<SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
 								<SelectContent>
@@ -180,50 +515,31 @@ export function HiTrackDevicesTable({ devices }: { devices: HiTrackMonitoredDevi
 						</TableHead>
 						<TableHead className="py-1" />
 						<TableHead className="py-1" />
-						<TableHead className="py-1" />
+						<TableHead className="py-1">
+							<Input value={filters.minLoss} onChange={(e) => setFilter("minLoss", e.target.value)} placeholder="min %" type="number" min={0} className="h-7 w-16 text-xs" title="Solo i device con almeno questa perdita" />
+						</TableHead>
 						<TableHead className="py-1">
 							<Input value={filters.os} onChange={(e) => setFilter("os", e.target.value)} placeholder="Filtra" className="h-7 text-xs" />
 						</TableHead>
 					</TableRow>
 				</TableHeader>
 				<TableBody>
-					{visible.map((device) => (
-						<TableRow key={device.id}>
-							<TableCell>
-								{/* Ogni device si apre (c'è almeno l'andamento della qualità rete), ma
-								    il viola resta il segno dei dati SNMP: interfacce o inventario. */}
-								<button
-									type="button"
-									className={`flex items-center gap-1 text-left font-medium hover:underline ${
-										(device.interfaceCount ?? 0) + (device.inventoryCount ?? 0) > 0 ? "text-primary" : "text-foreground"
-									}`}
-									onClick={() => setOpened(device)}
-									title={(device.interfaceCount ?? 0) + (device.inventoryCount ?? 0) > 0 ? "Apri interfacce e dettaglio" : "Apri il dettaglio"}
-								>
-									{device.deviceName}
-									<ChevronRight className="h-3.5 w-3.5" />
-								</button>
-								<p className="text-xs text-muted-foreground">
-									{device.type} · {[device.vendor, device.model].filter(Boolean).join(" ") || "Vendor N/D"}
-									{(device.interfaceCount ?? 0) > 0 && ` · ${device.interfaceCount} interfacce`}
-								</p>
-							</TableCell>
-							<TableCell>{device.ipAddress || "Dato non disponibile"}</TableCell>
-							<TableCell>
-								<DeviceStatusBadge device={device} />
-							</TableCell>
-							<TableCell className="min-w-[170px]">
-								<NetworkQualityCell quality={device.networkQuality} />
-							</TableCell>
-							<TableCell>{formatMillis(device.rtdWorstMs)}</TableCell>
-							<TableCell>{formatMillis(device.rtdMedianMs)}</TableCell>
-							<TableCell>{formatPercent(device.packetLossPercent)}</TableCell>
-							<TableCell>{[device.osName, device.osVersion].filter(Boolean).join(" ") || "Dato non disponibile"}</TableCell>
-						</TableRow>
-					))}
-					{visible.length === 0 && (
+					{sections
+						? sections.map((section) => (
+								<React.Fragment key={section.id}>
+									<TableRow className="bg-muted/40 hover:bg-muted/40">
+										<TableCell colSpan={COLUMNS} className="text-sm font-medium">
+											{section.name} · {section.rows.length} host
+											{averageScore(section.rows) !== null && ` · salute media ${averageScore(section.rows)}`}
+										</TableCell>
+									</TableRow>
+									{section.rows.map(renderRow)}
+								</React.Fragment>
+							))
+						: visible.map(renderRow)}
+					{filtered.length === 0 && (
 						<TableRow>
-							<TableCell colSpan={8} className="text-center text-sm text-muted-foreground">
+							<TableCell colSpan={COLUMNS} className="text-center text-sm text-muted-foreground">
 								{devices.length === 0 ? "Nessun dispositivo gestito disponibile." : "Nessun dispositivo corrisponde ai filtri."}
 							</TableCell>
 						</TableRow>
@@ -231,10 +547,40 @@ export function HiTrackDevicesTable({ devices }: { devices: HiTrackMonitoredDevi
 				</TableBody>
 			</Table>
 
-			{filtered.length > pageSize && pager}
+			{!sections && filtered.length > pageSize && pager}
 
 			<HiTrackDeviceDetailSheet device={opened} onOpenChange={(open) => !open && setOpened(null)} />
 		</div>
+	);
+}
+
+/** Salute dell'host (0-100) con i motivi nel tooltip; N/D se nessuna voce ha un dato. */
+function HostHealthBadge({ health }: { health?: HostHealth }) {
+	if (!health || health.score === null) return <span className="text-xs text-muted-foreground">N/D</span>;
+
+	const fmt = (v: number | null) => (v === null ? "N/D" : Math.round(v));
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<Badge className={`cursor-help ${severityClass[scoreSeverity(health.score)]}`}>{health.score}</Badge>
+			</TooltipTrigger>
+			<TooltipContent className="max-w-xs space-y-1 text-xs">
+				<p className="font-medium">Salute dell'host</p>
+				<p>
+					Disponibilità {fmt(health.availability)} · RAM {fmt(health.ram)} · Disco {fmt(health.disk)} · Rete {fmt(health.network)}
+				</p>
+				{health.reasons.length > 0 ? (
+					<ul className="list-disc pl-4">
+						{health.reasons.map((r) => (
+							<li key={r.kind}>{r.text}</li>
+						))}
+					</ul>
+				) : (
+					<p className="text-muted-foreground">Nessun problema.</p>
+				)}
+				<p className="text-muted-foreground">Media delle voci con un dato; quelle senza dato non pesano.</p>
+			</TooltipContent>
+		</Tooltip>
 	);
 }
 

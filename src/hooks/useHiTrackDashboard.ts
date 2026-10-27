@@ -5,11 +5,13 @@ import {
   fetchHiTrackDashboard,
   fetchHiTrackDeviceDetail,
   fetchHiTrackDeviceStatus,
+  fetchHiTrackHealthHistory,
   fetchHiTrackInterfaceHistory,
   fetchHiTrackNetworkQualityHistory,
+  fetchHiTrackOrganize,
   queueHiTrackSyncNow,
 } from "@/lib/hitrack/client";
-import { EMPTY_HITRACK_DASHBOARD, type HiTrackHistoryRange } from "@/lib/hitrack/types";
+import { EMPTY_HITRACK_DASHBOARD, type HiTrackHealthHistory, type HiTrackHistoryRange } from "@/lib/hitrack/types";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import { useOrganizationStore } from "@/stores/organizationStore";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -154,4 +156,46 @@ export function useHiTrackSyncNow() {
       );
     },
   });
+}
+
+/** Il punteggio di salute giorno per giorno: si chiede quando si apre il pannello. */
+export function useHiTrackHealthHistory(days: HiTrackHealthHistory["days"], enabled: boolean) {
+  const { organizationId, groupId, abilitato } = useHiTrackAbilitato();
+
+  return useQuery({
+    queryKey: ["hitrack-health-history", organizationId, groupId, days],
+    queryFn: () => fetchHiTrackHealthHistory(organizationId!, days, groupId),
+    enabled: abilitato && enabled,
+    staleTime: 10 * 60_000,
+  });
+}
+
+/** Gruppi personali e tag condivisi dei device. */
+export function useHiTrackOrganize() {
+  const { organizationId, groupId, abilitato } = useHiTrackAbilitato();
+  const queryClient = useQueryClient();
+  const queryKey = ["hitrack-organize", organizationId, groupId];
+
+  const query = useQuery({
+    queryKey,
+    queryFn: () => fetchHiTrackOrganize(organizationId!, groupId),
+    enabled: abilitato,
+    staleTime: 60_000,
+  });
+
+  // Ogni modifica rilegge l'elenco: gruppi e tag sono pochi, e così la tabella
+  // resta allineata anche ai tag messi da un collega nel frattempo.
+  const change = useMutation({
+    mutationFn: async ({ run }: { run: (orgId: string, groupId: string | null) => Promise<unknown>; done: string }) => {
+      if (!organizationId) throw new Error("Organizzazione non selezionata");
+      await run(organizationId, groupId ?? null);
+    },
+    onSuccess: (_d, { done }) => {
+      queryClient.invalidateQueries({ queryKey });
+      toast.success(done);
+    },
+    onError: (error: Error) => toast.error(error.message || "Operazione non riuscita"),
+  });
+
+  return { ...query, data: query.data ?? { groups: [], tags: [] }, change };
 }

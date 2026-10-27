@@ -23,6 +23,30 @@ export interface HiTrackOverview {
   dataCoveragePercent: number;
   freshnessSeconds: number | null;
   lastSyncedAt: string | null;
+  /** Le voci del punteggio, calcolate dal backend: la somma dei punti è healthScore. */
+  healthBreakdown?: Record<HiTrackHealthComponent, { points: number; max: number }>;
+  avgPacketLossPercent?: number | null;
+}
+
+export type HiTrackHealthComponent = "availability" | "alerts" | "packetLoss" | "coverage" | "freshness";
+
+/** Il punteggio di salute giorno per giorno (media degli snapshot del giorno). */
+export interface HiTrackHealthHistory {
+  days: 30 | 90 | 365;
+  points: Array<{ t: string; v: number }>;
+}
+
+/** Un gruppo personale di device: lo vede solo chi l'ha creato. */
+export interface HiTrackDeviceGroup {
+  id: string;
+  name: string;
+  deviceIds: string[];
+}
+
+export interface HiTrackOrganize {
+  groups: HiTrackDeviceGroup[];
+  /** Tag condivisi fra gli utenti del cliente. */
+  tags: Array<{ deviceId: string; tag: string }>;
 }
 
 export interface HiTrackMonitoredDevice {
@@ -159,6 +183,8 @@ export interface HiTrackNetworkQualityHistory {
 
 export interface HiTrackDiskMetric {
   id: string;
+  /** Il device che misura il disco. */
+  deviceId?: string;
   collectorName: string;
   deviceName: string;
   /** Nome leggibile del datastore («DS_01»), con ripiego sull'identificativo interno. */
@@ -178,6 +204,8 @@ export interface HiTrackDiskMetric {
 
 export interface HiTrackRamMetric {
   id: string;
+  /** Il device che misura la RAM: su un vCenter è lo stesso per tutti gli host ESXi. */
+  deviceId?: string;
   collectorName: string;
   deviceName: string;
   /** L'host ESXi cui la misura si riferisce: più host stanno dietro lo stesso vCenter. */
