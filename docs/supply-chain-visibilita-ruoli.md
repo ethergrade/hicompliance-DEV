@@ -24,3 +24,12 @@ Limiti / produzione:
 - **Vista interna** (Sales/Super Admin/cliente): scheda fornitore → tab "Raccomandazioni" via `sc_supplier_gaps`.
 - Componente condiviso `SupplierRecommendations.tsx`; logica in `src/features/supply-chain/recommendations.ts` (`buildSupplierInsights`): insight per fascia di score (<40 critica, <60 insufficiente, <80 discreta, ≥80 buona), conteggi per priorità, piano indicativo Alta 30 / Media 60 / Bassa 90 giorni (proposta, da confermare).
 - Da fare in produzione: stato di avanzamento per raccomandazione lato fornitore (presa in carico / risolta con evidenza), notifica al cliente, ricalcolo score dopo riassessment.
+
+## Anteprima portale fornitore (Super Admin)
+
+- Nella tabella Fornitori ogni riga ha un'icona occhio (solo Super Admin, nascosta in "Vedi come Sales"). Apre in una nuova scheda `/supplier-portal/home?preview=<supplier_id>`.
+- `PreviewPortal` (in `src/pages/SupplierPortal.tsx`) verifica `isSuperAdmin`, costruisce il contesto da `supplier_directory` + `organizations` e riusa lo stesso `Wizard` del fornitore con `ctx.preview = true`.
+- In anteprima: sola lettura forzata, nessuna scrittura (profilo, risposte, invio bloccati), nessuna chiamata a `sc_start_assessment` (si legge l'ultimo assessment esistente). Raccomandazioni da `sc_supplier_gaps(_supplier)` invece di `sc_my_recommendations()`.
+- Il portale (anche per il fornitore reale) mostra il nome dell'azienda committente nell'intestazione e una fascia che spiega che il programma è gestito da quell'azienda.
+- "Scarica report PDF" (jsPDF, lato browser): punteggio, completamento, raccomandazioni con azione e motivo, disclaimer. Disponibile al fornitore e in anteprima.
+- Produzione: l'anteprima si appoggia alle RLS del Super Admin; registrare l'apertura dell'anteprima in `supply_chain_audit_log` (evento `supplier_portal_previewed`).
