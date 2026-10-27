@@ -91,16 +91,7 @@ export function SupplierDetailSheet({ supplier, open, onOpenChange }: { supplier
               ) : <p className="text-sm text-muted-foreground">Nessun assessment avviato.</p>}
             </TabsContent>
             <TabsContent value="gaps" className="space-y-2">
-              {data.gaps.length === 0 ? <p className="text-sm text-muted-foreground">Nessun gap rilevato o assessment non ancora inviato.</p> :
-                data.gaps.map((g: { rule_code: string; gap_title: string; neutral_action: string; priority: string }) => (
-                  <div key={g.rule_code} className="rounded-lg border p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium">{g.gap_title}</p>
-                      <Badge variant={g.priority === "high" ? "destructive" : "secondary"}>{g.priority === "high" ? "Alta" : g.priority === "medium" ? "Media" : "Bassa"}</Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground mt-1">{g.neutral_action}</p>
-                  </div>
-                ))}
+              <SupplierRecommendations score={data.latest?.status === "submitted" ? data.latest.score : null} recs={data.gaps as SupplierRec[]} />
             </TabsContent>
             <TabsContent value="history" className="space-y-2">
               {data.logs.length === 0 ? <p className="text-sm text-muted-foreground">Nessuna attività.</p> :
