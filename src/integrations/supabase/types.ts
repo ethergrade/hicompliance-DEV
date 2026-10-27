@@ -9133,6 +9133,16 @@ export type Database = {
       sc_assessment_supplier: { Args: { _a: string }; Returns: string }
       sc_can_access_org: { Args: { _org: string }; Returns: boolean }
       sc_compute_assessment: { Args: { _a: string }; Returns: Json }
+      sc_my_recommendations: {
+        Args: never
+        Returns: {
+          gap_title: string
+          neutral_action: string
+          priority: string
+          rationale: string
+          rule_code: string
+        }[]
+      }
       sc_my_supplier_id: { Args: never; Returns: string }
       sc_org_gaps: {
         Args: { _org: string }

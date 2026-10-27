@@ -13,6 +13,8 @@ import { Truck, LogOut } from "lucide-react";
 import { DISCLAIMER, listQuestions, riskBand, sb, type Answer, type Assessment, type Question } from "@/features/supply-chain/api";
 import { TechProfileForm } from "@/features/supply-chain/components/TechProfileForm";
 import { AssessmentForm } from "@/features/supply-chain/components/AssessmentForm";
+import { SupplierRecommendations } from "@/features/supply-chain/components/SupplierRecommendations";
+import type { SupplierRec } from "@/features/supply-chain/recommendations";
 
 type Ctx = { supplier_id: string; supplier_name: string; organization_name: string; assessment_due_at: string | null; must_change_password: boolean };
 
@@ -145,6 +147,15 @@ function Wizard({ ctx, initialStep }: { ctx: Ctx; initialStep: number }) {
 
   useEffect(() => { if (data) { setProfile(data.profile); setAnswers(data.answers); } }, [data]);
   const readOnly = data?.assessment?.status === "submitted" || data?.assessment?.status === "expired";
+  const { data: myRecs = [] } = useQuery({
+    queryKey: ["portal-recs", ctx.supplier_id, data?.assessment?.status],
+    enabled: !!data,
+    queryFn: async () => {
+      const { data: r, error } = await sb.rpc("sc_my_recommendations");
+      if (error) throw error;
+      return (r ?? []) as SupplierRec[];
+    },
+  });
 
   const flushProfile = useCallback(async () => {
     const patch = pending.current; pending.current = {};
