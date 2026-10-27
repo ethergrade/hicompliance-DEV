@@ -340,7 +340,6 @@ function PreviewPortal({ supplierId, initialStep }: { supplierId: string; initia
 
 export default function SupplierPortal() {
   const location = useLocation();
-  const path = location.pathname.replace(/\/$/, "");
   const previewId = new URLSearchParams(location.search).get("preview");
   if (previewId) return <PreviewPortal supplierId={previewId} initialStep={0} />;
   return <SupplierPortalSession />;
