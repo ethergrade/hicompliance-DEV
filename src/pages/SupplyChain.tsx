@@ -17,6 +17,7 @@ import { useUserRoles } from "@/hooks/useUserRoles";
 import { isInnovatechDemo } from "@/data/innovatechSecurityDemo";
 import { MoreHorizontal, Plus, Truck, AlertTriangle, Mail, CheckCircle2, Gauge, ShieldAlert, Eye } from "lucide-react";
 import { SupplyChainRiskTab, supplyChainExposure, type OrgGap } from "@/features/supply-chain/components/SupplyChainRiskTab";
+import { SupplyChainTrends } from "@/features/supply-chain/components/SupplyChainTrends";
 import {
   ASSESSMENT_LABEL, CRITICALITY_LABEL, DISCLAIMER, PORTAL_LABEL, audit, riskBand, sb,
   type Assessment, type Supplier, type Criticality,
@@ -244,6 +245,7 @@ export default function SupplyChain() {
                       <div><p className="text-2xl font-bold">{e.coverage}%</p><p className="text-xs text-muted-foreground">Copertura assessment</p></div>
                     </CardContent></Card>); })()}
                 </div>
+                <SupplyChainTrends suppliers={suppliers} assessments={data?.assessments ?? []} />
                 <p className="text-xs text-muted-foreground">{DISCLAIMER}</p>
               </>
             )}
