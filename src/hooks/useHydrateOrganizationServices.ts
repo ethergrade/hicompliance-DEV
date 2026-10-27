@@ -42,12 +42,16 @@ export function useHydrateOrganizationServices(
 		refetchOnWindowFocus: true,
 	});
 
-	// Sync API response into Zustand when data arrives
+	// Finché i servizi del cliente non sono arrivati lo store resta vuoto. Prima
+	// teneva quelli del cliente precedente: cambiando cliente, il menu mostrava
+	// per qualche istante (o per sempre, se la richiesta falliva) i suoi moduli.
 	useEffect(() => {
-		if (services) {
-			setTenantServices(services);
+		if (services && organizationId) {
+			setTenantServices(services, organizationId);
+		} else {
+			setTenantServices([], null);
 		}
-	}, [services, setTenantServices]);
+	}, [services, organizationId, setTenantServices]);
 
 	return { isLoading, error };
 }

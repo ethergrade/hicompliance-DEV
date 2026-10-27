@@ -67,7 +67,8 @@ import { usePermissions } from "@/hooks/usePermissions";
 
 const DARKRISK_EXTENDED_UI_V2_ENABLED = String(import.meta.env.VITE_DARKRISK_EXTENDED_UI_V2 ?? "true") !== "false";
 import { useClientContext } from "@/contexts/ClientContext";
-import { useHydrateOrganizationServices } from "@/hooks/useHydrateOrganizationServices";
+import { useModuleAccess } from "@/hooks/useModuleAccess";
+import { getRequiredService } from "@/config/moduleServiceMap";
 import { useOrganizationStore } from "@/stores/organizationStore";
 
 const navigation = [
@@ -171,8 +172,7 @@ export const AppSidebar: React.FC = () => {
 		if (groupId) refreshCapabilities(groupId);
 	}, [groupId, refreshCapabilities]);
 
-	// Fetch HiCompliance service status via Zustand-backed hydration hook
-	useHydrateOrganizationServices(selectedOrganization?.id, groupId ?? null);
+	// I servizi del cliente li carica useModuleAccess, più sotto
 	const orgFlags = useOrganizationStore((s) => s.orgFlags);
 
 	const forceDemoAccessForSalesCliente1 =
@@ -180,10 +180,6 @@ export const AppSidebar: React.FC = () => {
 		String(selectedOrganization?.code || "")
 			.trim()
 			.toLowerCase() === "cliente1";
-	const hicomplianceOn = forceDemoAccessForSalesCliente1
-		? true
-		: !!orgFlags?.hicompliance_enabled;
-	const surfaceScanOn = !!orgFlags?.surface_scan360_enabled;
 	const darkRiskOn = !!orgFlags?.dark_risk360_enabled;
 	const darkRiskExtendedOn = DARKRISK_EXTENDED_UI_V2_ENABLED && !!orgFlags?.dark_risk_extended_enabled;
 	const hipatchOn = !!orgFlags?.hipatch_enabled;
@@ -195,36 +191,16 @@ export const AppSidebar: React.FC = () => {
 	const himailOn = !!orgFlags?.himail_enabled;
 	const { canViewRoute, hasCapability } = usePermissions();
 
+	const { isRouteAllowed } = useModuleAccess();
 	const isFeatureAllowed = (href: string) => {
 		// SuperAdmin/Sales without a selected org see everything (console view)
 		if (isConsoleUser && !selectedOrganization) return true;
-		if (href === "/surface-scan" || href === "/surface-scan/exposure")
-			return surfaceScanOn;
-		if (href === "/dark-risk") return darkRiskOn;
 		if (href === "/dark-risk-esteso") return darkRiskOn && darkRiskExtendedOn;
-		if (href === "/dashboard/service/hipatch") return hipatchOn;
-		if (href === "/dashboard/service/hiendpoint") return hiendpointOn;
-		if (href === "/dashboard/service/hifirewall") return hifirewallOn;
-		if (href === "/dashboard/service/himobile") return himobileOn;
-		if (href === "/dashboard/service/hidetect") return hidetectOn;
-		if (href === "/dashboard/service/himail") return himailOn;
-		// HiTrack segue il contratto come gli altri servizi HiSolution, anche per il
-		// super-admin: vederlo su un cliente senza servizio, e vuoto, confondeva.
-		// La pagina resta raggiungibile dal super-admin con l'indirizzo diretto.
-		if (href === "/dashboard/service/hitrack") return hitrackOn;
-		// HiCompliance core modules
-		if (
-			[
-				"/assessment",
-				"/analytics",
-				"/remediation",
-				"/incident-response",
-				"/compliance-events",
-			].includes(href)
-		) {
-			return hicomplianceOn;
-		}
-		return true;
+		if (forceDemoAccessForSalesCliente1 && getRequiredService(href) === "hicompliance") return true;
+		// Pagina → servizio da moduleServiceMap, la stessa regola del guard: anche
+		// HiTrack segue il contratto per il super-admin, e l'inventario asset
+		// compare solo con HiCompliance.
+		return isRouteAllowed(href);
 	};
 
 	const isUserAllowed = (href: string) => canViewRoute(href);
@@ -232,7 +208,7 @@ export const AppSidebar: React.FC = () => {
 	const filteredNavigation = navigation.filter((item) => {
 		if ((item as { superAdminOnly?: boolean }).superAdminOnly && !isSuperAdmin)
 			return false;
-		return isModuleEnabled(item.href) && isUserAllowed(item.href);
+		return isModuleEnabled(item.href) && isFeatureAllowed(item.href) && isUserAllowed(item.href);
 	});
 
 	const visibleHiCompliance = hiComplianceModules.filter(

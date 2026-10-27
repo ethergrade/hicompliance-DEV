@@ -18,6 +18,7 @@ import { AssessmentRadarChart } from "@/components/assessment/AssessmentRadarCha
 import { useAssessmentRadar } from "@/hooks/useAssessmentRadar";
 import ClientServicesDialog from "@/components/clients/ClientServicesDialog";
 import { Shield, BarChart3, Unlink, Settings } from "lucide-react";
+import { useModuleAccess } from "@/hooks/useModuleAccess";
 import { useHiTrackDashboard } from "@/hooks/useHiTrackDashboard";
 
 const getServiceIcon = (code: string) => {
@@ -96,8 +97,8 @@ const Dashboard: React.FC = () => {
 	// rischio e trend, che sarebbero vuoti o fuorvianti. Si nascondono solo quando
 	// i servizi del cliente sono caricati, per non farli sparire e ricomparire.
 	const orgFlags = useOrganizationStore((s) => s.orgFlags);
-	const servicesLoaded = useOrganizationStore((s) => s.tenantServices.length > 0);
-	const noCompliance = servicesLoaded && !orgFlags?.hicompliance_enabled;
+	const { servicesReady } = useModuleAccess();
+	const noCompliance = servicesReady && !orgFlags?.hicompliance_enabled;
 	const complianceOrgId = noCompliance ? null : activeOrgId;
 
 	// Per-tenant assessment metrics + trends for dashboard widgets

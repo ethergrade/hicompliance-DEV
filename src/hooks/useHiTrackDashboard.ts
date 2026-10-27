@@ -13,7 +13,6 @@ import { EMPTY_HITRACK_DASHBOARD, type HiTrackHistoryRange } from "@/lib/hitrack
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import { useOrganizationStore } from "@/stores/organizationStore";
 import { usePermissions } from "@/hooks/usePermissions";
-import { useUserRoles } from "@/hooks/useUserRoles";
 
 /**
  * I dati arrivano dal backend Laravel: nel browser non c'è più niente da
@@ -30,11 +29,11 @@ function useHiTrackAbilitato() {
   const { organizationId, groupId } = useClientOrganization();
   const attivo = useOrganizationStore((s) => s.orgFlags?.hitrack_enabled);
   const { hasCapability, bypass } = usePermissions();
-  const { isSuperAdmin } = useUserRoles();
 
-  // La stessa regola del menu: contratto attivo, o super-admin. Se divergessero,
-  // la voce comparirebbe su una pagina che non interroga niente.
-  const previsto = !!attivo || isSuperAdmin;
+  // La stessa regola del menu e del guard: contratto attivo, anche per il
+  // super-admin. Se divergessero, la voce comparirebbe su una pagina che non
+  // interroga niente.
+  const previsto = !!attivo;
 
   return {
     organizationId,

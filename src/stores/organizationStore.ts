@@ -39,7 +39,9 @@ export function deriveOrganizationFlags(
 	return {
 		hicompliance_enabled: isActive("hicompliance"),
 		surface_scan360_enabled: isActive("surfacescan"),
-		dark_risk360_enabled: isActive("darkrisk") || isActive("hicompliance"),
+		// DarkRisk segue il proprio contratto: a ottobre 2026 tutti i clienti con
+		// HiCompliance hanno anche darkrisk attivo, quindi non serve più dedurlo.
+		dark_risk360_enabled: isActive("darkrisk"),
 		dark_risk_extended_enabled: services.some((service) => {
 			if (service.service_type !== "darkrisk" || service.status !== "active") return false;
 			const settings = service.settings ?? {};
@@ -65,6 +67,8 @@ interface OrganizationState {
 
 	// Tenant services for the selected organization
 	tenantServices: TenantServiceResource[];
+	/** Cliente a cui si riferiscono i tenantServices: null mentre si caricano */
+	servicesOrgId: string | null;
 
 	// Derived organization flags (computed on setServices)
 	orgFlags: OrganizationFlags;
@@ -79,7 +83,7 @@ interface OrganizationState {
 	setOrganizations: (orgs: TenantResource[]) => void;
 	setSelectedGroup: (group: Group) => void;
 	setGroups: (groups: Group[]) => void;
-	setTenantServices: (services: TenantServiceResource[]) => void;
+	setTenantServices: (services: TenantServiceResource[], orgId: string | null) => void;
 	setLoadingOrganizations: (loading: boolean) => void;
 	setHasFetchedOrganizations: (fetched: boolean) => void;
 
@@ -94,6 +98,7 @@ export const useOrganizationStore = create<OrganizationState>()(
 			selectedGroup: null,
 			groups: [],
 			tenantServices: [],
+			servicesOrgId: null,
 			orgFlags: deriveOrganizationFlags([]),
 			isLoadingOrganizations: true,
 			hasFetchedOrganizations: false,
@@ -108,6 +113,7 @@ export const useOrganizationStore = create<OrganizationState>()(
 				set({
 					selectedOrganization: null,
 					tenantServices: [],
+					servicesOrgId: null,
 					orgFlags: deriveOrganizationFlags([]),
 				});
 			},
@@ -118,9 +124,10 @@ export const useOrganizationStore = create<OrganizationState>()(
 
 			setGroups: (groups) => set({ groups }),
 
-			setTenantServices: (services) =>
+			setTenantServices: (services, orgId) =>
 				set({
 					tenantServices: services,
+					servicesOrgId: orgId,
 					orgFlags: deriveOrganizationFlags(services),
 				}),
 
