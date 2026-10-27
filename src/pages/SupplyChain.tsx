@@ -284,7 +284,13 @@ export default function SupplyChain() {
                           <TableCell className="text-sm">{a ? ASSESSMENT_LABEL[a.status] : "—"}</TableCell>
                           <TableCell>{sc != null ? <Badge variant="outline" className={b.tone}>{sc}</Badge> : "—"}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{new Date(s.updated_at).toLocaleDateString("it-IT")}</TableCell>
-                          <TableCell onClick={(e) => e.stopPropagation()}>
+                          <TableCell onClick={(e) => e.stopPropagation()} className="whitespace-nowrap">
+                            {isSuperAdmin && !viewAsSales && (
+                              <Button size="icon" variant="ghost" title="Vedi il portale come questo fornitore" aria-label={`Vedi il portale come ${s.supplier_name}`}
+                                onClick={() => window.open(`/supplier-portal/home?preview=${s.id}`, "_blank")}>
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            )}
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild><Button size="icon" variant="ghost"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
