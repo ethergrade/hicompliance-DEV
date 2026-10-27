@@ -15,7 +15,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import { useUserRoles } from "@/hooks/useUserRoles";
 import { isInnovatechDemo } from "@/data/innovatechSecurityDemo";
-import { MoreHorizontal, Plus, Truck, AlertTriangle, Mail, CheckCircle2, Gauge, ShieldAlert } from "lucide-react";
+import { MoreHorizontal, Plus, Truck, AlertTriangle, Mail, CheckCircle2, Gauge, ShieldAlert, Eye } from "lucide-react";
+import { SupplyChainRiskTab, supplyChainExposure, type OrgGap } from "@/features/supply-chain/components/SupplyChainRiskTab";
 import {
   ASSESSMENT_LABEL, CRITICALITY_LABEL, DISCLAIMER, PORTAL_LABEL, audit, riskBand, sb,
   type Assessment, type Supplier, type Criticality,
@@ -157,6 +158,12 @@ export default function SupplyChain() {
   return (
     <DashboardLayout>
       <div className="p-4 md:p-6 space-y-6 min-w-0">
+        {viewAsSales && (
+          <div className="flex items-center justify-between gap-2 rounded-md border bg-muted px-4 py-2 text-sm">
+            <span className="flex items-center gap-2"><Eye className="h-4 w-4" />Stai vedendo la pagina come Sales</span>
+            <Button size="sm" variant="outline" onClick={() => setViewAsSales(false)}>Esci</Button>
+          </div>
+        )}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
@@ -165,16 +172,30 @@ export default function SupplyChain() {
             </div>
             <p className="text-sm text-muted-foreground">Mappa i fornitori, raccogli la loro postura cyber e monitora il rischio di terza parte</p>
           </div>
-          <Button onClick={() => { setEditing(null); setFormOpen(true); }}><Plus className="h-4 w-4 mr-1" />Nuovo fornitore</Button>
+          <div className="flex gap-2">
+            {isSuperAdmin && (
+              <Button variant={viewAsSales ? "secondary" : "outline"} onClick={() => setViewAsSales((v) => !v)}>
+                <Eye className="h-4 w-4 mr-1" />{viewAsSales ? "Torna a Super Admin" : "Vedi come Sales"}
+              </Button>
+            )}
+            <Button onClick={() => { setEditing(null); setFormOpen(true); }}><Plus className="h-4 w-4 mr-1" />Nuovo fornitore</Button>
+          </div>
         </div>
 
-        <Tabs defaultValue="dashboard">
+        <Tabs key={viewAsSales ? "sales" : "admin"} defaultValue="dashboard">
           <TabsList className="flex flex-wrap h-auto gap-1 p-1">
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="suppliers">Fornitori</TabsTrigger>
             <TabsTrigger value="assessments">Assessment</TabsTrigger>
+            <TabsTrigger value="risks">Gap e rischi filiera</TabsTrigger>
             {canSeeCommercial && <TabsTrigger value="opps">Opportunità</TabsTrigger>}
           </TabsList>
+
+          <TabsContent value="risks">
+            {isLoading ? <Skeleton className="h-40" /> : (
+              <SupplyChainRiskTab suppliers={suppliers} latest={data?.latest ?? {}} lastScore={data?.lastScore ?? {}} gaps={(data?.gaps ?? []) as OrgGap[]} onOpen={setDetail} />
+            )}
+          </TabsContent>
 
           <TabsContent value="dashboard" className="space-y-4">
             {isLoading ? <Skeleton className="h-40" /> : (
@@ -211,11 +232,17 @@ export default function SupplyChain() {
                           <span className="text-xs text-muted-foreground shrink-0 ml-2">{new Date(l.created_at).toLocaleDateString("it-IT")}</span>
                         </div>))}
                   </CardContent></Card>
-                  {canSeeCommercial && (
+                  {canSeeCommercial ? (
                     <Card><CardHeader><CardTitle className="text-sm">Opportunità commerciali</CardTitle></CardHeader><CardContent>
                       <Bars items={Object.entries((data?.recs ?? []).reduce((acc: Record<string, number>, r) => { const k = r.service_name ?? "—"; acc[k] = (acc[k] ?? 0) + 1; return acc; }, {})).map(([label, n]) => ({ label, n: n as number }))} />
                     </CardContent></Card>
-                  )}
+                  ) : (() => { const e = supplyChainExposure(suppliers, data?.lastScore ?? {}, (data?.gaps ?? []) as OrgGap[]); return (
+                    <Card><CardHeader><CardTitle className="text-sm">Esposizione della filiera</CardTitle></CardHeader><CardContent className="grid grid-cols-2 gap-3 text-sm">
+                      <div><p className="text-2xl font-bold">{e.criticalAtRisk}</p><p className="text-xs text-muted-foreground">Fornitori critici con score sotto 60</p></div>
+                      <div><p className="text-2xl font-bold">{e.criticalUnassessed}</p><p className="text-xs text-muted-foreground">Fornitori critici non valutati</p></div>
+                      <div><p className="text-2xl font-bold">{e.highGaps}</p><p className="text-xs text-muted-foreground">Gap ad alta priorità aperti</p></div>
+                      <div><p className="text-2xl font-bold">{e.coverage}%</p><p className="text-xs text-muted-foreground">Copertura assessment</p></div>
+                    </CardContent></Card>); })()}
                 </div>
                 <p className="text-xs text-muted-foreground">{DISCLAIMER}</p>
               </>
