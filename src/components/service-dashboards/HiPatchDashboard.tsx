@@ -2,7 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Info, AlertTriangle, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Info, AlertTriangle, Loader2, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { RiskScoreCard } from './RiskScoreCard';
 import { CveIdButton, CveLink, VulnerabilitiesTable } from './VulnerabilitiesTable';
@@ -105,6 +106,7 @@ export const HiPatchDashboard: React.FC = () => {
   };
 
   const [assetPage, setAssetPage] = useState(0);
+  const [assetQuery, setAssetQuery] = useState('');
   const [assetCvesOpen, setAssetCvesOpen] = useState<{ name: string; cves: MappedCve[] } | null>(null);
   const [detailCve, setDetailCve] = useState<string | null>(null);
   const assetPageSize = 10;
@@ -153,8 +155,18 @@ export const HiPatchDashboard: React.FC = () => {
     });
   }, [assets, cvesByAsset]);
 
-  const assetTotalPages = Math.ceil(sortedAssets.length / assetPageSize);
-  const assetSlice = sortedAssets.slice(assetPage * assetPageSize, (assetPage + 1) * assetPageSize);
+  // Ricerca per nome, hostname o IP: su clienti con migliaia di asset
+  // (Panapesca ne ha oltre seimila) sfogliare le pagine non basta.
+  const filteredAssets = useMemo(() => {
+    const q = assetQuery.trim().toLowerCase();
+    if (!q) return sortedAssets;
+    return sortedAssets.filter((a) =>
+      [a['data.name'], a['data.host_name'], a['data.ip']].some((v) => (v ?? '').toLowerCase().includes(q)),
+    );
+  }, [sortedAssets, assetQuery]);
+
+  const assetTotalPages = Math.ceil(filteredAssets.length / assetPageSize);
+  const assetSlice = filteredAssets.slice(assetPage * assetPageSize, (assetPage + 1) * assetPageSize);
 
   // Map OS patches → OsPatchesTable format
   const mappedOsPending = useMemo(() =>
@@ -378,6 +390,22 @@ export const HiPatchDashboard: React.FC = () => {
               <p className="text-sm text-muted-foreground">{assets.length} asset rilevati</p>
             </CardHeader>
             <CardContent className="space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="relative w-full max-w-sm">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={assetQuery}
+                    onChange={(e) => { setAssetQuery(e.target.value); setAssetPage(0); }}
+                    placeholder="Cerca per nome o IP…"
+                    className="pl-8"
+                  />
+                </div>
+                {assetQuery.trim() !== '' && (
+                  <span className="text-sm text-muted-foreground">
+                    {filteredAssets.length} di {assets.length}
+                  </span>
+                )}
+              </div>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -431,11 +459,18 @@ export const HiPatchDashboard: React.FC = () => {
                       <TableCell>{a['data.last_ping_time'] || '-'}</TableCell>
                     </TableRow>
                   ))}
+                  {filteredAssets.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center text-sm text-muted-foreground">
+                        Nessun asset corrisponde alla ricerca.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
               {assetTotalPages > 1 && (
                 <div className="flex items-center justify-between text-sm text-muted-foreground">
-                  <span>{assetPage * assetPageSize + 1}–{Math.min((assetPage + 1) * assetPageSize, assets.length)} di {assets.length}</span>
+                  <span>{assetPage * assetPageSize + 1}–{Math.min((assetPage + 1) * assetPageSize, filteredAssets.length)} di {filteredAssets.length}</span>
                   <div className="flex items-center gap-1">
                     <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setAssetPage(p => p - 1)} disabled={assetPage === 0}>
                       <ChevronLeft className="h-4 w-4" />
