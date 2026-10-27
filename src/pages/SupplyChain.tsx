@@ -32,8 +32,10 @@ const PRIORITY_LABEL: Record<string, string> = { high: "Alta", medium: "Media", 
 export default function SupplyChain() {
   const { organizationId, selectedOrganization } = useClientOrganization();
   const enabled = isInnovatechDemo(selectedOrganization?.name);
-  const { isSuperAdmin, isSales } = useUserRoles();
-  const canSeeCommercial = isSuperAdmin || isSales;
+  const { isSuperAdmin } = useUserRoles();
+  const [viewAsSales, setViewAsSales] = useState(false);
+  // Commercial opportunities are internal: only super admin, and not while previewing the Sales view.
+  const canSeeCommercial = isSuperAdmin && !viewAsSales;
   const qc = useQueryClient();
   const { toast } = useToast();
 
