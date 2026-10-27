@@ -1,3 +1,5 @@
+import { SupplierRecommendations } from "./SupplierRecommendations";
+import type { SupplierRec } from "@/features/supply-chain/recommendations";
 import { useQuery } from "@tanstack/react-query";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -56,7 +58,7 @@ export function SupplierDetailSheet({ supplier, open, onOpenChange }: { supplier
               <TabsTrigger value="overview" className="text-xs">Panoramica</TabsTrigger>
               <TabsTrigger value="tech" className="text-xs">Consistenze e tecnologie</TabsTrigger>
               <TabsTrigger value="assessment" className="text-xs">Assessment light</TabsTrigger>
-              <TabsTrigger value="gaps" className="text-xs">Gap e azioni</TabsTrigger>
+              <TabsTrigger value="gaps" className="text-xs">Raccomandazioni</TabsTrigger>
               <TabsTrigger value="history" className="text-xs">Cronologia</TabsTrigger>
             </TabsList>
             <TabsContent value="overview" className="space-y-4">
@@ -91,7 +93,7 @@ export function SupplierDetailSheet({ supplier, open, onOpenChange }: { supplier
               ) : <p className="text-sm text-muted-foreground">Nessun assessment avviato.</p>}
             </TabsContent>
             <TabsContent value="gaps" className="space-y-2">
-              <SupplierRecommendations score={data.latest?.status === "submitted" ? data.latest.score : null} recs={data.gaps as SupplierRec[]} />
+              <SupplierRecommendations score={data.latest?.score ?? null} recs={data.gaps as SupplierRec[]} />
             </TabsContent>
             <TabsContent value="history" className="space-y-2">
               {data.logs.length === 0 ? <p className="text-sm text-muted-foreground">Nessuna attività.</p> :
