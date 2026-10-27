@@ -18,7 +18,10 @@ export function buildSupplyChainTrend(suppliers: Supplier[], assessments: Assess
   const out = [];
   for (let i = MONTHS - 1; i >= 0; i--) {
     const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
-    const existing = suppliers.filter((s) => new Date(s.created_at) <= end);
+    const existing = suppliers.filter((s) => {
+      const c = (s as Supplier & { created_at?: string }).created_at;
+      return !c || new Date(c) <= end;
+    });
     const latest: Record<string, number> = {};
     for (const a of submitted) if (new Date(a.submitted_at!) <= end) latest[a.supplier_id] = a.score as number;
     const scores = existing.map((s) => latest[s.id]).filter((x) => x != null);
