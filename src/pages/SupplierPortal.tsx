@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Truck, LogOut, Eye, Download, Building2 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import { useUserRoles } from "@/hooks/useUserRoles";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { DISCLAIMER, listQuestions, riskBand, sb, type Answer, type Assessment, type Question } from "@/features/supply-chain/api";
 import { TechProfileForm } from "@/features/supply-chain/components/TechProfileForm";
 import { AssessmentForm } from "@/features/supply-chain/components/AssessmentForm";
@@ -333,7 +334,9 @@ function PreviewPortal({ supplierId, initialStep }: { supplierId: string; initia
     },
   });
   const isSuperAdmin = roleFromProfile || !!dbSuperAdmin;
-  const loading = session.loading || (!!session.userId && roleLoading) || (profileLoading && !dbSuperAdmin);
+  const { user: appUser } = useAuth();
+  const profilePending = profileLoading || (!!session.userId && !appUser);
+  const loading = session.loading || (!!session.userId && roleLoading) || (profilePending && !dbSuperAdmin);
   const { data: ctx, isLoading } = useQuery({
     queryKey: ["portal-preview", supplierId],
     enabled: isSuperAdmin,
