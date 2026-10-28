@@ -295,7 +295,7 @@ export function HiTrackDevicesTable({ devices, hosts }: { devices: HiTrackMonito
 				<TableCell>{formatMillis(device.rtdWorstMs)}</TableCell>
 				<TableCell>{formatMillis(device.rtdMedianMs)}</TableCell>
 				<TableCell>{formatPercent(device.packetLossPercent)}</TableCell>
-				<TableCell>{[device.osName, device.osVersion].filter(Boolean).join(" ") || "Dato non disponibile"}</TableCell>
+				<TableCell>{[device.osName, device.osVersion].filter(Boolean).join(" ") || "-"}</TableCell>
 			</TableRow>
 		);
 	};
