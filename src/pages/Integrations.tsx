@@ -1,6 +1,7 @@
 // @ts-nocheck -- type drift vs API contract, da riallineare
-import { useState, useMemo } from "react";
+import { useCallback, useState, useMemo } from "react";
 import { SophosTenantLinkCard } from "@/components/clients/SophosTenantLinkCard";
+import { HaloLinkPanel } from "@/components/asset-management/HaloLinkPanel";
 import { SOPHOS_SERVICE_CODES } from "@/lib/sophosServices";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -92,6 +93,11 @@ const Integrations = () => {
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
 	const { toast } = useToast();
 	const queryClient = useQueryClient();
+	// Dopo una sync Halo il registro asset del cliente va riletto
+	const reloadManagedAssets = useCallback(
+		() => queryClient.invalidateQueries({ queryKey: ["asset-management", "assets"] }),
+		[queryClient],
+	);
 	const {
 		organizationId,
 		groupId,
@@ -200,6 +206,17 @@ const Integrations = () => {
 
 	const existingHitrack =
 		hitrackServices.length > 0 ? hitrackServices[0] : null;
+
+	// Asset Management attivo: il cliente Halo da cui arrivano gli asset si collega qui.
+	const { data: assetManagementActive = false } = useQuery({
+		queryKey: ["tenant-services-assetmanagement", organizationId, groupId],
+		enabled: !!organizationId,
+		queryFn: async () => {
+			if (!organizationId) return false;
+			const all = await tenantServicesApi.listByOrganization(organizationId, groupId);
+			return all.some((s) => s.tenant_id === organizationId && s.service_type === "assetmanagement" && (s.status === "active" || !s.status));
+		},
+	});
 
 	// Servizi Sophos attivi: il tenant Sophos si collega qui, una volta per tutti.
 	const { data: sophosServices = [] } = useQuery({
@@ -944,6 +961,14 @@ const Integrations = () => {
 
 				{organizationId && sophosServices.length > 0 && (
 					<SophosTenantLinkCard organizationId={organizationId} activeServices={sophosServices} />
+				)}
+
+				{organizationId && assetManagementActive && (
+					<HaloLinkPanel
+						orgId={organizationId}
+						onSynced={reloadManagedAssets}
+						notify={(title, description, error) => toast({ title, description, ...(error ? { variant: "destructive" as const } : {}) })}
+					/>
 				)}
 
 				<div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">

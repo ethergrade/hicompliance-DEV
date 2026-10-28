@@ -21,6 +21,7 @@ import Threats from "./pages/Threats";
 import Reports from "./pages/Reports";
 import Documents from "./pages/Documents";
 import AssetInventory from "./pages/AssetInventory";
+import AssetManagement from "./pages/AssetManagement";
 import IncidentResponse from "./pages/IncidentResponse";
 import ThreatManagement from "./pages/ThreatManagement";
 import Integrations from "./pages/Integrations";
@@ -204,6 +205,14 @@ const App = () => (
 								element={
 									<ClientSelectionGuard>
 										<Documents />
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/asset-management"
+								element={
+									<ClientSelectionGuard>
+										<AssetManagement />
 									</ClientSelectionGuard>
 								}
 							/>

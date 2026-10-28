@@ -18,4 +18,5 @@ export const FALLBACK_SERVICE_CATALOG: ServiceCatalogItem[] = [
   { id: 'hilog', code: 'hilog', name: 'HiLog', description: 'Log Management', icon: 'file-text' },
   { id: 'himobile', code: 'himobile', name: 'HiMobile', description: 'Mobile Security', icon: 'smartphone' },
   { id: 'hitrack', code: 'hitrack', name: 'HiTrack', description: 'Monitoraggio gestito di rete e dispositivi', icon: 'activity' },
+  { id: 'assetmanagement', code: 'assetmanagement', name: 'Asset Management', description: 'Registro asset del cliente', icon: 'package' },
 ];

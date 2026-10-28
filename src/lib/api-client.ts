@@ -24,7 +24,7 @@ export const API_BASE_URL = import.meta.env.DEV
 		? websoupCloudBaseUrl
 		: configuredBaseUrl || "https://hiconsole.hisolution.it/api";
 
-const COMPLIANCE_API_BASE_URL = import.meta.env.DEV
+export const COMPLIANCE_API_BASE_URL = import.meta.env.DEV
 	? "/api"
 	: isWebsoupCloud
 		? websoupCloudBaseUrl

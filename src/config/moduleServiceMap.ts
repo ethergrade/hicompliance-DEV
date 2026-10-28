@@ -12,6 +12,7 @@ export const MODULE_SERVICE_MAP: Array<{ prefix: string; service: string }> = [
 	// solo HiTrack o HiPatch non li deve vedere.
 	{ prefix: "/asset-inventory", service: "hicompliance" },
 	{ prefix: "/consistenze", service: "hicompliance" },
+	{ prefix: "/asset-management", service: "assetmanagement" },
 	{ prefix: "/surface-scan", service: "surfacescan" },
 	{ prefix: "/dark-risk-esteso", service: "darkrisk" },
 	{ prefix: "/dark-risk", service: "darkrisk" },

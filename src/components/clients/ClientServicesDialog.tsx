@@ -39,6 +39,7 @@ import {
 	Radar,
 	Calendar,
 	Database,
+	Package,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -99,6 +100,9 @@ function deriveFlags(services: TenantServiceResource[]) {
 	const htk = services.find(
 		(s) => s.service_type === "hitrack" && (s.status === "active" || !s.status),
 	);
+	const am = services.find(
+		(s) => s.service_type === "assetmanagement" && (s.status === "active" || !s.status),
+	);
 	return {
 		hicompliance_enabled: !!hc,
 		hicompliance_license:
@@ -109,6 +113,7 @@ function deriveFlags(services: TenantServiceResource[]) {
 		dark_risk360_enabled: !!dr || !!hc,
 		hipatch_enabled: !!hp,
 		hitrack_enabled: !!htk,
+		assetmanagement_enabled: !!am,
 		sophos: Object.fromEntries(
 			SOPHOS_SERVICES.map((svc) => [
 				svc.code,
@@ -186,10 +191,14 @@ const ContractDateInput: React.FC<{
 	);
 };
 
+/** Durata di un contratto senza scadenza: il backend la salva come durata nulla. */
+const DURATION_FOREVER = "forever";
+
 const calcEndDate = (
 	startDate: string | null,
 	durationYears: string | null,
 ): string => {
+	if (durationYears === DURATION_FOREVER) return "Nessuna scadenza";
 	if (!startDate || !durationYears) return "";
 	const d = new Date(startDate + "T00:00:00");
 	d.setFullYear(d.getFullYear() + parseInt(durationYears, 10));
@@ -326,6 +335,11 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 			if (patch.hitrack_enabled === false) {
 				const ht = ts.find((s) => s.service_type === "hitrack");
 				if (ht) await tenantServicesApi.delete(ht.id, groupId);
+			}
+			// Asset Management OFF: il registro resta, torna visibile se si riattiva
+			if (patch.assetmanagement_enabled === false) {
+				const am = ts.find((s) => s.service_type === "assetmanagement");
+				if (am) await tenantServicesApi.delete(am.id, groupId);
 			}
 			// Servizi Sophos OFF
 			for (const svc of SOPHOS_SERVICES) {
@@ -470,6 +484,25 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 								data_source: "domotz_public_api",
 								...(defaultStart ? { contract_start: defaultStart } : {}),
 							},
+						},
+						groupId,
+					);
+				}
+			}
+			// Asset Management ON — contract_start eredita da HiCompliance se presente
+			if (patch.assetmanagement_enabled === true) {
+				const am = ts.find((s) => s.service_type === "assetmanagement");
+				if (!am) {
+					const hcSettings =
+						(ts.find((s) => s.service_type === "hicompliance")
+							?.settings as any) || {};
+					const defaultStart = hcSettings.contract_start || "";
+					await tenantServicesApi.create(
+						{
+							tenant_id: organizationId,
+							service_type: "assetmanagement",
+							status: "active",
+							settings: defaultStart ? { contract_start: defaultStart } : {},
 						},
 						groupId,
 					);
@@ -732,7 +765,7 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 	};
 
 	// Renders the contract detail row for an enabled service
-	const renderContractRow = (serviceType: string) => {
+	const renderContractRow = (serviceType: string, allowForever = false) => {
 		const cs = getContractSettings(serviceType);
 		const handleSave = (
 			field: "contract_start" | "duration",
@@ -784,6 +817,9 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
                 <SelectItem value="3">3 anni</SelectItem>
                 <SelectItem value="4">4 anni</SelectItem>
                 <SelectItem value="5">5 anni</SelectItem>
+                {(allowForever || cs.duration === DURATION_FOREVER) && (
+                  <SelectItem value={DURATION_FOREVER}>Per sempre</SelectItem>
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -1233,6 +1269,38 @@ const ClientServicesDialog: React.FC<ClientServicesDialogProps> = ({
 											Domotz Public API
 										</Badge>
 									</div>
+								</div>
+							)}
+
+							<div className="flex items-center justify-between rounded-md border p-3">
+								<div className="flex items-center gap-3">
+									<div
+										className={`p-1.5 rounded-md ${orgFlags?.assetmanagement_enabled ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}
+									>
+										<Package className="w-4 h-4" />
+									</div>
+									<div>
+										<p className="text-sm font-medium">Asset Management</p>
+										<p className="text-xs text-muted-foreground">
+											Registro asset del cliente
+										</p>
+									</div>
+								</div>
+								<Switch
+									checked={!!orgFlags?.assetmanagement_enabled}
+									disabled={updateFlagsMutation.isPending}
+									onCheckedChange={(v) => {
+										updateFlagsMutation.mutate({ assetmanagement_enabled: v });
+									}}
+								/>
+							</div>
+
+							{orgFlags?.assetmanagement_enabled && (
+								<div className="ml-4 space-y-2 border-l-2 border-primary/20 pl-3">
+									{renderContractRow("assetmanagement", true)}
+									<p className="text-xs text-muted-foreground">
+										Il cliente Halo da cui arrivano gli asset si collega in Integrazioni.
+									</p>
 								</div>
 							)}
 
