@@ -14,6 +14,18 @@ import { cn } from '@/lib/utils';
 import { OsPatchesTable } from './OsPatchesTable';
 import { SoftwarePatchesTable } from './SoftwarePatchesTable';
 import { useHipatchDashboard } from '@/hooks/useHipatch';
+import { assetOs, OS_NON_RILEVATO, OS_NON_RILEVATO_HINT } from '@/lib/hipatch/assetOs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  DEFAULT_ASSET_FILTERS,
+  filterAssets,
+  hasActiveAssetFilters,
+  isUnrecognized,
+  latestPing,
+  osOptions,
+  STALE_DAYS,
+  type AssetFilters,
+} from '@/lib/hipatch/hipatchFilters';
 
 // ─── Severity helpers ─────────────────────────────────────────────────────────
 
@@ -93,6 +105,9 @@ type MappedCve = {
   score: number;
   severity: 'Low' | 'Medium' | 'High' | 'Critical';
   assets?: import('@/lib/api/hipatch').HipatchCveAsset[];
+  baseScore?: number | null;
+  firstSeen?: string | null;
+  lastSeen?: string | null;
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -106,8 +121,9 @@ export const HiPatchDashboard: React.FC = () => {
   };
 
   const [assetPage, setAssetPage] = useState(0);
-  const [assetQuery, setAssetQuery] = useState('');
+  const [assetFilters, setAssetFilters] = useState<AssetFilters>(DEFAULT_ASSET_FILTERS);
   const [assetCvesOpen, setAssetCvesOpen] = useState<{ name: string; cves: MappedCve[] } | null>(null);
+  const [assetCvesQuery, setAssetCvesQuery] = useState('');
   const [detailCve, setDetailCve] = useState<string | null>(null);
   const assetPageSize = 10;
 
@@ -121,6 +137,9 @@ export const HiPatchDashboard: React.FC = () => {
         score: Number(c.epss_score) || 0,
         severity: normalizeSeverity(c.severity),
         assets: c.assets,
+        baseScore: c.base_score === '' || c.base_score == null ? null : Number(c.base_score),
+        firstSeen: c.first_vul_discovered || null,
+        lastSeen: c.last_vul_discovered || null,
       })),
   [cves]);
 
@@ -134,11 +153,18 @@ export const HiPatchDashboard: React.FC = () => {
         const id = asset['data.id'];
         if (!id) continue;
         if (!map.has(id)) map.set(id, []);
-        map.get(id)!.push(cve);
+        // Una CVE conta una volta per asset anche se la sorgente la manda due volte
+        if (!map.get(id)!.some((c) => c.id === cve.id)) map.get(id)!.push(cve);
       }
     }
     return map;
   }, [mappedCves]);
+
+  const assetCvesFiltered = useMemo(() => {
+    const q = assetCvesQuery.trim().toLowerCase();
+    const list = assetCvesOpen?.cves ?? [];
+    return q ? list.filter((v) => [v.id, v.description, v.severity].some((x) => (x ?? '').toString().toLowerCase().includes(q))) : list;
+  }, [assetCvesOpen, assetCvesQuery]);
 
   const sortedAssets = useMemo(() => {
     const worst = (a: typeof assets[number]) => {
@@ -147,7 +173,7 @@ export const HiPatchDashboard: React.FC = () => {
     };
     // Gli "other_asset" (IP senza hostname né OS) vanno in fondo: sono la
     // maggioranza su alcuni clienti e coprirebbero i dispositivi veri.
-    const unrecognized = (a: typeof assets[number]) => (a['data.asset_type'] === 'other_asset' ? 1 : 0);
+    const unrecognized = (a: typeof assets[number]) => (isUnrecognized(a) ? 1 : 0);
     return [...assets].sort((a, b) => {
       const [sa, na] = worst(a);
       const [sb, nb] = worst(b);
@@ -155,15 +181,30 @@ export const HiPatchDashboard: React.FC = () => {
     });
   }, [assets, cvesByAsset]);
 
-  // Ricerca per nome, hostname o IP: su clienti con migliaia di asset
-  // (Panapesca ne ha oltre seimila) sfogliare le pagine non basta.
-  const filteredAssets = useMemo(() => {
-    const q = assetQuery.trim().toLowerCase();
-    if (!q) return sortedAssets;
-    return sortedAssets.filter((a) =>
-      [a['data.name'], a['data.host_name'], a['data.ip']].some((v) => (v ?? '').toLowerCase().includes(q)),
-    );
-  }, [sortedAssets, assetQuery]);
+  // Filtri e ricerca per nome, hostname o IP: su clienti con migliaia di asset
+  // (Panapesca ne ha oltre seimila, quasi tutti IP non riconosciuti) sfogliare
+  // le pagine non basta. Di default si vedono solo gli asset riconosciuti.
+  const assetCounts = useMemo(() => {
+    const unrecognized = assets.filter(isUnrecognized).length;
+    return { unrecognized, recognized: assets.length - unrecognized };
+  }, [assets]);
+  const assetOsOptions = useMemo(() => osOptions(assets), [assets]);
+  const pingReference = useMemo(() => latestPing(assets), [assets]);
+  const filteredAssets = useMemo(
+    () => filterAssets(sortedAssets, assetFilters, (a) => cvesByAsset.get(a['data.id'] ?? '') ?? [], pingReference),
+    [sortedAssets, assetFilters, cvesByAsset, pingReference],
+  );
+  // Chi cerca un IP lo cerca anche fra i non riconosciuti, nascosti di default
+  const hiddenMatches = useMemo(
+    () => (filteredAssets.length === 0 && assetFilters.kind === 'recognized'
+      ? filterAssets(sortedAssets, { ...assetFilters, kind: 'unrecognized' }, (a) => cvesByAsset.get(a['data.id'] ?? '') ?? [], pingReference).length
+      : 0),
+    [filteredAssets, sortedAssets, assetFilters, cvesByAsset, pingReference],
+  );
+  const setAssetFilter = (patch: Partial<AssetFilters>) => {
+    setAssetFilters((f) => ({ ...f, ...patch }));
+    setAssetPage(0);
+  };
 
   const assetTotalPages = Math.ceil(filteredAssets.length / assetPageSize);
   const assetSlice = filteredAssets.slice(assetPage * assetPageSize, (assetPage + 1) * assetPageSize);
@@ -355,7 +396,7 @@ export const HiPatchDashboard: React.FC = () => {
                 ? (() => {
                     const affectedIds = new Set(mappedCves.flatMap(c => (c.assets ?? []).map(a => a['data.id'])));
                     const devicePart = affectedIds.size > 0 ? ` su ${affectedIds.size} device` : '';
-                    return `${mappedCves.length} CVE${devicePart} — ordinate per severità`;
+                    return `${mappedCves.length} CVE${devicePart}`;
                   })()
                 : data?.cvesFailed
                   ? 'Elenco delle CVE non disponibile'
@@ -364,7 +405,7 @@ export const HiPatchDashboard: React.FC = () => {
           </CardHeader>
           <CardContent>
             {mappedCves.length > 0 ? (
-              <VulnerabilitiesTable vulnerabilities={mappedCves} />
+              <VulnerabilitiesTable vulnerabilities={mappedCves} runDate={summary?.last_updated} />
             ) : data?.cvesFailed ? (
               <div className="text-center py-8 text-sm text-destructive">
                 <AlertTriangle className="w-10 h-10 mx-auto mb-2 opacity-60" />
@@ -387,23 +428,65 @@ export const HiPatchDashboard: React.FC = () => {
           <Card className="border-border">
             <CardHeader>
               <CardTitle className="text-lg">Asset</CardTitle>
-              <p className="text-sm text-muted-foreground">{assets.length} asset rilevati</p>
+              <p className="text-sm text-muted-foreground">
+                {assetCounts.recognized} asset riconosciuti
+                {assetCounts.unrecognized > 0 && ` · ${assetCounts.unrecognized} IP non riconosciuti`}
+              </p>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="relative w-full max-w-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative w-full sm:w-72">
                   <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
-                    value={assetQuery}
-                    onChange={(e) => { setAssetQuery(e.target.value); setAssetPage(0); }}
+                    value={assetFilters.query}
+                    onChange={(e) => setAssetFilter({ query: e.target.value })}
                     placeholder="Cerca per nome o IP…"
-                    className="pl-8"
+                    className="h-8 pl-8 text-sm"
                   />
                 </div>
-                {assetQuery.trim() !== '' && (
-                  <span className="text-sm text-muted-foreground">
-                    {filteredAssets.length} di {assets.length}
-                  </span>
+                <Select value={assetFilters.kind} onValueChange={(v) => setAssetFilter({ kind: v as AssetFilters['kind'] })}>
+                  <SelectTrigger className="w-52 h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="recognized">Asset riconosciuti ({assetCounts.recognized})</SelectItem>
+                    <SelectItem value="unrecognized">IP non riconosciuti ({assetCounts.unrecognized})</SelectItem>
+                    <SelectItem value="all">Tutti ({assets.length})</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={assetFilters.os} onValueChange={(v) => setAssetFilter({ os: v })}>
+                  <SelectTrigger className="w-52 h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tutti gli OS</SelectItem>
+                    {assetOsOptions.map(({ os, count }) => (
+                      <SelectItem key={os} value={os}>{os} ({count})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={assetFilters.cve} onValueChange={(v) => setAssetFilter({ cve: v as AssetFilters['cve'] })}>
+                  <SelectTrigger className="w-48 h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">CVE: tutti</SelectItem>
+                    <SelectItem value="with">Con CVE</SelectItem>
+                    <SelectItem value="critical">Con CVE critical</SelectItem>
+                    <SelectItem value="high">Con CVE high o critical</SelectItem>
+                    <SelectItem value="without">Senza CVE</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={assetFilters.ping} onValueChange={(v) => setAssetFilter({ ping: v as AssetFilters['ping'] })}>
+                  <SelectTrigger className="w-56 h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Ultimo ping: tutti</SelectItem>
+                    <SelectItem value="stale">Non visti da oltre {STALE_DAYS} giorni</SelectItem>
+                  </SelectContent>
+                </Select>
+                {hasActiveAssetFilters(assetFilters) && (
+                  <>
+                    <span className="text-sm text-muted-foreground">
+                      {filteredAssets.length} di {assets.length}
+                    </span>
+                    <Button variant="ghost" size="sm" className="h-8" onClick={() => setAssetFilter(DEFAULT_ASSET_FILTERS)}>
+                      Azzera filtri
+                    </Button>
+                  </>
                 )}
               </div>
               <Table>
@@ -420,7 +503,7 @@ export const HiPatchDashboard: React.FC = () => {
                 </TableHeader>
                 <TableBody>
                   {assetSlice.map((a, i) => (
-                    <TableRow key={i}>
+                    <TableRow key={a['data.id'] ?? i}>
                       <TableCell>
                         <div className="font-medium">{a['data.name'] || a['data.ip'] || '-'}</div>
                         {a['data.host_name'] && a['data.host_name'] !== a['data.name'] && (
@@ -428,8 +511,10 @@ export const HiPatchDashboard: React.FC = () => {
                         )}
                       </TableCell>
                       <TableCell>{a['data.ip'] || '-'}</TableCell>
-                      <TableCell>{a['data.os_full_name'] || a['data.os_name'] || '-'}</TableCell>
-                      <TableCell>{a['data.asset_type'] === 'other_asset' ? 'non riconosciuto' : a['data.asset_type'] || '-'}</TableCell>
+                      <TableCell>
+                        {assetOs(a) ?? <span className="text-muted-foreground cursor-help" title={OS_NON_RILEVATO_HINT}>{OS_NON_RILEVATO}</span>}
+                      </TableCell>
+                      <TableCell>{isUnrecognized(a) ? 'non riconosciuto' : a['data.asset_type'] || '-'}</TableCell>
                       <TableCell>
                         {a['data.importance'] ? (
                           <Badge className={a['data.importance'].toLowerCase() === 'critical'
@@ -448,7 +533,8 @@ export const HiPatchDashboard: React.FC = () => {
                               variant="outline"
                               size="sm"
                               className="gap-2"
-                              onClick={() => setAssetCvesOpen({ name: a['data.name'] || a['data.ip'] || '-', cves: list })}
+                              title="CVE distinte che interessano l'asset; il badge è la più grave. Clic per l'elenco."
+                              onClick={() => { setAssetCvesQuery(''); setAssetCvesOpen({ name: a['data.name'] || a['data.ip'] || '-', cves: list }); }}
                             >
                               {list.length} CVE
                               <Badge className={cn('font-medium', severityColors[list[0].severity])}>{list[0].severity}</Badge>
@@ -462,7 +548,12 @@ export const HiPatchDashboard: React.FC = () => {
                   {filteredAssets.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center text-sm text-muted-foreground">
-                        Nessun asset corrisponde alla ricerca.
+                        Nessun asset corrisponde ai filtri.
+                        {assetFilters.kind === 'recognized' && hiddenMatches > 0 && (
+                          <Button variant="link" size="sm" className="h-auto px-1" onClick={() => setAssetFilter({ kind: 'all' })}>
+                            {hiddenMatches} fra gli IP non riconosciuti: mostrali
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   )}
@@ -492,6 +583,13 @@ export const HiPatchDashboard: React.FC = () => {
           <DialogHeader>
             <DialogTitle>CVE dell'asset — {assetCvesOpen?.name}</DialogTitle>
           </DialogHeader>
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input value={assetCvesQuery} onChange={(e) => setAssetCvesQuery(e.target.value)} placeholder="Cerca per CVE, descrizione o severity…" className="h-8 pl-8 text-sm" />
+            </div>
+            <span className="text-xs text-muted-foreground whitespace-nowrap">{assetCvesFiltered.length} di {assetCvesOpen?.cves.length ?? 0} CVE distinte</span>
+          </div>
           <Table>
             <TableHeader>
               <TableRow>
@@ -501,7 +599,7 @@ export const HiPatchDashboard: React.FC = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {assetCvesOpen?.cves.map((v) => (
+              {assetCvesFiltered.map((v) => (
                 <TableRow key={v.id}>
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
@@ -531,13 +629,13 @@ export const HiPatchDashboard: React.FC = () => {
             <div>
               <h4 className="text-sm text-muted-foreground mb-4">Patch in attesa ({mappedOsPending.length})</h4>
               {mappedOsPending.length > 0
-                ? <OsPatchesTable patches={mappedOsPending} type="pending" />
+                ? <OsPatchesTable patches={mappedOsPending} type="pending" runDate={summary?.last_updated} />
                 : <p className="text-sm text-muted-foreground text-center py-4">Nessuna patch in attesa</p>}
             </div>
             <div>
               <h4 className="text-sm text-muted-foreground mb-4">Patch installate ({mappedOsInstalled.length})</h4>
               {mappedOsInstalled.length > 0
-                ? <OsPatchesTable patches={mappedOsInstalled} type="installed" />
+                ? <OsPatchesTable patches={mappedOsInstalled} type="installed" runDate={summary?.last_updated} />
                 : <p className="text-sm text-muted-foreground text-center py-4">Nessuna patch installata</p>}
             </div>
           </CardContent>
