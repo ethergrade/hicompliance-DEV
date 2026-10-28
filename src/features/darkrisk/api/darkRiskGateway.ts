@@ -91,6 +91,43 @@ export const darkRiskGateway = {
 		return parseFindingHistory(await getData(`/companies/${companyId}/darkrisk/findings/${findingId}/history`, groupId));
 	},
 
+	/** Riconosce una o più credenziali (riga, spuntate, tutte quelle di un leak). */
+	async acknowledgeCredentials(
+		companyId: string,
+		groupId: string | null | undefined,
+		keys: string[],
+		note?: string,
+	): Promise<number> {
+		const response = await complianceApiClient.post<ApiResponse<{ acknowledged: number }>>(
+			`/companies/${companyId}/darkrisk/credential-leaks/ack`,
+			{ keys, note: note?.trim() || null },
+			requestOptions(groupId),
+		);
+		return response.data?.acknowledged ?? 0;
+	},
+
+	async revokeCredentialAcknowledgements(
+		companyId: string,
+		groupId: string | null | undefined,
+		keys: string[],
+		note?: string,
+	): Promise<number> {
+		const response = await complianceApiClient.post<ApiResponse<{ revoked: number }>>(
+			`/companies/${companyId}/darkrisk/credential-leaks/unack`,
+			{ keys, note: note?.trim() || null },
+			requestOptions(groupId),
+		);
+		return response.data?.revoked ?? 0;
+	},
+
+	async getCredentialHistory(
+		companyId: string,
+		groupId: string | null | undefined,
+		credentialKey: string,
+	): Promise<DarkRiskFindingEvent[]> {
+		return parseFindingHistory(await getData(`/companies/${companyId}/darkrisk/credential-leaks/${credentialKey}/history`, groupId));
+	},
+
 	async getEntitlements(
 		companyId: string,
 		groupId?: string | null,

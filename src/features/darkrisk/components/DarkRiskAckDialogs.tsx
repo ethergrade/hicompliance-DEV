@@ -1,6 +1,6 @@
-// Dialoghi condivisi per il riconoscimento (ACK) di un'evidenza DarkRisk: dare
-// o revocare l'ACK con una nota, e vederne lo storico. Usati dall'elenco delle
-// evidenze e dalla tabella delle credenziali dell'Esteso.
+// Dialoghi per il riconoscimento (ACK) DarkRisk: dare o revocare l'ACK con una
+// nota, e vederne lo storico. Per le evidenze (elenco delle evidenze) e per le
+// credenziali dell'Esteso, che si riconoscono una per una.
 import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -13,16 +13,22 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { darkRiskGateway } from "../api/darkRiskGateway";
+import type { CredentialLeak } from "../domain/contracts";
 
 const ACTION_LABEL: Record<string, string> = {
 	darkrisk_finding_acknowledged: "Riconosciuta",
 	darkrisk_finding_acknowledgement_revoked: "Riconoscimento revocato",
 	darkrisk_finding_status_changed: "Stato cambiato",
+	darkrisk_credential_acknowledged: "Riconosciuta",
+	darkrisk_credential_acknowledgement_revoked: "Riconoscimento revocato",
 };
+
+const ACKNOWLEDGED_ACTIONS = new Set(["darkrisk_finding_acknowledged", "darkrisk_credential_acknowledged"]);
 
 const fmtDateTime = (v: string | null) => {
 	if (!v) return "—";
@@ -112,16 +118,20 @@ export function AckDialog({ companyId, groupId, target, onClose, onDone }: AckDi
 interface HistoryDialogProps {
 	companyId: string;
 	groupId?: string | null;
-	target: { findingId: string; title: string } | null;
+	/** Un'evidenza (findingId) o una credenziale dell'Esteso (credentialKey). */
+	target: { findingId?: string; credentialKey?: string; title: string } | null;
 	onClose: () => void;
 }
 
-/** Storico di riconoscimenti, revoche e cambi di stato di un'evidenza. */
+/** Storico di riconoscimenti, revoche e cambi di stato di un'evidenza o di una credenziale. */
 export function AckHistoryDialog({ companyId, groupId, target, onClose }: HistoryDialogProps) {
 	const query = useQuery({
-		queryKey: ["darkrisk-finding-history", companyId, groupId, target?.findingId],
+		queryKey: ["darkrisk-ack-history", companyId, groupId, target?.findingId ?? target?.credentialKey],
 		enabled: target !== null,
-		queryFn: () => darkRiskGateway.getFindingHistory(companyId, groupId, target!.findingId),
+		queryFn: () =>
+			target!.credentialKey
+				? darkRiskGateway.getCredentialHistory(companyId, groupId, target!.credentialKey)
+				: darkRiskGateway.getFindingHistory(companyId, groupId, target!.findingId!),
 	});
 
 	return (
@@ -140,7 +150,7 @@ export function AckHistoryDialog({ companyId, groupId, target, onClose }: Histor
 						{(query.data ?? []).map((e, i) => (
 							<li key={`${e.createdAt}-${i}`} className="border-l-2 pl-3">
 								<div className="flex items-center gap-2 text-sm">
-									<Badge variant={e.action === "darkrisk_finding_acknowledged" ? "default" : "outline"}>
+									<Badge variant={ACKNOWLEDGED_ACTIONS.has(e.action) ? "default" : "outline"}>
 										{ACTION_LABEL[e.action] ?? e.action}
 									</Badge>
 									<span className="text-muted-foreground">{fmtDateTime(e.createdAt)}</span>
@@ -151,6 +161,115 @@ export function AckHistoryDialog({ companyId, groupId, target, onClose }: Histor
 						))}
 					</ul>
 				)}
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+const accountOf = (r: CredentialLeak) => r.clearAccount || r.selector || r.assetScope || "—";
+
+function AccountList({ rows, max = 8 }: { rows: CredentialLeak[]; max?: number }) {
+	return (
+		<ul className="max-h-40 space-y-0.5 overflow-y-auto rounded-md border p-2 font-mono text-xs">
+			{rows.slice(0, max).map((r) => <li key={r.credentialKey} className="truncate">{accountOf(r)}</li>)}
+			{rows.length > max && <li className="text-muted-foreground">e altre {rows.length - max}</li>}
+		</ul>
+	);
+}
+
+export interface CredentialAckTarget {
+	mode: "ack" | "revoke";
+	/** Le credenziali scelte: una riga o quelle spuntate. */
+	rows: CredentialLeak[];
+	/** Per una riga sola: le altre credenziali dello stesso leak, da includere solo se lo si sceglie. */
+	sameLeak?: CredentialLeak[];
+}
+
+/**
+ * Riconosce o revoca le credenziali scelte, e solo quelle: il conteggio e gli
+ * account sono nella conferma. Le altre dello stesso leak si aggiungono solo
+ * spuntando l'opzione apposita.
+ */
+export function CredentialAckDialog({ companyId, groupId, target, onClose, onDone }: {
+	companyId: string;
+	groupId?: string | null;
+	target: CredentialAckTarget | null;
+	onClose: () => void;
+	onDone: () => void;
+}) {
+	const [note, setNote] = useState("");
+	const [withLeak, setWithLeak] = useState(false);
+	const [saving, setSaving] = useState(false);
+
+	const revoking = target?.mode === "revoke";
+	const sameLeak = (!revoking && target?.sameLeak) || [];
+	const rows = target ? [...target.rows, ...(withLeak ? sameLeak : [])] : [];
+	const n = rows.length;
+	const close = () => { setNote(""); setWithLeak(false); onClose(); };
+
+	const submit = async () => {
+		if (!n) return;
+		setSaving(true);
+		try {
+			const keys = rows.map((r) => r.credentialKey);
+			const done = revoking
+				? await darkRiskGateway.revokeCredentialAcknowledgements(companyId, groupId, keys, note)
+				: await darkRiskGateway.acknowledgeCredentials(companyId, groupId, keys, note);
+			toast.success(revoking
+				? (done === 1 ? "Riconoscimento revocato" : `${done} riconoscimenti revocati`)
+				: (done === 1 ? "Credenziale riconosciuta" : `${done} credenziali riconosciute`));
+			onDone();
+			close();
+		} catch (error) {
+			toast.error(`Operazione non riuscita: ${(error as Error)?.message ?? "errore"}`);
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	return (
+		<Dialog open={target !== null} onOpenChange={(open) => !open && close()}>
+			<DialogContent>
+				<DialogHeader>
+					<DialogTitle>
+						{revoking
+							? (n === 1 ? "Revoca il riconoscimento" : `Revoca il riconoscimento di ${n} credenziali`)
+							: (n === 1 ? "Riconosci la credenziale" : `Riconosci ${n} credenziali`)}
+					</DialogTitle>
+					<DialogDescription>
+						{revoking
+							? `${n === 1 ? "La credenziale torna" : `Le ${n} credenziali tornano`} da gestire. Il riconoscimento precedente resta nello storico.`
+							: `Dichiari di aver preso in carico ${n === 1 ? "solo questa credenziale" : `queste ${n} credenziali`} (per esempio: password già cambiata). Le altre non cambiano. Restano registrati chi e quando.`}
+					</DialogDescription>
+				</DialogHeader>
+				<div className="space-y-3">
+					<AccountList rows={target?.rows ?? []} />
+					{sameLeak.length > 0 && (
+						<div className="space-y-2 rounded-md border border-dashed p-2">
+							<label className="flex items-center gap-2 text-sm">
+								<Checkbox checked={withLeak} onCheckedChange={(v) => setWithLeak(v === true)} />
+								Riconosci anche le altre {sameLeak.length} credenziali dello stesso leak
+							</label>
+							{withLeak && <AccountList rows={sameLeak} />}
+						</div>
+					)}
+					<Textarea
+						value={note}
+						onChange={(e) => setNote(e.target.value)}
+						maxLength={500}
+						placeholder="Nota facoltativa (es. password cambiata il 03/10)"
+					/>
+					<p className="text-xs text-muted-foreground">
+						Non scrivere password, credenziali o dati personali nella nota.
+					</p>
+				</div>
+				<DialogFooter>
+					<Button variant="outline" onClick={close} disabled={saving}>Annulla</Button>
+					<Button onClick={submit} disabled={saving || !n} variant={revoking ? "destructive" : "default"}>
+						{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+						{revoking ? "Revoca" : "Riconosci"}{n > 1 ? ` (${n})` : ""}
+					</Button>
+				</DialogFooter>
 			</DialogContent>
 		</Dialog>
 	);

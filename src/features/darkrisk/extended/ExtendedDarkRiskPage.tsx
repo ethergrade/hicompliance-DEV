@@ -28,6 +28,7 @@ import { DarkRiskCredentialLeaks } from "../components/DarkRiskCredentialLeaks";
 import { DarkRiskFiletypePieChart } from "../components/DarkRiskFiletypePieChart";
 import { DarkRiskSourcePieChart } from "../components/DarkRiskSourcePieChart";
 import { exportCredentialLeaksXlsx, exportRunRecordsXlsx } from "../shared/exportCredentialsXlsx";
+import type { CredentialLeak } from "../domain/contracts";
 import { ReportList } from "../shared/ReportList";
 import { DarkRiskFindingsList } from "../components/DarkRiskFindingsList";
 import { DarkRiskMonitoringCoverage } from "../components/DarkRiskMonitoringCoverage";
@@ -148,9 +149,10 @@ export default function ExtendedDarkRiskPage() {
 		if (!activeRunId || records.length === 0) return;
 		exportRunRecordsXlsx(records, clientName, activeRunId, resultsQuery.data?.run?.completedAt);
 	};
-	const handleExportCredentials = () => {
-		if (!credentialLeaks?.records.length) return;
-		exportCredentialLeaksXlsx(credentialLeaks.records, clientName);
+	// La tabella passa le righe che si vedono coi filtri (tutte, senza filtri)
+	const handleExportCredentials = (rows: CredentialLeak[]) => {
+		if (!rows.length) return;
+		exportCredentialLeaksXlsx(rows, clientName, rows.length < (credentialLeaks?.records.length ?? 0));
 	};
 
 	return (
@@ -267,7 +269,6 @@ export default function ExtendedDarkRiskPage() {
 						) : (
 							<DarkRiskCredentialLeaks
 								records={credentialLeaks?.records ?? []}
-								total={credentialLeaks?.total}
 								companyId={organizationId ?? undefined}
 								groupId={groupId}
 								onChanged={() => void credentialLeaksQuery.refetch()}

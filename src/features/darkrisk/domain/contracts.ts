@@ -133,6 +133,12 @@ export interface ExtendedRunResult {
  */
 export interface CredentialLeak {
 	id: string;
+	/** Identità stabile della credenziale (account + password): una riga per chiave, l'ACK va qui. */
+	credentialKey: string;
+	/** Prima e ultima scansione che l'hanno vista, e quante. */
+	firstSeenAt: string | null;
+	lastSeenAt: string | null;
+	seenCount: number;
 	selector: string;
 	assetScope: string | null;
 	maskedValue: string;
@@ -148,9 +154,8 @@ export interface CredentialLeak {
 	evidenceDate: string | null;
 	createdAt: string | null;
 	evidenceId: string | null;
+	/** Il leak: le credenziali con lo stesso findingId vengono dallo stesso. */
 	findingId: string | null;
-	/** Il finding che porta l'ACK; null se la credenziale non è agganciabile. */
-	ackFindingId: string | null;
 	acknowledged: boolean;
 	acknowledgedAt: string | null;
 	acknowledgedBy: string | null;

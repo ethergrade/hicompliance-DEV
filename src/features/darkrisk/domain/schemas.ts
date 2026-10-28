@@ -116,6 +116,10 @@ export const parseCredentialLeaks = (value: unknown): CredentialLeakPage => {
 			const item = objectValue(row);
 			return {
 				id: stringValue(item.id),
+				credentialKey: stringValue(item.credential_key, stringValue(item.id)),
+				firstSeenAt: nullableString(item.first_seen_at ?? item.created_at),
+				lastSeenAt: nullableString(item.last_seen_at ?? item.created_at),
+				seenCount: numberValue(item.seen_count, 1),
 				selector: stringValue(item.selector_value),
 				assetScope: nullableString(item.asset_scope),
 				maskedValue: stringValue(item.masked_value),
@@ -132,7 +136,6 @@ export const parseCredentialLeaks = (value: unknown): CredentialLeakPage => {
 				createdAt: nullableString(item.created_at),
 				evidenceId: nullableString(item.evidence_id),
 				findingId: nullableString(item.finding_id),
-				ackFindingId: nullableString(item.ack_finding_id),
 				acknowledged: item.acknowledged === true,
 				acknowledgedAt: nullableString(item.acknowledged_at),
 				acknowledgedBy: nullableString(item.acknowledged_by),
