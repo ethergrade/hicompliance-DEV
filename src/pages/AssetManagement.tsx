@@ -25,7 +25,9 @@ import {
 import { AvailabilityDot, FlagButton, TagInput, HiTrackPanel, AVAIL_LABEL } from "@/components/asset-management/AssetExtras";
 import { BulkEditBar } from "@/components/asset-management/BulkEditBar";
 import { ASSET_TABLE_COLUMNS, ResizableAssetHeader } from "@/components/asset-management/ResizableAssetHeader";
-import { Plus, Upload, Download, Trash2, Loader2, Check, X, Eye } from "lucide-react";
+import { Plus, Upload, Download, Trash2, Loader2, Check, X, Eye, ExternalLink } from "lucide-react";
+import { Link } from "react-router-dom";
+import { hitrackDeviceHref } from "@/lib/hitrack/deviceLink";
 
 const PAGE = 15;
 type Field = keyof ManagedAsset | "pin" | "puk";
@@ -63,6 +65,7 @@ export default function AssetManagement() {
   const { organizationId, groupId, selectedOrganization } = useClientOrganization();
   const { hasCapability, bypass } = usePermissions();
   const { isServiceActive } = useModuleAccess();
+  const hitrackActive = isServiceActive("hitrack");
   const queryClient = useQueryClient();
   const canWrite = bypass || hasCapability("assetmanagement.edit");
 
@@ -324,7 +327,13 @@ export default function AssetManagement() {
                           {a.source !== "halo" ? <Badge variant="secondary">Manuale</Badge>
                             : a.halo_removed_at ? <Badge variant="outline" title="Non c'è più nel gestionale: si può modificare ed eliminare">Non più nel gestionale</Badge>
                             : <Badge>Gestionale</Badge>}
-                          {a.hitrack && <Badge variant="outline">HiTrack</Badge>}
+                          {a.hitrack && (hitrackActive
+                            ? (
+                              <Link to={hitrackDeviceHref(a.hitrack.deviceId)} title={`Apri ${a.hitrack.deviceName} in HiTrack`}>
+                                <Badge variant="outline" className="gap-1 hover:bg-accent">HiTrack<ExternalLink className="w-3 h-3" /></Badge>
+                              </Link>
+                            )
+                            : <Badge variant="outline">HiTrack</Badge>)}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -354,7 +363,7 @@ export default function AssetManagement() {
       <AssetSheet
         orgId={organizationId} groupId={groupId}
         asset={editing} lookups={lookups} onClose={() => setEditing(null)}
-        allTags={allTags} hitrackActive={isServiceActive("hitrack")}
+        allTags={allTags} hitrackActive={hitrackActive}
         groups={groups} onGroupsChange={() => reload("collections")}
         onSaved={putAsset}
         onDeleted={(id) => {

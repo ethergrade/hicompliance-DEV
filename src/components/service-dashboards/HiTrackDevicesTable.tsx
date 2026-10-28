@@ -3,6 +3,7 @@
 // di ogni device (network-quality, calcolata dal backend), la salute dell'host,
 // gruppi personali e tag condivisi.
 import React, { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -20,6 +21,7 @@ import { useHiTrackOrganize } from "@/hooks/useHiTrackDashboard";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useUserRoles } from "@/hooks/useUserRoles";
 import type { HiTrackMonitoredDevice, HiTrackNetworkQuality } from "@/lib/hitrack/types";
+import { DEVICE_PARAM } from "@/lib/hitrack/deviceLink";
 
 const PAGE_SIZES = [10, 30, 50, 100];
 
@@ -114,10 +116,27 @@ export function HiTrackDevicesTable({ devices, hosts }: { devices: HiTrackMonito
 	const [pageSize, setPageSize] = useState(10);
 	const [page, setPage] = useState(1);
 	const [opened, setOpened] = useState<HiTrackMonitoredDevice | null>(null);
+	const [params, setParams] = useSearchParams();
 	const [selected, setSelected] = useState<Set<string>>(new Set());
 	const [groupBy, setGroupBy] = useState(false);
 	const [newGroup, setNewGroup] = useState("");
 	const [newTag, setNewTag] = useState("");
+
+	// Arrivando da un altro modulo (Asset Management) con ?device= si apre la
+	// scheda di quel device; chiudendola il parametro sparisce.
+	const linkedId = params.get(DEVICE_PARAM);
+	useEffect(() => {
+		if (!linkedId) return;
+		const device = devices.find((d) => d.id === linkedId);
+		if (device) setOpened(device);
+	}, [linkedId, devices]);
+	const closeDevice = () => {
+		setOpened(null);
+		if (linkedId) {
+			params.delete(DEVICE_PARAM);
+			setParams(params, { replace: true });
+		}
+	};
 
 	const { data: organize, change } = useHiTrackOrganize();
 	const { hasCapability } = usePermissions();
@@ -549,7 +568,7 @@ export function HiTrackDevicesTable({ devices, hosts }: { devices: HiTrackMonito
 
 			{!sections && filtered.length > pageSize && pager}
 
-			<HiTrackDeviceDetailSheet device={opened} onOpenChange={(open) => !open && setOpened(null)} />
+			<HiTrackDeviceDetailSheet device={opened} onOpenChange={(open) => !open && closeDevice()} />
 		</div>
 	);
 }

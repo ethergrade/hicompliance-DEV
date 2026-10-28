@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
+import { hitrackDeviceHref } from "@/lib/hitrack/deviceLink";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -134,7 +135,7 @@ export function HiTrackPanel({ asset, devices, hitrackActive, disabled, onLink }
           {row("Ultimo cambio di stato", m.lastStatusChangeAt ? new Date(m.lastStatusChangeAt).toLocaleString("it-IT") : null)}
           {hitrackActive && (
             <Button asChild variant="outline" size="sm" className="mt-2">
-              <Link to="/dashboard/service/hitrack"><ExternalLink className="w-3 h-3 mr-1" />Apri in HiTrack</Link>
+              <Link to={hitrackDeviceHref(m.deviceId)}><ExternalLink className="w-3 h-3 mr-1" />Apri il device in HiTrack</Link>
             </Button>
           )}
         </div>
