@@ -39,7 +39,7 @@ interface MonthlyReport {
     breach_intel?: { creds_found?: number; hashes_found?: number };
     ai?: { executive_summary?: string | null };
     coverage?: { status?: 'sufficient' | 'insufficient'; reasons?: string[] };
-    meta?: { partial?: boolean };
+    meta?: { partial?: boolean; generated_at?: string };
   };
 }
 
@@ -418,7 +418,8 @@ export const SurfaceScanReportRepository: React.FC<SurfaceScanReportRepositoryPr
                             ? <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-[10px]">{p.breach_intel?.creds_found ?? 0} creds</Badge>
                             : <span className="text-muted-foreground">—</span>}
                         </TableCell>
-                        <TableCell className="text-sm">{new Date(r.created_at).toLocaleString('it-IT')}</TableCell>
+                        {/* Un report rigenerato tiene il created_at della prima versione: la data vera è nel payload */}
+                        <TableCell className="text-sm">{new Date(p.meta?.generated_at ?? r.created_at).toLocaleString('it-IT')}</TableCell>
                         <TableCell>
                           <div className="flex gap-1">
                             <Button size="sm" variant="outline" onClick={() => handleDownloadMonthly(r)}>
