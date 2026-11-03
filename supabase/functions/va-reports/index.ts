@@ -4,7 +4,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
  * Proxy in sola lettura verso le API VA di Nove (v1). Il token NOVE_API_TOKEN non lascia mai il server.
  * Azioni: clients (super admin/sales), link (super admin/sales), reviews, review, zip, password.
  */
-const NOVE_HOST = "https://nove.hisolution.it";
+const NOVE_HOST = (Deno.env.get("NOVE_API_HOST") ?? "").trim().replace(/\/+$/, "").replace(/\/api\/v1$/, "");
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -25,10 +25,16 @@ const ERR: Record<string, string> = {
 async function nove(path: string, raw = false) {
   const token = Deno.env.get("NOVE_API_TOKEN");
   if (!token) throw { status: 400, message: "Token Nove non configurato" };
-  const r = await fetch(NOVE_HOST + path, {
+  if (!/^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(NOVE_HOST)) throw { status: 400, message: "Indirizzo del server Nove non configurato (NOVE_API_HOST)" };
+  let r: Response;
+  try {
+    r = await fetch(NOVE_HOST + path, {
     headers: { Authorization: `Bearer ${token}`, Accept: raw ? "application/zip" : "application/json" },
     redirect: "manual",
-  });
+    });
+  } catch {
+    throw { status: 502, message: "Server Nove non raggiungibile: verifica l'indirizzo (NOVE_API_HOST) e che sia accessibile da internet" };
+  }
   if (r.status !== 200) {
     let code = "";
     try { code = (await r.json()).codice ?? ""; } catch { /* */ }
