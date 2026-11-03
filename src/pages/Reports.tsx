@@ -13,6 +13,7 @@ import { useCorrelationReports, type CorrelationReport } from '@/hooks/useCorrel
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import { ModuleReports } from '@/components/reports/ModuleReports';
+import { ExternalVaReports } from '@/components/reports/ExternalVaReports';
 
 const Reports: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -157,8 +158,9 @@ const Reports: React.FC = () => {
         </Card>
 
         <Tabs defaultValue="modules" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="modules">Report moduli</TabsTrigger>
+            <TabsTrigger value="va">Vulnerability Assessment</TabsTrigger>
             <TabsTrigger value="correlation">
               Correlazioni HiLog
               {correlationReports.length > 0 && <Badge variant="secondary" className="ml-2 text-xs">{correlationReports.length}</Badge>}
@@ -167,6 +169,10 @@ const Reports: React.FC = () => {
 
           <TabsContent value="modules" className="space-y-4">
             <ModuleReports search={searchTerm} year={selectedYear} />
+          </TabsContent>
+
+          <TabsContent value="va" className="space-y-4">
+            <ExternalVaReports search={searchTerm} year={selectedYear} />
           </TabsContent>
 
           <TabsContent value="correlation" className="space-y-4">
