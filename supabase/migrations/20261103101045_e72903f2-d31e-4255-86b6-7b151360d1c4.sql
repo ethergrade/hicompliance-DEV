@@ -1,0 +1,1 @@
+ALTER TABLE public.organizations ADD COLUMN IF NOT EXISTS nove_cliente_id integer, ADD COLUMN IF NOT EXISTS nove_cliente_name text;
