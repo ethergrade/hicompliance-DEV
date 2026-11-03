@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
-import { useAuth } from "@/contexts/AuthContext";
+import { useUserRoles } from "@/hooks/useUserRoles";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,7 @@ async function call<T = any>(body: Record<string, unknown>): Promise<T> {
 /** Report di Vulnerability Assessment mensili dall'archivio esterno Nove (via funzione server va-reports). */
 export function ExternalVaReports({ search, year }: { search: string; year: string }) {
 	const { organizationId } = useClientOrganization();
-	const { isSuperAdmin, isSales } = useAuth() as any;
+	const { isSuperAdmin, isSales } = useUserRoles();
 	const isManager = !!(isSuperAdmin || isSales);
 	const qc = useQueryClient();
 	const [linkOpen, setLinkOpen] = useState(false);
