@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { useCorrelationReports, type CorrelationReport } from '@/hooks/useCorrelationReports';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
+import { ModuleReports } from '@/components/reports/ModuleReports';
 
 const Reports: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -134,7 +135,7 @@ const Reports: React.FC = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Report e Documentazione</h1>
-            <p className="text-muted-foreground">Scarica report Assessment NIS2/NIST/ISO, correlazioni HiLog e altri documenti</p>
+            <p className="text-muted-foreground">Tutti i report di Assessment, SurfaceScan360, DarkRisk360, DarkRisk360 Esteso, IRP e correlazioni HiLog</p>
           </div>
         </div>
 
@@ -155,15 +156,18 @@ const Reports: React.FC = () => {
           </CardContent>
         </Card>
 
-        <Tabs defaultValue="correlation" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+        <Tabs defaultValue="modules" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="modules">Report moduli</TabsTrigger>
             <TabsTrigger value="correlation">
               Correlazioni HiLog
               {correlationReports.length > 0 && <Badge variant="secondary" className="ml-2 text-xs">{correlationReports.length}</Badge>}
             </TabsTrigger>
-            <TabsTrigger value="assessment">Report Assessment</TabsTrigger>
-            <TabsTrigger value="platform">Report Piattaforma</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="modules" className="space-y-4">
+            <ModuleReports search={searchTerm} year={selectedYear} />
+          </TabsContent>
 
           <TabsContent value="correlation" className="space-y-4">
             <Card className="border-border">
@@ -219,43 +223,8 @@ const Reports: React.FC = () => {
             </Card>
           </TabsContent>
 
-          <TabsContent value="assessment" className="space-y-4">
-            <Card className="border-border">
-              <CardHeader><CardTitle className="flex items-center"><FileText className="w-5 h-5 mr-2 text-primary" />Report Assessment e Conformità</CardTitle></CardHeader>
-              <CardContent>
-                {assessmentReports.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8">Nessun report disponibile</p>
-                ) : (
-                  <div className="space-y-3">
-                    {filterReports(assessmentReports).map(report => renderReportRow(report, () => console.log('download', report.title)))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="platform" className="space-y-4">
-            <Card className="border-border">
-              <CardHeader><CardTitle className="flex items-center"><Archive className="w-5 h-5 mr-2 text-primary" />Report Piattaforma e Intelligence</CardTitle></CardHeader>
-              <CardContent>
-                {platformReports.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8">Nessun report disponibile</p>
-                ) : (
-                  <div className="space-y-3">
-                    {filterReports(platformReports).map(report => renderReportRow(report, () => console.log('download', report.title)))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
         </Tabs>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card className="border-border"><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">Report Totali</p><p className="text-2xl font-bold text-foreground">{totalReports}</p></div><FileText className="w-6 h-6 text-primary" /></div></CardContent></Card>
-          <Card className="border-border"><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">Correlazioni HiLog</p><p className="text-2xl font-bold text-foreground">{correlationReports.length}</p></div><FileSpreadsheet className="w-6 h-6 text-green-500" /></div></CardContent></Card>
-          <Card className="border-border"><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">Report Assessment</p><p className="text-2xl font-bold text-foreground">{assessmentReports.length}</p></div><CheckCircle className="w-6 h-6 text-green-500" /></div></CardContent></Card>
-          <Card className="border-border"><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">Report Piattaforma</p><p className="text-2xl font-bold text-foreground">{platformReports.length}</p></div><Archive className="w-6 h-6 text-blue-500" /></div></CardContent></Card>
-        </div>
       </div>
     </DashboardLayout>
   );
