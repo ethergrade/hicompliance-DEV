@@ -225,12 +225,6 @@ const Reports: React.FC = () => {
 
         </Tabs>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card className="border-border"><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">Report Totali</p><p className="text-2xl font-bold text-foreground">{totalReports}</p></div><FileText className="w-6 h-6 text-primary" /></div></CardContent></Card>
-          <Card className="border-border"><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">Correlazioni HiLog</p><p className="text-2xl font-bold text-foreground">{correlationReports.length}</p></div><FileSpreadsheet className="w-6 h-6 text-green-500" /></div></CardContent></Card>
-          <Card className="border-border"><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">Report Assessment</p><p className="text-2xl font-bold text-foreground">{assessmentReports.length}</p></div><CheckCircle className="w-6 h-6 text-green-500" /></div></CardContent></Card>
-          <Card className="border-border"><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">Report Piattaforma</p><p className="text-2xl font-bold text-foreground">{platformReports.length}</p></div><Archive className="w-6 h-6 text-blue-500" /></div></CardContent></Card>
-        </div>
       </div>
     </DashboardLayout>
   );
