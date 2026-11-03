@@ -100,3 +100,6 @@ verify_jwt = false
 
 [functions.halo-asset-sync]
 verify_jwt = false
+
+[functions.va-reports]
+verify_jwt = false
