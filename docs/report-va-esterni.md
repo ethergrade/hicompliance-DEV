@@ -9,7 +9,7 @@ Browser (Reports.tsx → ExternalVaReports.tsx)
         └─ edge function va-reports  ──Bearer NOVE_API_TOKEN──▶ https://nove.hisolution.it/api/v1/va/...
 ```
 - Il token `NOVE_API_TOKEN` è un secret del backend: non arriva mai al browser.
-- Host fisso nella funzione (`NOVE_HOST`). Si usano solo percorsi costruiti dal server (mai i `link` restituiti), `redirect: "manual"`.
+- Host dal secret `NOVE_API_HOST` (es. `https://host-nove`, solo https, senza /api/v1). Si usano solo percorsi costruiti dal server (mai i `link` restituiti), `redirect: "manual"`.
 
 ## Collegamento cliente
 - Colonne `organizations.nove_cliente_id` (int) e `nove_cliente_name`.
