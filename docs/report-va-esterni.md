@@ -6,10 +6,11 @@ Report di Vulnerability Assessment mensili continuativi letti dall'archivio este
 ```text
 Browser (Reports.tsx → ExternalVaReports.tsx)
    └─ supabase.functions.invoke("va-reports")  [JWT utente]
-        └─ edge function va-reports  ──Bearer NOVE_API_TOKEN──▶ https://nove.hisolution.it/api/v1/va/...
+        └─ edge function va-reports  ──Bearer NOVE_API_TOKEN──▶ http://nove.hisolution.it:8000/api/v1/va/...
 ```
 - Il token `NOVE_API_TOKEN` è un secret del backend: non arriva mai al browser.
-- Host dal secret `NOVE_API_HOST` (es. `https://host-nove`, solo https, senza /api/v1). Si usano solo percorsi costruiti dal server (mai i `link` restituiti), `redirect: "manual"`.
+- Endpoint dal secret `NOVE_API_BASE_URL`, configurato su richiesta con `http://nove.hisolution.it:8000/api`; precede il vecchio `NOVE_API_HOST` (fallback). La funzione normalizza host, `/api` o `/api/v1` in una sola base `/api/v1`, mantenendo la porta 8000. Si usano solo percorsi costruiti dal server (mai i `link` restituiti), `redirect: "manual"`.
+- **Attenzione:** HTTP non cifra token Bearer e report sul collegamento tra funzione e Nove. Configurazione richiesta dal cliente; per produzione predisporre HTTPS e aggiornare `NOVE_API_BASE_URL`. Nessun token viene esposto al browser.
 
 ## Collegamento cliente
 - Colonne `organizations.nove_cliente_id` (int) e `nove_cliente_name`.
