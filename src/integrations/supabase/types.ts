@@ -5585,6 +5585,8 @@ export type Database = {
           id: string
           irp_extended: boolean
           name: string
+          nove_cliente_id: number | null
+          nove_cliente_name: string | null
           pentest_tools_auto_validation: boolean
           sales_owner_user_id: string | null
           services_pause_reason: string | null
@@ -5611,6 +5613,8 @@ export type Database = {
           id?: string
           irp_extended?: boolean
           name: string
+          nove_cliente_id?: number | null
+          nove_cliente_name?: string | null
           pentest_tools_auto_validation?: boolean
           sales_owner_user_id?: string | null
           services_pause_reason?: string | null
@@ -5637,6 +5641,8 @@ export type Database = {
           id?: string
           irp_extended?: boolean
           name?: string
+          nove_cliente_id?: number | null
+          nove_cliente_name?: string | null
           pentest_tools_auto_validation?: boolean
           sales_owner_user_id?: string | null
           services_pause_reason?: string | null
