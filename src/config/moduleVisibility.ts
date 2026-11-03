@@ -7,7 +7,7 @@ export const moduleVisibility = {
   integrations: true,
   darkRiskAlerts: false,
   threats: false,
-  reports: false,
+  reports: true,
   threatManagement: true,
 } as const;
 
