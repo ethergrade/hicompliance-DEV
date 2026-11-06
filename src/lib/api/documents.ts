@@ -1,6 +1,7 @@
 // @ts-nocheck -- incident_documents columns added after types generation
 import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
+import { readDocxMetadata, writeDocxMetadata, platformMeta, isDocx, type DocxMetadata } from "@/lib/docxMetadata";
 import type { DocumentResource, StoreDocumentRequest, UpdateDocumentRequest } from "@/types/api";
 
 /**
@@ -278,6 +279,44 @@ export const documentsApi = {
       created_by: auth.user?.id ?? null,
     });
     return toResource(updated);
+  },
+
+  /** Reads Revisione/Stato/Classificazione/... from the stored .docx (null if not a Word file). */
+  async readFileMetadata(companyId: string, documentId: string): Promise<DocxMetadata | null> {
+    const { data: doc, error } = await supabase.from("incident_documents").select("file_path,file_type,name")
+      .eq("id", documentId).eq("organization_id", companyId).single();
+    if (error) throw error;
+    if (!doc.file_path || !isDocx(doc.file_path, doc.file_type)) return null;
+    const { data, error: e } = await supabase.storage.from(BUCKET).download(doc.file_path);
+    if (e) throw e;
+    return readDocxMetadata(data);
+  },
+
+  /**
+   * Writes the platform metadata into the stored .docx of the current revision (no new revision).
+   * Tries to overwrite in place; falls back to a new path and repoints the current version row.
+   */
+  async syncFileMetadata(companyId: string, documentId: string): Promise<boolean> {
+    const { data: doc, error } = await supabase.from("incident_documents").select("*")
+      .eq("id", documentId).eq("organization_id", companyId).single();
+    if (error) throw error;
+    if (!doc.file_path || !isDocx(doc.file_path, doc.file_type)) return false;
+    const { data: blob, error: e } = await supabase.storage.from(BUCKET).download(doc.file_path);
+    if (e) throw e;
+    const out = await writeDocxMetadata(blob, platformMeta(doc));
+    const ct = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    const { error: upd } = await supabase.storage.from(BUCKET).update(doc.file_path, out, { contentType: ct, upsert: true });
+    if (!upd) {
+      await supabase.from("incident_documents").update({ file_size: out.size }).eq("id", documentId);
+      return true;
+    }
+    const path = doc.file_path.replace(/(\.docx)?$/i, `_m${Date.now()}.docx`);
+    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, out, { contentType: ct });
+    if (upErr) throw upErr;
+    await supabase.from("incident_documents").update({ file_path: path, file_size: out.size }).eq("id", documentId);
+    await supabase.from("document_versions").update({ file_path: path, file_size: out.size })
+      .eq("document_id", documentId).eq("file_path", doc.file_path);
+    return true;
   },
 
   async listVersions(documentId: string) {

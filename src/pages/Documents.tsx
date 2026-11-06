@@ -18,6 +18,10 @@ import { DocumentFolderPanel, MoveCopyDialog, BulkTagDialog, folderPath, ROOT, D
 import { Checkbox } from '@/components/ui/checkbox';
 import { exportDocumentListDocx } from '@/lib/documentListExport';
 import { DocumentReviewBoard } from '@/components/documents/DocumentReviewBoard';
+import DocxMetaFindings from '@/components/documents/DocxMetaFindings';
+import { readDocxMetadata, isDocx, diffWithPlatform, platformMeta, STATUS_TRANSITIONS, META_LABELS, type DocxMetadata, type DocxMetaKey } from '@/lib/docxMetadata';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { FileSearch, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Copy, FolderInput, Folder, Tag } from 'lucide-react';
 import type { DocumentResource } from '@/types/api';
@@ -191,13 +195,86 @@ const Documents: React.FC = () => {
     return documents.filter(doc => doc.category === category).length;
   };
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const [uploadFound, setUploadFound] = useState<DocxMetadata | null>(null);
+  const [uploadAccepted, setUploadAccepted] = useState<Partial<Record<DocxMetaKey, string>>>({});
+  const [fileReadDoc, setFileReadDoc] = useState<ISODocument | null>(null);
+  const [fileReadFound, setFileReadFound] = useState<DocxMetadata | null>(null);
+  const [fileReadAccepted, setFileReadAccepted] = useState<Partial<Record<DocxMetaKey, string>>>({});
+  const [fileDiff, setFileDiff] = useState<Record<string, DocxMetaKey[] | 'error'>>({});
+
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
+    setUploadFound(null); setUploadAccepted({});
     if (file) {
       setSelectedFile(file);
       setUploadForm(prev => ({ ...prev, name: file.name }));
+      if (isDocx(file.name, file.type)) {
+        try { setUploadFound(await readDocxMetadata(file)); setShowUploadDetails(true); }
+        catch { toast({ title: 'Metadati non letti', description: 'Il file Word non è leggibile: compila i campi a mano.' }); }
+      }
     }
   };
+
+  /** Writes platform metadata into the stored .docx; warns if the file could not be updated. */
+  const syncFile = async (doc: ISODocument) => {
+    if (!organizationId || !isDocx((doc as any).file_path || doc.name, doc.file_type)) return;
+    try { await documentsApi.syncFileMetadata(organizationId, doc.id); setFileDiff(d => ({ ...d, [doc.id]: [] })); }
+    catch (e) { console.error(e); toast({ title: 'File non aggiornato', description: 'Il dato è salvato in piattaforma, ma il file Word non è stato aggiornato.', variant: 'destructive' }); }
+  };
+
+  const inlineUpdate = async (doc: ISODocument, field: 'status' | 'confidentiality' | 'category', value: string) => {
+    if (!organizationId || (doc as any)[field] === value) return;
+    try {
+      if (field === 'status') await documentsApi.setStatus(organizationId, doc.id, value);
+      else await documentsApi.update(organizationId, doc.id, { [field]: value }, groupId);
+      setDocuments(ds => ds.map(d => d.id === doc.id ? { ...d, [field]: value } : d));
+      toast({ title: 'Salvato', description: `${field === 'status' ? 'Stato' : field === 'category' ? 'Categoria' : 'Classificazione'}: ${value}` });
+      await syncFile({ ...doc, [field]: value } as ISODocument);
+    } catch (e: any) { toast({ title: 'Errore', description: e?.message, variant: 'destructive' }); }
+  };
+
+  const openFileRead = async (doc: ISODocument) => {
+    if (!organizationId) return;
+    setFileReadDoc(doc); setFileReadFound(null); setFileReadAccepted({});
+    try {
+      const found = await documentsApi.readFileMetadata(organizationId, doc.id);
+      setFileReadFound(found || {});
+      if (found) setFileDiff(d => ({ ...d, [doc.id]: diffWithPlatform(found, doc) }));
+    } catch (e: any) { toast({ title: 'Lettura non riuscita', description: e?.message, variant: 'destructive' }); setFileReadDoc(null); }
+  };
+
+  const applyFileRead = async () => {
+    if (!fileReadDoc || !organizationId) return;
+    const a = fileReadAccepted;
+    try {
+      const { status, revision, tags, ...rest } = a;
+      const payload: Record<string, any> = { ...rest };
+      if (tags !== undefined) payload.tags = tags.split(/[,;]/).map(t => t.trim()).filter(Boolean);
+      if (Object.keys(payload).length) await documentsApi.update(organizationId, fileReadDoc.id, payload, groupId);
+      if (status) await documentsApi.setStatus(organizationId, fileReadDoc.id, status);
+      toast({ title: 'Metadati allineati al file' });
+      const id = fileReadDoc.id;
+      setFileDiff(d => { const n = { ...d }; delete n[id]; return n; });
+      setFileReadDoc(null); fetchDocuments();
+    } catch (e: any) { toast({ title: 'Errore', description: e?.message, variant: 'destructive' }); }
+  };
+
+  // Background alignment check for visible Word documents (sequential, capped).
+  useEffect(() => {
+    if (!organizationId) return;
+    let cancelled = false;
+    const todo = filteredDocuments.filter(d => fileDiff[d.id] === undefined && isDocx((d as any).file_path || d.name, d.file_type) && (d as any).file_path).slice(0, 30);
+    (async () => {
+      for (const d of todo) {
+        if (cancelled) return;
+        try {
+          const found = await documentsApi.readFileMetadata(organizationId, d.id);
+          if (found && !cancelled) setFileDiff(x => ({ ...x, [d.id]: diffWithPlatform(found, d) }));
+        } catch { if (!cancelled) setFileDiff(x => ({ ...x, [d.id]: 'error' })); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [filteredDocuments, organizationId]);
 
   const handleUpload = async () => {
     if (!selectedFile || !uploadForm.name || !user || !organizationId) {
@@ -207,19 +284,23 @@ const Documents: React.FC = () => {
 
     setUploading(true);
     try {
+      const fa = uploadAccepted;
+      const baseTags = fa.tags ? Array.from(new Set([...uploadForm.tags, ...fa.tags.split(/[,;]/).map(t => t.trim()).filter(Boolean)])) : uploadForm.tags;
       await documentsApi.createWithFile(organizationId, selectedFile, selectedFile.name, {
-        name: uploadForm.name,
-        category: uploadForm.category,
-        status: uploadForm.status,
-        confidentiality: uploadForm.confidentiality,
-        description: uploadForm.description,
-        tags: uploadOrigin === 'irp' ? Array.from(new Set([...uploadForm.tags, 'IRP', 'modificato dal cliente'])) : uploadForm.tags,
+        name: fa.name || uploadForm.name,
+        category: fa.category || uploadForm.category,
+        status: fa.status || uploadForm.status,
+        confidentiality: fa.confidentiality || uploadForm.confidentiality,
+        description: fa.description || uploadForm.description,
+        ...(fa.document_code ? { document_code: fa.document_code } : {}),
+        ...(fa.revision ? { revision: Number(fa.revision) } : {}),
+        tags: uploadOrigin === 'irp' ? Array.from(new Set([...baseTags, 'IRP', 'modificato dal cliente'])) : baseTags,
         source_type: uploadOrigin,
         folder_id: folderSel !== 'all' && folderSel !== ROOT ? folderSel : null,
       });
 
       toast({ title: "Successo", description: "Documento caricato con successo" });
-      setSelectedFile(null);
+      setSelectedFile(null); setUploadFound(null); setUploadAccepted({});
       setUploadForm({
         name: '', category: 'Varie', status: 'Bozza', confidentiality: 'Interno',
         description: '', tags: [],
@@ -295,6 +376,7 @@ const Documents: React.FC = () => {
       }
 
       toast({ title: "Successo", description: "Metadata aggiornati" });
+      await syncFile({ ...selectedDocument, name: metadata.name, document_code: metadata.document_code, status: metadata.status, confidentiality: metadata.confidentiality, category: metadata.category, description: metadata.description, tags: metadata.tags } as ISODocument);
       fetchDocuments();
     } catch (error) {
       toast({ title: "Errore", description: "Errore nell'aggiornamento", variant: "destructive" });
@@ -395,6 +477,7 @@ const Documents: React.FC = () => {
                   <div className="space-y-2">
                     <Label>Seleziona File *</Label>
                     <Input type="file" onChange={handleFileSelect} accept=".pdf,.doc,.docx,.txt,.xlsx,.xls,.ppt,.pptx" className="cursor-pointer" />
+                    {uploadFound && <div className="mt-2"><DocxMetaFindings found={uploadFound} current={{ name: uploadForm.name, status: uploadForm.status, confidentiality: uploadForm.confidentiality, category: uploadForm.category, description: uploadForm.description }} onChange={setUploadAccepted} /></div>}
                   </div>
                   <div className="space-y-2">
                     <Label>Nome Documento *</Label>
@@ -569,13 +652,25 @@ const Documents: React.FC = () => {
                               <p className="text-sm font-medium text-foreground truncate">{doc.name}</p>
                             </div>
                             <div className="flex items-center gap-2 flex-wrap">
-                              <Badge variant="outline" className={`text-xs ${STATUS_COLORS[doc.status] || ''}`}>
-                                {doc.status}
-                              </Badge>
-                              <Badge variant="outline" className={`text-xs ${CONFIDENTIALITY_COLORS[doc.confidentiality] || ''}`}>
-                                {doc.confidentiality}
-                              </Badge>
-                              <Badge variant="secondary" className="text-xs">{doc.category}</Badge>
+                              <Select value={doc.status} onValueChange={v => inlineUpdate(doc, 'status', v)}>
+                                <SelectTrigger className={`h-6 w-auto gap-1 px-2 text-xs ${STATUS_COLORS[doc.status] || ''}`} aria-label="Stato" onClick={e => e.stopPropagation()}><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  {[doc.status, ...(STATUS_TRANSITIONS[doc.status] ?? DOCUMENT_STATUSES)].filter((v, i, a) => a.indexOf(v) === i).map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                              <Select value={doc.confidentiality} onValueChange={v => inlineUpdate(doc, 'confidentiality', v)}>
+                                <SelectTrigger className={`h-6 w-auto gap-1 px-2 text-xs ${CONFIDENTIALITY_COLORS[doc.confidentiality] || ''}`} aria-label="Classificazione"><SelectValue /></SelectTrigger>
+                                <SelectContent>{CONFIDENTIALITY_LEVELS.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}</SelectContent>
+                              </Select>
+                              <Select value={doc.category} onValueChange={v => inlineUpdate(doc, 'category', v)}>
+                                <SelectTrigger className="h-6 w-auto gap-1 px-2 text-xs" aria-label="Categoria"><SelectValue /></SelectTrigger>
+                                <SelectContent>{DOCUMENT_CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                              </Select>
+                              {Array.isArray(fileDiff[doc.id]) && ((fileDiff[doc.id] as DocxMetaKey[]).length === 0
+                                ? <Badge variant="outline" className="text-xs gap-1"><CheckCircle2 className="w-3 h-3" />Allineato al file</Badge>
+                                : <Badge variant="destructive" className="text-xs gap-1 cursor-pointer" onClick={() => openFileRead(doc)} title={(fileDiff[doc.id] as DocxMetaKey[]).map(k => META_LABELS[k]).join(', ')}>
+                                    <AlertTriangle className="w-3 h-3" />Differenze con il file: {(fileDiff[doc.id] as DocxMetaKey[]).map(k => META_LABELS[k]).join(', ')}
+                                  </Badge>)}
                               <Badge className="text-xs">{SOURCE_LABELS[doc.source_type] || 'Manuale'}</Badge>
                               {doc.tags && doc.tags.length > 0 && doc.tags.map(t => (
                                 <Badge key={t} variant="outline" className="text-xs cursor-pointer" onClick={() => setTagFilter(t)} title="Filtra per tag">#{t}</Badge>
@@ -601,6 +696,11 @@ const Documents: React.FC = () => {
                           <Button size="sm" variant="ghost" onClick={() => setVersionsDoc(doc)} title="Versioni e stato">
                             <History className="w-4 h-4" />
                           </Button>
+                          {isDocx((doc as any).file_path || doc.name, doc.file_type) && (doc as any).file_path && (
+                            <Button size="sm" variant="ghost" onClick={() => openFileRead(doc)} title="Leggi metadati dal file">
+                              <FileSearch className="w-4 h-4" />
+                            </Button>
+                          )}
                           <Button size="sm" variant="ghost" onClick={() => openMetadataDialog(doc)} title="Modifica Metadata">
                             <Settings2 className="w-4 h-4" />
                           </Button>
@@ -635,6 +735,23 @@ const Documents: React.FC = () => {
             toast({ title: 'Tag aggiornati' }); setTagDialogOpen(false); fetchDocuments();
           } catch (e: any) { toast({ title: 'Errore', description: e?.message, variant: 'destructive' }); }
         }} />
+
+      <Dialog open={!!fileReadDoc} onOpenChange={o => !o && setFileReadDoc(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Leggi metadati dal file</DialogTitle>
+            <DialogDescription>{fileReadDoc?.name}</DialogDescription>
+          </DialogHeader>
+          {!fileReadFound ? <p className="text-sm text-muted-foreground">Lettura del documento...</p> : (
+            <DocxMetaFindings found={fileReadFound} existing current={fileReadDoc ? platformMeta(fileReadDoc) : {}} onChange={setFileReadAccepted} />
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setFileReadDoc(null)}>Chiudi</Button>
+            {fileReadDoc && <Button variant="outline" onClick={async () => { await syncFile(fileReadDoc); setFileReadDoc(null); toast({ title: 'File aggiornato con i dati della piattaforma' }); }}>Scrivi dati piattaforma nel file</Button>}
+            <Button disabled={!Object.keys(fileReadAccepted).length} onClick={applyFileRead}>Applica in piattaforma ({Object.keys(fileReadAccepted).length})</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Metadata Dialog */}
       <DocumentMetadataDialog
