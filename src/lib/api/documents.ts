@@ -113,6 +113,8 @@ export const documentsApi = {
       uploaded_by: await currentUserRowId(),
     }).select().single();
     if (error) throw error;
+    // La Rev01 viene registrata nello storico versioni (best effort: non blocca la creazione)
+    try { await documentsApi._archiveCurrentVersion(data); } catch { /* storico non critico */ }
     return toResource(data);
   },
 
