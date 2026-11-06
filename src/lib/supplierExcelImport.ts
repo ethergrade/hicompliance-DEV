@@ -41,7 +41,7 @@ export function mapSupplierRows(rows: Record<string, unknown>[], existingNames: 
     else if (seen.has(name.toLowerCase())) out.duplicate = true;
     else seen.add(name.toLowerCase());
     return out;
-  }).filter(r => Object.values(r.data).some(v => v && v !== 'medium') || r.data.supplier_name);
+  }).filter((_, i) => Object.values(rows[i]).some(v => String(v ?? '').trim() !== ''));
 }
 
 export async function readSupplierFile(file: File, existingNames: string[]) {

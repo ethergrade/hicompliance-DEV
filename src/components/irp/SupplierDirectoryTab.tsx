@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Truck, Loader2, ArrowRight } from 'lucide-react';
+import { Truck, Loader2, ArrowRight, FileSpreadsheet } from 'lucide-react';
+import SupplierExcelImportDialog from './SupplierExcelImportDialog';
 import { CRITICALITY_LABEL, sb, type Supplier } from '@/features/supply-chain/api';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { isInnovatechDemo } from '@/data/innovatechSecurityDemo';
@@ -19,7 +20,8 @@ interface SupplierDirectoryTabProps {
 const SupplierDirectoryTab: React.FC<SupplierDirectoryTabProps> = ({ organizationId }) => {
   const { selectedOrganization } = useClientOrganization();
   const moduleOn = isInnovatechDemo(selectedOrganization?.name);
-  const { data: suppliers = [], isLoading } = useQuery({
+  const [importOpen, setImportOpen] = React.useState(false);
+  const { data: suppliers = [], isLoading, refetch } = useQuery({
     queryKey: ['irp-suppliers', organizationId],
     enabled: !!organizationId,
     queryFn: async () => {
@@ -34,10 +36,15 @@ const SupplierDirectoryTab: React.FC<SupplierDirectoryTabProps> = ({ organizatio
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2">
         <CardTitle className="flex items-center gap-2 text-base"><Truck className="h-4 w-4" />Rubrica fornitori</CardTitle>
+        <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}><FileSpreadsheet className="h-4 w-4 mr-1" />Importa da Excel</Button>
         {moduleOn && (
           <Button asChild size="sm" variant="outline"><Link to="/supply-chain">Gestisci in Supply Chain<ArrowRight className="h-4 w-4 ml-1" /></Link></Button>
         )}
+        </div>
       </CardHeader>
+      <SupplierExcelImportDialog open={importOpen} onOpenChange={setImportOpen} organizationId={organizationId}
+        existingNames={suppliers.map(s => s.supplier_name)} onImported={() => refetch()} />
       <CardContent>
         {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : suppliers.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nessun fornitore registrato.</p>
