@@ -2,6 +2,7 @@
 // partendo dall'accesso e dai dati presenti nel database Supabase.
 import { supabase } from "@/integrations/supabase/client";
 import type { LoginUser, TenantResource, Group } from "@/types/api";
+import { mergeCompanyProfile } from '@/lib/companyProfileMapping';
 
 export const SUPABASE_GROUP_ID = "supabase";
 
@@ -54,7 +55,7 @@ export async function listSupabaseTenants(): Promise<TenantResource[]> {
 	const byOrg = new Map((profiles ?? []).map((p) => [p.organization_id, p]));
 	return (orgs ?? []).map((o) => {
 		const p = byOrg.get(o.id);
-		return {
+		return mergeCompanyProfile({
 			id: o.id,
 			group_id: SUPABASE_GROUP_ID,
 			customer_code: o.code,
@@ -86,6 +87,6 @@ export async function listSupabaseTenants(): Promise<TenantResource[]> {
 			pec: p?.pec ?? null,
 			email: p?.email ?? null,
 			nis2_classification: (p?.nis2_classification as TenantResource["nis2_classification"]) ?? null,
-		} as TenantResource;
+		} as TenantResource, p ?? null);
 	});
 }

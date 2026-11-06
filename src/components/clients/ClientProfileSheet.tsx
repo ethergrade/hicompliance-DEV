@@ -31,6 +31,7 @@ import {
   X,
 } from "lucide-react";
 import { companyProfileApi, tenantsApi, tenantServicesApi } from "@/lib/api";
+import { toUiNis2, toStoredNis2 } from '@/lib/companyProfileMapping';
 import { useCompanyScope } from "@/hooks/useCompanyScope";
 import { useClientContext } from "@/contexts/ClientContext";
 import {
@@ -154,7 +155,7 @@ const resourceToForm = (
   phone: data.phone || profile?.phone || "",
   email: profile?.email || "",
   business_sector: data.industry || profile?.business_sector || "",
-  nis2_classification: (data.nis2_classification as string) || "nessuna",
+  nis2_classification: toUiNis2(profile?.nis2_classification ?? data.nis2_classification),
   ciso_substitute: profile?.ciso_substitute || "",
   primary_domain: data.primary_domain || "",
   primary_subnet: data.primary_subnet || "",
@@ -193,15 +194,20 @@ const resourceToForm = (
   scopeEntries: [],
 });
 
-/**
- * Campi anagrafici estesi: hanno il loro endpoint e la loro tabella.
- *
- * `nis2_classification` non viene inviato qui di proposito — il profilo accetta
- * solo none|essential|important, mentre il form usa il vocabolario italiano che
- * il tenant memorizza già. Duplicarlo su due tabelle con due vocabolari diversi
- * significherebbe avere due verità.
- */
+/** All anagrafica fields share one profile write; translate NIS2 at the boundary. */
 const formToProfilePayload = (data: ProfileFormData): UpdateCompanyProfileRequest => ({
+  vat_number: data.vat_number || null,
+  phone: data.phone || null,
+  business_sector: data.industry || data.business_sector || null,
+  nis2_classification: toStoredNis2(data.nis2_classification),
+  primary_domain: data.primary_domain || null,
+  primary_subnet: data.primary_subnet || null,
+  secondary_domain: data.secondary_domain || null,
+  secondary_subnet: data.secondary_subnet || null,
+  revenue: findRevenueByLabel(data.revenue)?.numericValue ?? parseRevenue(data.revenue),
+  employees_count: findEmployeesByLabel(data.employees_count)?.numericValue ?? (parseInt(String(data.employees_count), 10) || null),
+  customer_sectors: data.customer_sectors,
+  implemented_technologies: data.implemented_technologies,
   legal_name: data.legal_name || null,
   fiscal_code: data.fiscal_code || null,
   legal_address: data.legal_address || null,
@@ -442,6 +448,7 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
   const [form, setForm] = useState<ProfileFormData>(INITIAL);
   const [loading, setLoading] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [tenantServices, setTenantServices] = useState<TenantServiceResource[]>(
     [],
@@ -476,6 +483,7 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
     let cancelled = false;
     setLoading(true);
     setSaveStatus("idle");
+    setSaveError(null);
     setForm(INITIAL);
 
     Promise.all([
@@ -487,12 +495,18 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
         : Promise.resolve([] as TenantServiceResource[]),
       // Il profilo può non esistere ancora: in quel caso l'endpoint risponde
       // con data null e i campi anagrafici restano vuoti, non è un errore.
-      companyProfileApi.get(organizationId, groupId).catch(() => null),
+      companyProfileApi.get(organizationId, groupId),
     ]).then(([tenant, services, profile]) => {
       if (!cancelled) {
         if (tenant) setForm(resourceToForm(tenant, profile));
         else setSaveStatus("error");
         setTenantServices(services);
+        setLoading(false);
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setSaveError('Impossibile caricare l’anagrafica. Chiudi e riapri il pannello.');
+        setSaveStatus('error');
         setLoading(false);
       }
     });
@@ -520,16 +534,12 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
         }
         setSaveStatus("saving");
         try {
-          // Due risorse distinte, quindi due chiamate. In parallelo: sono
-          // indipendenti e un fallimento dell'una non invalida l'altra.
-          await Promise.all([
-            tenantsApi.update(organizationId, formToPayload(data), groupId || ""),
-            companyProfileApi.update(
+          await companyProfileApi.update(
               organizationId,
               formToProfilePayload(data),
               groupId || "",
-            ),
-          ]);
+            );
+          setSaveError(null);
           setFieldErrors({});
           savedSinceOpenRef.current = true;
           setSaveStatus("saved");
@@ -537,17 +547,13 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
         } catch (err: any) {
           // Log dettagliato per diagnostica (vedi errore salvataggio anagrafica)
           // eslint-disable-next-line no-console
-          console.error("[ClientProfileSheet] save failed", {
-            status: err?.response?.status,
-            data: err?.response?.data,
-            message: err?.message,
-            payload: formToPayload(data),
-          });
+          console.error("[ClientProfileSheet] save failed", { code: err?.code, status: err?.status });
+          setSaveError(err?.code === '42501' ? 'Non hai i permessi per modificare questa anagrafica.' : 'Salvataggio non riuscito. Verifica la connessione e riprova.');
           setSaveStatus("error");
         }
-      }, 800);
+      }, 1500);
     },
-    [organizationId],
+    [organizationId, groupId],
   );
 
   // Cleanup timer on unmount
@@ -677,14 +683,12 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
 
     setSaveStatus("saving");
     try {
-      await Promise.all([
-        tenantsApi.update(organizationId, formToPayload(form), groupId || ""),
-        companyProfileApi.update(
+      await companyProfileApi.update(
           organizationId,
           formToProfilePayload(form),
           groupId || "",
-        ),
-      ]);
+        );
+      setSaveError(null);
       setFieldErrors({});
       savedSinceOpenRef.current = true;
       setSaveStatus("saved");
@@ -692,11 +696,10 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
     } catch (err: any) {
       // eslint-disable-next-line no-console
       console.error("[ClientProfileSheet] manual save failed", {
-        status: err?.response?.status,
-        data: err?.response?.data,
-        message: err?.message,
-        payload: formToPayload(form),
+        code: err?.code,
+        status: err?.status,
       });
+      setSaveError(err?.code === '42501' ? 'Non hai i permessi per modificare questa anagrafica.' : 'Salvataggio non riuscito. Verifica la connessione e riprova.');
       setSaveStatus("error");
     }
   };
@@ -790,7 +793,7 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
               <span className="text-destructive">
                 {Object.keys(fieldErrors).length > 0
                   ? "Compila i campi obbligatori"
-                  : "Errore salvataggio"}
+                  : saveError ?? "Errore salvataggio"}
               </span>
             </>
           )}
