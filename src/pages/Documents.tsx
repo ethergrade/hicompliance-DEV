@@ -253,6 +253,8 @@ const Documents: React.FC = () => {
       if (Object.keys(payload).length) await documentsApi.update(organizationId, fileReadDoc.id, payload, groupId);
       if (status) await documentsApi.setStatus(organizationId, fileReadDoc.id, status);
       toast({ title: 'Metadati allineati al file' });
+      const id = fileReadDoc.id;
+      setFileDiff(d => { const n = { ...d }; delete n[id]; return n; });
       setFileReadDoc(null); fetchDocuments();
     } catch (e: any) { toast({ title: 'Errore', description: e?.message, variant: 'destructive' }); }
   };
