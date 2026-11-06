@@ -988,6 +988,12 @@ const Assessment: React.FC = () => {
                 Gestisci Consistenze
               </Button>
             )}
+            {orgId && (
+              <Button variant="outline" className="gap-2" onClick={() => navigate('/assessment/nis2')}>
+                <FileText className="w-4 h-4" />
+                Percorso NIS2 ACN
+              </Button>
+            )}
             {canImportAssessment && orgId && (
               <Button
                 variant="outline"
