@@ -280,3 +280,33 @@ Archivio su database Supabase (`incident_documents`) e storage `incident-documen
 4. Utente cliente B non vede cartelle né documenti di A.
 5. Elimina "Procedure": documenti in Radice, nessun file perso.
 6. Utente cliente: crea una cartella, trascina 2 documenti selezionati sopra (spostati), poi con Ctrl trascinane uno su una sottocartella (copiato).
+
+## 14. Versioning dei documenti (storico + workflow di stato)
+
+### Modello dati
+
+- `incident_documents` resta la **versione corrente**: Report moduli, download, sposta/copia, tag e filtri continuano a leggerla senza modifiche.
+- Nuova tabella `document_versions`: una riga per revisione (`document_id`, `organization_id`, `revision`, `file_path`, `file_size`, `mime_type`, `status`, `notes`, `created_by`, `created_at`), UNIQUE su `(document_id, revision)`, indice su `document_id`.
+- RLS: lettura e inserimento per gli utenti dell'organizzazione (`doc_can_access_org`); gestione completa per Super Admin e Sales (`can_manage_all_organizations`).
+
+### Regole
+
+- **Rev01** viene registrata nello storico alla creazione del documento (best effort, non blocca il salvataggio).
+- **Carica nuova revisione** (`documentsApi.createRevision`): archivia la versione corrente nello storico (backfill se assente), carica il nuovo file in `org/{orgId}/`, porta il documento a Rev+1 in stato **Bozza** con `revision_date` aggiornata. La **nota di revisione è obbligatoria** (prassi ISO: "cosa è cambiato").
+- Il campo **Revisione** nel dialog metadati è in sola lettura: la revisione avanza solo tramite "Carica nuova revisione", così lo storico non si perde.
+- **Workflow di stato** (`documentsApi.setStatus`, transizioni validate): `Bozza → In Revisione → Approvato`; da `In Revisione` si può tornare a `Bozza` (respinto); da `Approvato` solo a `Obsoleto`. Da `Approvato` si modifica solo creando una nuova revisione. Gli stati sono quelli di `DOCUMENT_STATUSES` in `DocumentCodeGenerator.ts`.
+- Ogni revisione passata resta **scaricabile** dallo storico (`documentsApi.downloadVersion`).
+
+### File
+
+- `src/lib/api/documents.ts`: `_archiveCurrentVersion`, `createRevision`, `listVersions`, `downloadVersion`, `setStatus`.
+- `src/components/documents/DocumentVersionsDialog.tsx`: dialog "Versioni e stato" (workflow + nuova revisione + storico).
+- `src/pages/Documents.tsx`: pulsante "Versioni e stato" (icona History) su ogni documento.
+- `src/components/documents/DocumentMetadataDialog.tsx`: campo Revisione in sola lettura.
+
+### Test manuali
+
+1. Caricare un documento → nello storico compare Rev01.
+2. Caricare Rev02 con nota → documento a Rev02/Bozza; Rev01 ancora scaricabile dallo storico.
+3. Transizioni: Bozza → In Revisione → Approvato OK; Approvato → Bozza rifiutato; Approvato → Obsoleto OK.
+4. Report moduli e download principale mostrano sempre la versione corrente.

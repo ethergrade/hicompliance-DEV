@@ -113,6 +113,8 @@ export const documentsApi = {
       uploaded_by: await currentUserRowId(),
     }).select().single();
     if (error) throw error;
+    // La Rev01 viene registrata nello storico versioni (best effort: non blocca la creazione)
+    try { await documentsApi._archiveCurrentVersion(data); } catch { /* storico non critico */ }
     return toResource(data);
   },
 
@@ -205,6 +207,118 @@ export const documentsApi = {
   async setTags(companyId: string, id: string, tags: string[]): Promise<void> {
     const { error } = await supabase.from("incident_documents").update({ tags }).eq("id", id).eq("organization_id", companyId);
     if (error) throw error;
+  },
+
+  // ─── Versioning ────────────────────────────────────────────────────────────
+  // incident_documents resta la "versione corrente"; document_versions contiene
+  // tutte le revisioni (compresa la corrente) per storico e download.
+
+  /** Registra la revisione corrente nello storico (usato alla creazione e come backfill). */
+  async _archiveCurrentVersion(doc: any): Promise<void> {
+    const { data: auth } = await supabase.auth.getUser();
+    await supabase.from("document_versions").upsert({
+      document_id: doc.id,
+      organization_id: doc.organization_id,
+      revision: doc.revision,
+      file_path: doc.file_path ?? null,
+      file_size: doc.file_size ?? null,
+      mime_type: doc.file_type ?? null,
+      status: doc.status ?? null,
+      created_by: auth.user?.id ?? null,
+    }, { onConflict: "document_id,revision" });
+  },
+
+  /**
+   * Carica una nuova revisione: archivia la versione corrente, carica il nuovo
+   * file e porta il documento a Rev+1 in stato Bozza. La nota di revisione è
+   * obbligatoria (prassi ISO: "cosa è cambiato").
+   */
+  async createRevision(companyId: string, documentId: string, file: Blob, fileName: string, notes: string): Promise<DocumentResource> {
+    if (!notes.trim()) throw new Error("La nota di revisione è obbligatoria");
+    const { data: doc, error } = await supabase.from("incident_documents").select("*")
+      .eq("id", documentId).eq("organization_id", companyId).single();
+    if (error) throw error;
+    if (!doc.file_path) throw new Error("Questo documento non ha un file caricato: non è possibile creare una nuova revisione");
+
+    // Backfill: la versione corrente deve restare scaricabile dallo storico
+    await documentsApi._archiveCurrentVersion(doc);
+
+    const safe = fileName.replace(/[^\w.\-]+/g, "_");
+    const path = `org/${companyId}/${Date.now()}_rev${doc.revision + 1}_${safe}`;
+    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { contentType: (file as File).type || undefined });
+    if (upErr) throw upErr;
+
+    const newRevision = doc.revision + 1;
+    const { data: updated, error: updErr } = await supabase.from("incident_documents")
+      .update({
+        revision: newRevision,
+        revision_date: new Date().toISOString(),
+        status: "Bozza",
+        file_path: path,
+        file_size: file.size,
+        file_type: (file as File).type || "application/octet-stream",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", documentId).eq("organization_id", companyId).select().single();
+    if (updErr) {
+      await supabase.storage.from(BUCKET).remove([path]);
+      throw updErr;
+    }
+
+    const { data: auth } = await supabase.auth.getUser();
+    await supabase.from("document_versions").insert({
+      document_id: documentId,
+      organization_id: companyId,
+      revision: newRevision,
+      file_path: path,
+      file_size: file.size,
+      mime_type: (file as File).type || "application/octet-stream",
+      status: "Bozza",
+      notes: notes.trim(),
+      created_by: auth.user?.id ?? null,
+    });
+    return toResource(updated);
+  },
+
+  async listVersions(documentId: string) {
+    const { data, error } = await supabase.from("document_versions").select("*")
+      .eq("document_id", documentId).order("revision", { ascending: false });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async downloadVersion(versionId: string): Promise<Blob> {
+    const { data: v, error } = await supabase.from("document_versions").select("*").eq("id", versionId).single();
+    if (error) throw error;
+    if (!v.file_path) throw new Error("Questa revisione non ha un file scaricabile");
+    const { data, error: e } = await supabase.storage.from(BUCKET).download(v.file_path);
+    if (e) throw e;
+    return data;
+  },
+
+  /**
+   * Workflow di stato guidato: Bozza → In Revisione → Approvato; da Approvato
+   * si torna indietro solo creando una nuova revisione (prassi ISO).
+   * Approvato → Obsoleto consentito per ritirare un documento.
+   */
+  async setStatus(companyId: string, documentId: string, nextStatus: string): Promise<void> {
+    const ALLOWED: Record<string, string[]> = {
+      "Bozza": ["In Revisione"],
+      "In Revisione": ["Approvato", "Bozza"],
+      "Approvato": ["Obsoleto"],
+      "Obsoleto": [],
+    };
+    const { data: doc, error } = await supabase.from("incident_documents")
+      .select("status").eq("id", documentId).eq("organization_id", companyId).single();
+    if (error) throw error;
+    const allowed = ALLOWED[doc.status] ?? ["Bozza", "In Revisione", "Approvato", "Obsoleto"];
+    if (!allowed.includes(nextStatus)) {
+      throw new Error(`Transizione non consentita da "${doc.status}" a "${nextStatus}"`);
+    }
+    const { error: updErr } = await supabase.from("incident_documents")
+      .update({ status: nextStatus, updated_at: new Date().toISOString() })
+      .eq("id", documentId).eq("organization_id", companyId);
+    if (updErr) throw updErr;
   },
 };
 

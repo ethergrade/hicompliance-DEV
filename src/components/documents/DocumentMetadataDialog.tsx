@@ -91,7 +91,8 @@ const DocumentMetadataDialog: React.FC<DocumentMetadataDialogProps> = ({
           <div className="grid grid-cols-4 gap-4">
             <div className="space-y-2">
               <Label>Revisione</Label>
-              <Input type="number" min={1} value={form.revision} onChange={e => update({ revision: parseInt(e.target.value) || 1 })} />
+              <Input type="number" min={1} value={form.revision} disabled title="La revisione avanza solo tramite «Versioni e stato» → «Carica nuova revisione», per non perdere lo storico" />
+              <p className="text-[11px] text-muted-foreground">Avanza solo con "Carica nuova revisione"</p>
             </div>
             <div className="space-y-2">
               <Label>Stato</Label>
