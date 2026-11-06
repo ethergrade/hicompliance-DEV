@@ -12,8 +12,8 @@ import { formatDocumentCodeWithRevision } from './DocumentCodeGenerator';
 /**
  * Storico versioni + workflow di stato di un documento.
  * incident_documents resta la versione corrente; document_versions contiene
- * tutte le revisioni scaricabili. Transizioni guidate: Bozza → In approvazione
- * → Emesso (→ Obsoleto); da Emesso si torna indietro solo con una nuova revisione.
+ * tutte le revisioni scaricabili. Transizioni guidate: Bozza → In Revisione
+ * → Approvato (→ Obsoleto); da Approvato si torna indietro solo con una nuova revisione.
  */
 
 const STATUS_COLORS: Record<string, string> = {
@@ -155,8 +155,8 @@ export function DocumentVersionsDialog({ open, onOpenChange, document: doc, orga
                 ))}
               </div>
             )}
-            {doc.status === 'Emesso' && (
-              <span className="text-xs text-muted-foreground">Per modificare un documento emesso carica una nuova revisione.</span>
+            {doc.status === 'Approvato' && (
+              <span className="text-xs text-muted-foreground">Per modificare un documento approvato carica una nuova revisione.</span>
             )}
           </div>
 
