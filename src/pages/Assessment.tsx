@@ -1069,6 +1069,16 @@ const Assessment: React.FC = () => {
           </Card>
         )}
 
+        {/* Score da assessment esterni del cliente, affiancati a quelli calcolati */}
+        {orgId && v2Categories.length > 0 && (
+          <ExternalScoresSection
+            orgId={orgId}
+            categories={v2Categories}
+            responses={responses}
+            canManage={canManageExternalScores}
+          />
+        )}
+
         {/* HiCompliance: warning se servizio attivo ma campi rete primari vuoti */}
         {missingNetworkFields.length > 0 && (
           <Card className="border-amber-500/40 bg-amber-500/5">
