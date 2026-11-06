@@ -94,7 +94,7 @@ export function classify(a: WizardAnswers): ClassificationResult {
   const daVerificare = motivi.some((m) => m.startsWith('Clausola')) || a.C02 === 'servizi_in_IT';
   if (a.C02 === 'servizi_in_IT') motivi.push('Servizi offerti in Italia senza stabilimento: verificare le regole di giurisdizione');
   const stato = daVerificare ? 'da_verificare' : 'in_ambito';
-  return { ...base, stato, tipologia, via_inclusione: via, regime, classe_dimensionale: classe, motivi, profilo_assessment: profileFor(stato, tipologia) === 'base' ? (tipologia === 'essenziale' ? 'ess' : 'imp') : profileFor(stato, tipologia) };
+  return { ...base, stato, tipologia, via_inclusione: via, regime, classe_dimensionale: classe, motivi, profilo_assessment: profileFor(stato, tipologia) };
 }
 
 export interface Deadline { label: string; date: string; kind: 'annuale' | 'inserimento' }
