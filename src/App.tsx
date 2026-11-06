@@ -14,6 +14,7 @@ import Dashboard from "./pages/Dashboard";
 import ServiceDashboard from "./pages/ServiceDashboard";
 import SurfaceScan360 from "./pages/SurfaceScan360";
 import Assessment from "./pages/Assessment";
+import Nis2Acn from "./pages/Nis2Acn";
 import Remediation from "./pages/Remediation";
 import ReportPreview from "./pages/ReportPreview";
 import Analytics from "./pages/Analytics";
@@ -171,6 +172,14 @@ const App = () => (
 								element={
 									<ClientSelectionGuard>
 										<Assessment />
+									</ClientSelectionGuard>
+								}
+							/>
+							<Route
+								path="/assessment/nis2"
+								element={
+									<ClientSelectionGuard>
+										<Nis2Acn />
 									</ClientSelectionGuard>
 								}
 							/>
