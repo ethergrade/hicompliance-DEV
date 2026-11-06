@@ -4689,6 +4689,145 @@ export type Database = {
         }
         Relationships: []
       }
+      nis2_acn_responses: {
+        Row: {
+          created_at: string
+          document_id: string | null
+          due_date: string | null
+          id: string
+          note: string | null
+          organization_id: string
+          owner: string | null
+          requirement_code: string
+          source: string
+          status: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          document_id?: string | null
+          due_date?: string | null
+          id?: string
+          note?: string | null
+          organization_id: string
+          owner?: string | null
+          requirement_code: string
+          source?: string
+          status: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          document_id?: string | null
+          due_date?: string | null
+          id?: string
+          note?: string | null
+          organization_id?: string
+          owner?: string | null
+          requirement_code?: string
+          source?: string
+          status?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nis2_acn_responses_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "incident_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nis2_acn_responses_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nis2_acn_responses_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+        ]
+      }
+      nis2_classifications: {
+        Row: {
+          answers: Json
+          classe_dimensionale: string | null
+          created_at: string
+          created_by: string | null
+          fonte: string | null
+          id: string
+          motivi: Json
+          organization_id: string
+          profilo_assessment: string
+          regime: string | null
+          rules_version: string
+          stato: string | null
+          tipologia: string | null
+          updated_at: string
+          via_inclusione: string | null
+          year: number
+        }
+        Insert: {
+          answers?: Json
+          classe_dimensionale?: string | null
+          created_at?: string
+          created_by?: string | null
+          fonte?: string | null
+          id?: string
+          motivi?: Json
+          organization_id: string
+          profilo_assessment?: string
+          regime?: string | null
+          rules_version?: string
+          stato?: string | null
+          tipologia?: string | null
+          updated_at?: string
+          via_inclusione?: string | null
+          year: number
+        }
+        Update: {
+          answers?: Json
+          classe_dimensionale?: string | null
+          created_at?: string
+          created_by?: string | null
+          fonte?: string | null
+          id?: string
+          motivi?: Json
+          organization_id?: string
+          profilo_assessment?: string
+          regime?: string | null
+          rules_version?: string
+          stato?: string | null
+          tipologia?: string | null
+          updated_at?: string
+          via_inclusione?: string | null
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nis2_classifications_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nis2_classifications_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+        ]
+      }
       nuclei_scan360_cve_matches: {
         Row: {
           asset_host: string | null
