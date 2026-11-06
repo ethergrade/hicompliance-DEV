@@ -4,6 +4,7 @@ import { OrganizationProfile, NIS2Classification } from '@/types/organization';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import { supabase } from '@/integrations/supabase/client';
 import type { CompanyProfileResource, TenantResource } from '@/types/api';
+import { toUiNis2 } from '@/lib/companyProfileMapping';
 
 interface ProfileFormData {
   legal_name: string;
@@ -63,7 +64,7 @@ function toProfile(t: TenantResource, p: CompanyProfileResource | null): Organiz
     phone: t.phone ?? p?.phone ?? null,
     email: p?.email ?? null,
     business_sector: t.industry ?? p?.business_sector ?? null,
-    nis2_classification: (t.nis2_classification as NIS2Classification) ?? null,
+    nis2_classification: toUiNis2(p?.nis2_classification ?? t.nis2_classification) ?? null,
     ciso_substitute: p?.ciso_substitute ?? null,
     created_at: t.created_at ?? '',
     updated_at: p?.updated_at ?? t.created_at ?? '',
@@ -97,7 +98,7 @@ function toFormData(t: TenantResource, p: CompanyProfileResource | null): Profil
     phone: t.phone || p?.phone || '',
     email: p?.email || '',
     business_sector: t.industry || p?.business_sector || '',
-    nis2_classification: (t.nis2_classification as NIS2Classification) ?? null,
+    nis2_classification: toUiNis2(p?.nis2_classification ?? t.nis2_classification) ?? null,
     ciso_substitute: p?.ciso_substitute || '',
   };
 }

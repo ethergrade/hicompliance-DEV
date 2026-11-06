@@ -296,6 +296,14 @@ export interface CompanyProfileResource {
 }
 
 export interface UpdateCompanyProfileRequest {
+  primary_domain?: string | null;
+  primary_subnet?: string | null;
+  secondary_domain?: string | null;
+  secondary_subnet?: string | null;
+  revenue?: number | null;
+  employees_count?: number | null;
+  customer_sectors?: string[] | null;
+  implemented_technologies?: string[] | null;
 	legal_name?: string | null;
 	fiscal_code?: string | null;
 	vat_number?: string | null;

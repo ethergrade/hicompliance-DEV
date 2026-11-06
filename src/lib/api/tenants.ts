@@ -1,4 +1,6 @@
 import { apiClient } from "@/lib/api-client";
+import { supabase } from '@/integrations/supabase/client';
+import { mergeCompanyProfile, profileResource, toStoredNis2 } from '@/lib/companyProfileMapping';
 import type {
   ApiResponse,
   CompanyProfileResource,
@@ -53,7 +55,8 @@ export const companiesApi = {
       const res = await apiClient.get<ApiResponse<TenantResource>>(`/companies/${id}`, undefined, groupId ? groupHeader(groupId) : undefined);
       return res.data;
     }
-    return { ...data, extra: data.extra ?? {} } as TenantResource;
+    const profile = await companyProfileApi.get(id, groupId);
+    return mergeCompanyProfile({ ...data, extra: data.extra ?? {} } as TenantResource, profile as unknown as Record<string, unknown> | null);
   },
 
   /** Create a new company */
@@ -93,12 +96,9 @@ export const companiesApi = {
 export const companyProfileApi = {
   /** Restituisce null quando il profilo non è ancora stato creato. */
   async get(companyId: string, groupId?: string | null): Promise<CompanyProfileResource | null> {
-    const res = await apiClient.get<ApiResponse<CompanyProfileResource | null>>(
-      `/companies/${companyId}/profile`,
-      undefined,
-      groupId ? groupHeader(groupId) : undefined
-    );
-    return res.data ?? null;
+    const { data, error } = await supabase.from('organization_profiles').select('*').eq('organization_id', companyId).maybeSingle();
+    if (error) throw error;
+    return data ? profileResource(data) : null;
   },
 
   /** Upsert: il backend crea il profilo se non esiste. */
@@ -107,12 +107,13 @@ export const companyProfileApi = {
     payload: UpdateCompanyProfileRequest,
     groupId?: string | null
   ): Promise<CompanyProfileResource> {
-    const res = await apiClient.put<ApiResponse<CompanyProfileResource>>(
-      `/companies/${companyId}/profile`,
-      payload,
-      groupId ? groupHeader(groupId) : undefined
-    );
-    return res.data;
+    const { data, error } = await supabase.from('organization_profiles').upsert({
+      ...payload,
+      ...(payload.nis2_classification === undefined ? {} : { nis2_classification: toStoredNis2(payload.nis2_classification) }),
+      organization_id: companyId,
+    }, { onConflict: 'organization_id' }).select('*').single();
+    if (error) throw error;
+    return profileResource(data);
   },
 };
 

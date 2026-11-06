@@ -2,6 +2,7 @@
 // partendo dall'accesso e dai dati presenti nel database Supabase.
 import { supabase } from "@/integrations/supabase/client";
 import type { LoginUser, TenantResource, Group } from "@/types/api";
+import { mergeCompanyProfile } from '@/lib/companyProfileMapping';
 
 export const SUPABASE_GROUP_ID = "supabase";
 
@@ -29,7 +30,7 @@ export async function buildLoginUser(authUserId: string, email: string): Promise
 		role: groupRole,
 	} as Group & { role: string };
 
-	return {
+    return mergeCompanyProfile({
 		id: authUserId,
 		name: profile?.full_name || email,
 		email,
@@ -86,6 +87,6 @@ export async function listSupabaseTenants(): Promise<TenantResource[]> {
 			pec: p?.pec ?? null,
 			email: p?.email ?? null,
 			nis2_classification: (p?.nis2_classification as TenantResource["nis2_classification"]) ?? null,
-		} as TenantResource;
+		} as TenantResource, p ?? null);
 	});
 }
