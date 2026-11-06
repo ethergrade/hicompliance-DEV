@@ -1716,6 +1716,17 @@ const Assessment: React.FC = () => {
             onSaved={loadLatestSnapshot}
           />
         )}
+
+        {orgId && (
+          <ImportAssessmentDialog
+            open={importDialogOpen}
+            onOpenChange={setImportDialogOpen}
+            orgId={orgId}
+            categories={v2Categories}
+            indexToUuid={indexToUuid}
+            onImported={() => setResponsesReloadKey((k) => k + 1)}
+          />
+        )}
       </div>
     </DashboardLayout>
   );
