@@ -68,6 +68,67 @@ export type Database = {
         }
         Relationships: []
       }
+      assessment_external_scores: {
+        Row: {
+          assessment_date: string | null
+          category_name: string
+          created_at: string
+          created_by: string | null
+          document_id: string | null
+          id: string
+          notes: string | null
+          organization_id: string
+          score: number
+          updated_at: string
+        }
+        Insert: {
+          assessment_date?: string | null
+          category_name: string
+          created_at?: string
+          created_by?: string | null
+          document_id?: string | null
+          id?: string
+          notes?: string | null
+          organization_id: string
+          score: number
+          updated_at?: string
+        }
+        Update: {
+          assessment_date?: string | null
+          category_name?: string
+          created_at?: string
+          created_by?: string | null
+          document_id?: string | null
+          id?: string
+          notes?: string | null
+          organization_id?: string
+          score?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assessment_external_scores_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "incident_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessment_external_scores_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessment_external_scores_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_sales_remediation_dashboard"
+            referencedColumns: ["organization_id"]
+          },
+        ]
+      }
       assessment_questions: {
         Row: {
           category_id: string | null
@@ -111,6 +172,7 @@ export type Database = {
           notes: string | null
           organization_id: string | null
           question_id: string | null
+          source: string
           status: Database["public"]["Enums"]["assessment_status"]
           updated_at: string
         }
@@ -121,6 +183,7 @@ export type Database = {
           notes?: string | null
           organization_id?: string | null
           question_id?: string | null
+          source?: string
           status?: Database["public"]["Enums"]["assessment_status"]
           updated_at?: string
         }
@@ -131,6 +194,7 @@ export type Database = {
           notes?: string | null
           organization_id?: string | null
           question_id?: string | null
+          source?: string
           status?: Database["public"]["Enums"]["assessment_status"]
           updated_at?: string
         }
