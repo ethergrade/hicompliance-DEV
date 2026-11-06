@@ -91,6 +91,15 @@ const Documents: React.FC = () => {
   const { contacts } = useContactDirectory();
   const { organizationId, groupId } = useClientOrganization();
 
+  const location = useLocation();
+  const pendingOpenId = (location.state as any)?.openDocumentId as string | undefined;
+  useEffect(() => {
+    if (!pendingOpenId || !documents.length) return;
+    const d = documents.find(x => x.id === pendingOpenId);
+    if (d) { setSelectedDocument(d); setMetadataDialogOpen(true); }
+    navigate(location.pathname, { replace: true, state: null });
+  }, [pendingOpenId, documents]);
+
   const fetchDocuments = async () => {
     if (!organizationId) return;
     try {
