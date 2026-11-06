@@ -61,7 +61,7 @@ export async function exportDocumentListDocx(docs: Doc[], opts: DocumentListExpo
           d.document_code || '', d.name, String(d.revision ?? ''), d.status || '', d.confidentiality || '',
           opts.folderLabel(d), [d.description, d.tags?.length ? `Tag: ${d.tags.map(t => '#' + t).join(' ')}` : ''].filter(Boolean).join(' · '),
           fmtDate(d.revision_date || d.updated_at),
-        ].map((t, i) => cell(t, COLS[i].w))) })),
+        ].map((t, i) => cell(t, COLS[i].w)) })),
       ],
     }));
   }
