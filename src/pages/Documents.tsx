@@ -31,8 +31,9 @@ import {
 } from '@/components/documents/DocumentCodeGenerator';
 import {
   Download, FileText, Upload, Trash2, File, FolderOpen,
-  Settings2, Package, X, Eye
+  Settings2, Package, X, Eye, History
 } from 'lucide-react';
+import { DocumentVersionsDialog } from '@/components/documents/DocumentVersionsDialog';
 import DocumentPreviewDialog from '@/components/documents/DocumentPreviewDialog';
 import { useNavigate } from 'react-router-dom';
 
@@ -550,6 +551,9 @@ const Documents: React.FC = () => {
                           <Button size="sm" variant="ghost" onClick={() => openPreview(doc)} title="Anteprima">
                             <Eye className="w-4 h-4" />
                           </Button>
+                          <Button size="sm" variant="ghost" onClick={() => setVersionsDoc(doc)} title="Versioni e stato">
+                            <History className="w-4 h-4" />
+                          </Button>
                           <Button size="sm" variant="ghost" onClick={() => openMetadataDialog(doc)} title="Modifica Metadata">
                             <Settings2 className="w-4 h-4" />
                           </Button>
@@ -609,6 +613,14 @@ const Documents: React.FC = () => {
         filePath={null}
         fileName={previewDoc?.name ?? ''}
         fileType={previewDoc?.file_type ?? ''}
+      />
+
+      <DocumentVersionsDialog
+        open={!!versionsDoc}
+        onOpenChange={(o) => !o && setVersionsDoc(null)}
+        document={versionsDoc}
+        organizationId={organizationId}
+        onChanged={fetchDocuments}
       />
     </DashboardLayout>
   );
