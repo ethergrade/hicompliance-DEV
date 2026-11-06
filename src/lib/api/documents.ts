@@ -297,21 +297,21 @@ export const documentsApi = {
   },
 
   /**
-   * Workflow di stato guidato: Bozza → In approvazione → Emesso; da Emesso si
-   * torna indietro solo creando una nuova revisione (prassi ISO). Emesso →
-   * Obsoleto consentito per ritirare un documento.
+   * Workflow di stato guidato: Bozza → In Revisione → Approvato; da Approvato
+   * si torna indietro solo creando una nuova revisione (prassi ISO).
+   * Approvato → Obsoleto consentito per ritirare un documento.
    */
   async setStatus(companyId: string, documentId: string, nextStatus: string): Promise<void> {
     const ALLOWED: Record<string, string[]> = {
-      "Bozza": ["In approvazione"],
-      "In approvazione": ["Emesso", "Bozza"],
-      "Emesso": ["Obsoleto"],
+      "Bozza": ["In Revisione"],
+      "In Revisione": ["Approvato", "Bozza"],
+      "Approvato": ["Obsoleto"],
       "Obsoleto": [],
     };
     const { data: doc, error } = await supabase.from("incident_documents")
       .select("status").eq("id", documentId).eq("organization_id", companyId).single();
     if (error) throw error;
-    const allowed = ALLOWED[doc.status] ?? ["Bozza", "In approvazione", "Emesso", "Obsoleto"];
+    const allowed = ALLOWED[doc.status] ?? ["Bozza", "In Revisione", "Approvato", "Obsoleto"];
     if (!allowed.includes(nextStatus)) {
       throw new Error(`Transizione non consentita da "${doc.status}" a "${nextStatus}"`);
     }

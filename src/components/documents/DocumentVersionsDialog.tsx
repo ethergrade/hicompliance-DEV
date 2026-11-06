@@ -18,15 +18,15 @@ import { formatDocumentCodeWithRevision } from './DocumentCodeGenerator';
 
 const STATUS_COLORS: Record<string, string> = {
   Bozza: 'text-yellow-600 border-yellow-500/30',
-  'In approvazione': 'text-blue-600 border-blue-500/30',
-  Emesso: 'text-green-600 border-green-500/30',
+  'In Revisione': 'text-blue-600 border-blue-500/30',
+  Approvato: 'text-green-600 border-green-500/30',
   Obsoleto: 'text-muted-foreground border-muted',
 };
 
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
-  Bozza: ['In approvazione'],
-  'In approvazione': ['Emesso', 'Bozza'],
-  Emesso: ['Obsoleto'],
+  Bozza: ['In Revisione'],
+  'In Revisione': ['Approvato', 'Bozza'],
+  Approvato: ['Obsoleto'],
   Obsoleto: [],
 };
 
