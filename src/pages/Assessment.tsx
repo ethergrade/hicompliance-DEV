@@ -952,14 +952,14 @@ const Assessment: React.FC = () => {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-4">
+          <div className="min-w-0">
             <h1 className="text-3xl font-bold text-foreground">Assessment NIS2/NIST/ISO</h1>
             <p className="text-muted-foreground">
               Valutazione conformità direttiva e best practices NIS2/NIST/ISO
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
             {/* Save status indicator */}
             {!isReadOnlyView && saveStatus !== 'idle' && (
               <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
@@ -1568,7 +1568,7 @@ const Assessment: React.FC = () => {
                     {isExpanded && catData && (
                       <div className="border-t border-border bg-muted/20">
                         <div className="p-3 border-b border-border bg-muted/40">
-                          <div className="grid grid-cols-[2rem_1fr_420px] gap-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2">
+                          <div className="hidden xl:grid grid-cols-[2rem_minmax(0,1fr)_420px] gap-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2">
                             <span>#</span>
                             <span>Domanda</span>
                             <span className="text-center">Risposta</span>
@@ -1578,18 +1578,18 @@ const Assessment: React.FC = () => {
                           {(catData.questions.filter(q => isQuestionVisible(q, responses, v2Categories))).map((q, qi) => {
                             const currentResponse = responses[q.id] || null;
                             return (
-                              <div key={q.id} className="grid grid-cols-[2rem_1fr_420px] gap-3 items-center px-5 py-3 hover:bg-muted/30 transition-colors">
+                              <div key={q.id} className="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)] xl:grid-cols-[2rem_minmax(0,1fr)_420px] gap-3 items-center px-5 py-3 hover:bg-muted/30 transition-colors">
                                 <span className="text-xs text-muted-foreground font-mono">{qi + 1}</span>
-                                <div className="flex items-start gap-2">
-                                  <span className="text-sm text-foreground leading-relaxed">{q.question}</span>
+                                <div className="flex min-w-0 flex-wrap items-start gap-2">
+                                  <span className="w-full text-sm text-foreground leading-relaxed">{q.question}</span>
                                   {measuresForQuestion(q.question).slice(0, 2).map((code) => {
                                     const m = ACN_CATALOG.find((x) => x.code === code);
                                     return (
-                                      <UITooltip key={code}>
+                                      <UITooltip key={code} delayDuration={150}>
                                         <TooltipTrigger asChild>
-                                          <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 cursor-help">NIS2 {code}</Badge>
+                                          <Badge tabIndex={0} variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 cursor-help" aria-label={`NIS2 ${code}: ${m?.title ?? code}`}>NIS2 {code}</Badge>
                                         </TooltipTrigger>
-                                        <TooltipContent className="max-w-sm">
+                                        <TooltipContent className="max-w-[min(24rem,calc(100vw-2rem))]" side="top" collisionPadding={16}>
                                           <p className="font-medium">{m?.title}</p>
                                           <p className="text-xs">{m?.simple}</p>
                                           <p className="text-xs opacity-70 mt-1">Correlazione proposta, da validare</p>
@@ -1604,7 +1604,7 @@ const Assessment: React.FC = () => {
                                     <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 bg-blue-500/10 text-blue-500 border-blue-500/20">BASSA</Badge>
                                   )}
                                 </div>
-                                <div className="flex items-center gap-1.5">
+                                <div className="col-start-2 flex min-w-0 flex-wrap items-center gap-1.5 xl:col-start-auto">
                                   {answerOptions.map(opt => {
                                     const isActive = currentResponse === opt.value;
                                     return (
