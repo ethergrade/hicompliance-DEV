@@ -16,6 +16,7 @@ import { documentsApi } from '@/lib/api';
 import { SOURCE_LABELS, foldersApi, type DocumentFolder } from '@/lib/api/documents';
 import { DocumentFolderPanel, MoveCopyDialog, BulkTagDialog, folderPath, ROOT, DOC_DRAG_MIME, type FolderSelection } from '@/components/documents/DocumentFolders';
 import { Checkbox } from '@/components/ui/checkbox';
+import { exportDocumentListDocx } from '@/lib/documentListExport';
 import { Copy, FolderInput, Folder, Tag } from 'lucide-react';
 import type { DocumentResource } from '@/types/api';
 import DocumentSearchBar, { DocumentFilters } from '@/components/documents/DocumentSearchBar';
@@ -158,6 +159,21 @@ const Documents: React.FC = () => {
       return true;
     });
   }, [documents, filters, sourceFilter, folderSel, folders, tagFilter]);
+
+  const runListExport = async (global: boolean) => {
+    const viewLabel = folderSel === 'all' ? (filters.category === 'all' ? 'Tutti i Documenti' : filters.category) : folderSel === ROOT ? 'Radice' : folderPath(folders, folderSel);
+    try {
+      await exportDocumentListDocx((global ? documents : filteredDocuments) as any, {
+        title: 'Elenco documenti',
+        scope: global ? 'Archivio completo' : viewLabel,
+        folderLabel: (d: any) => d.folder_id ? folderPath(folders, d.folder_id) : 'Radice',
+        groupBy: global || folderSel === 'all' ? 'category' : 'folder',
+      });
+      toast({ title: 'Elenco esportato', description: global ? 'Archivio completo' : viewLabel });
+    } catch (e: any) {
+      toast({ title: 'Errore esportazione', description: e?.message, variant: 'destructive' });
+    }
+  };
 
   const getCategoryCount = (category: DocumentCategory | 'all') => {
     if (category === 'all') return documents.length;
@@ -485,6 +501,14 @@ const Documents: React.FC = () => {
                     onCheckedChange={(v) => setSelectedIds(v ? filteredDocuments.map(d => d.id) : [])} aria-label="Seleziona tutti" />
                   <span>{folderSel === 'all' ? (filters.category === 'all' ? 'Tutti i Documenti' : filters.category) : folderSel === ROOT ? 'Radice' : folderPath(folders, folderSel)}</span>
                   <span className="text-muted-foreground text-sm font-normal">({filteredDocuments.length})</span>
+                  <div className="ml-auto flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" disabled={!filteredDocuments.length} onClick={() => runListExport(false)}>
+                      <FileText className="w-4 h-4 mr-1" />Esporta elenco Word
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={!documents.length} onClick={() => runListExport(true)}>
+                      <FileText className="w-4 h-4 mr-1" />Esporta tutto
+                    </Button>
+                  </div>
                 </CardTitle>
                 {selectedIds.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/40 bg-primary/5 p-2">
