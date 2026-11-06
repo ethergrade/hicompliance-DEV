@@ -4,3 +4,4 @@
 - Asset Management register column geometry is defined by ASSET_TABLE_COLUMNS and ResizableAssetHeader with a fixed-layout colgroup, so headers, filters and body cells remain aligned during pointer resizing.
 - Nove VA requests use server-only NOVE_API_BASE_URL with legacy NOVE_API_HOST fallback and normalize the API root once, preventing duplicated version paths.
 - Assessment import/external scores are additive only: imported answers enter assessment_responses with source='import' and external scores live in assessment_external_scores shown side-by-side, because scoring.ts, snapshots and Gap Analysis must keep reading the same tables unchanged.
+- Document versioning: incident_documents stays the current version and document_versions holds every downloadable revision; revision advances only via documentsApi.createRevision and status moves only via setStatus transitions (Bozza → In Revisione → Approvato → Obsoleto), so ISO history is never lost.

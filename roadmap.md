@@ -12,3 +12,4 @@
 - [ ] Asset Management: credenziali HaloPSA (in attesa utente), email settimanale scadenze (serve dominio mittente)
 - [x] Assessment: import risposte da Excel (template, anteprima validazione, upsert source='import') e score esterni affiancati (assessment_external_scores); docs/assessment-import-e-score-esterni.md
 - [ ] Assessment: indicazione 'dati importati' nei PDF di report (oggi solo badge in pagina)
+- [x] Gestione Documenti: versioning con storico revisioni scaricabili, nuova revisione con nota obbligatoria, workflow Bozza → In Revisione → Approvato → Obsoleto (docs/gestione-documentale-iso.md §14)
