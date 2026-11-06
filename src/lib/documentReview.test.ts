@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect } from 'vitest';
 import { reviewState, daysUntil } from './documentReview';
 
 const today = new Date(2026, 10, 6);
