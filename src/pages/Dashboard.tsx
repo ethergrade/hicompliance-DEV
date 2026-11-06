@@ -21,6 +21,7 @@ import { Shield, BarChart3, Unlink, Settings } from "lucide-react";
 import { useHiTrackDashboard } from "@/hooks/useHiTrackDashboard";
 import { DEMO_SERVICE_HEALTH, isInnovatechDemo } from "@/data/innovatechSecurityDemo";
 import { ServiceRiskBreakdownCard } from "@/components/dashboard/ServiceRiskBreakdownCard";
+import { DocumentReviewBoardForOrg } from "@/components/documents/DocumentReviewBoard";
 
 const getServiceIcon = (code: string) => {
 	const key = code.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -379,6 +380,8 @@ const Dashboard: React.FC = () => {
 						Nessun servizio di sicurezza attivo
 					</div>
 				)}
+
+				<DocumentReviewBoardForOrg organizationId={activeOrgId} onOpen={() => navigate('/documents')} />
 
 				<Card className="border-border">
 					<CardHeader className="pb-6">

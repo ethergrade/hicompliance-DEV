@@ -17,6 +17,8 @@ import { SOURCE_LABELS, foldersApi, type DocumentFolder } from '@/lib/api/docume
 import { DocumentFolderPanel, MoveCopyDialog, BulkTagDialog, folderPath, ROOT, DOC_DRAG_MIME, type FolderSelection } from '@/components/documents/DocumentFolders';
 import { Checkbox } from '@/components/ui/checkbox';
 import { exportDocumentListDocx } from '@/lib/documentListExport';
+import { DocumentReviewBoard } from '@/components/documents/DocumentReviewBoard';
+import { supabase } from '@/integrations/supabase/client';
 import { Copy, FolderInput, Folder, Tag } from 'lucide-react';
 import type { DocumentResource } from '@/types/api';
 import DocumentSearchBar, { DocumentFilters } from '@/components/documents/DocumentSearchBar';
@@ -272,7 +274,16 @@ const Documents: React.FC = () => {
         category: metadata.category,
         description: metadata.description,
         tags: metadata.tags,
+        review_due_date: metadata.review_due_date || null,
+        review_notify_email: metadata.review_notify_email?.trim() || null,
+        ...(((selectedDocument as any).review_due_date || null) !== (metadata.review_due_date || null) ? { review_notified_at: null } : {}),
       }, groupId);
+      const dateChanged = ((selectedDocument as any).review_due_date || null) !== (metadata.review_due_date || null)
+        || ((selectedDocument as any).review_notify_email || null) !== (metadata.review_notify_email?.trim() || null);
+      if (dateChanged && metadata.review_due_date && metadata.review_notify_email?.trim()) {
+        supabase.functions.invoke('document-review-reminders', { body: { documentId: selectedDocument.id } })
+          .then(({ error }) => error && toast({ title: 'Email non inviata', description: 'La data è salvata, ma la notifica email non è partita.', variant: 'destructive' }));
+      }
 
       toast({ title: "Successo", description: "Metadata aggiornati" });
       fetchDocuments();
@@ -320,6 +331,8 @@ const Documents: React.FC = () => {
             Inventario Asset Tecnici
           </Button>
         </div>
+
+        <DocumentReviewBoard documents={documents as any} onOpen={(id) => { const d = documents.find(x => x.id === id); if (d) openMetadataDialog(d); }} />
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           <div className="lg:col-span-1 space-y-6">
@@ -627,7 +640,9 @@ const Documents: React.FC = () => {
           category: selectedDocument.category,
           description: selectedDocument.description || '',
           tags: selectedDocument.tags || [],
-        } : null}
+          review_due_date: (selectedDocument as any).review_due_date || null,
+          review_notify_email: (selectedDocument as any).review_notify_email || user?.email || '',
+        } as any : null}
         onSave={handleSaveMetadata}
         contacts={contacts}
       />

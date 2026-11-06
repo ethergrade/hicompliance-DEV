@@ -6,7 +6,12 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { X } from 'lucide-react';
+import { X, CalendarIcon } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { cn } from '@/lib/utils';
+import { format, parseISO } from 'date-fns';
+import { it } from 'date-fns/locale';
 import ContactPicker from './ContactPicker';
 import { DOCUMENT_STATUSES, CONFIDENTIALITY_LEVELS, type DocumentCategory } from './DocumentCodeGenerator';
 import { DirectoryContact } from '@/types/irp';
@@ -29,6 +34,8 @@ export interface DocumentMetadata {
   prepared_by: string[];
   reviewed_by: string[];
   approved_by: string[];
+  review_due_date?: string | null;
+  review_notify_email?: string | null;
 }
 
 interface DocumentMetadataDialogProps {
@@ -120,6 +127,32 @@ const DocumentMetadataDialog: React.FC<DocumentMetadataDialogProps> = ({
                   {DOCUMENT_CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Da revisionare o controllare il</Label>
+              <div className="flex gap-2">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className={cn('flex-1 justify-start text-left font-normal', !form.review_due_date && 'text-muted-foreground')}>
+                      <CalendarIcon className="w-4 h-4 mr-2" />
+                      {form.review_due_date ? format(parseISO(form.review_due_date), 'dd/MM/yyyy') : 'Seleziona data'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar mode="single" locale={it} selected={form.review_due_date ? parseISO(form.review_due_date) : undefined}
+                      onSelect={d => update({ review_due_date: d ? format(d, 'yyyy-MM-dd') : null })} autoFocus className="p-3 pointer-events-auto" />
+                  </PopoverContent>
+                </Popover>
+                {form.review_due_date && <Button variant="ghost" size="icon" aria-label="Rimuovi data" onClick={() => update({ review_due_date: null })}><X className="w-4 h-4" /></Button>}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Email per la notifica</Label>
+              <Input type="email" value={form.review_notify_email || ''} placeholder="nome@azienda.it" onChange={e => update({ review_notify_email: e.target.value })} />
+              <p className="text-[11px] text-muted-foreground">Avviso subito e poi a 7 giorni dalla scadenza</p>
             </div>
           </div>
 

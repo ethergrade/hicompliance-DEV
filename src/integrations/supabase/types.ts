@@ -4282,6 +4282,9 @@ export type Database = {
           name: string
           organization_id: string | null
           prepared_by: string[] | null
+          review_due_date: string | null
+          review_notified_at: string | null
+          review_notify_email: string | null
           reviewed_by: string[] | null
           revision: number
           revision_date: string | null
@@ -4310,6 +4313,9 @@ export type Database = {
           name: string
           organization_id?: string | null
           prepared_by?: string[] | null
+          review_due_date?: string | null
+          review_notified_at?: string | null
+          review_notify_email?: string | null
           reviewed_by?: string[] | null
           revision?: number
           revision_date?: string | null
@@ -4338,6 +4344,9 @@ export type Database = {
           name?: string
           organization_id?: string | null
           prepared_by?: string[] | null
+          review_due_date?: string | null
+          review_notified_at?: string | null
+          review_notify_email?: string | null
           reviewed_by?: string[] | null
           revision?: number
           revision_date?: string | null
