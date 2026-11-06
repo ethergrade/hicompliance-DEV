@@ -194,14 +194,7 @@ const resourceToForm = (
   scopeEntries: [],
 });
 
-/**
- * Campi anagrafici estesi: hanno il loro endpoint e la loro tabella.
- *
- * `nis2_classification` non viene inviato qui di proposito — il profilo accetta
- * solo none|essential|important, mentre il form usa il vocabolario italiano che
- * il tenant memorizza già. Duplicarlo su due tabelle con due vocabolari diversi
- * significherebbe avere due verità.
- */
+/** All anagrafica fields share one profile write; translate NIS2 at the boundary. */
 const formToProfilePayload = (data: ProfileFormData): UpdateCompanyProfileRequest => ({
   vat_number: data.vat_number || null,
   phone: data.phone || null,
@@ -703,11 +696,10 @@ const ClientProfileSheet: React.FC<ClientProfileSheetProps> = ({
     } catch (err: any) {
       // eslint-disable-next-line no-console
       console.error("[ClientProfileSheet] manual save failed", {
-        status: err?.response?.status,
-        data: err?.response?.data,
-        message: err?.message,
-        payload: formToPayload(form),
+        code: err?.code,
+        status: err?.status,
       });
+      setSaveError(err?.code === '42501' ? 'Non hai i permessi per modificare questa anagrafica.' : 'Salvataggio non riuscito. Verifica la connessione e riprova.');
       setSaveStatus("error");
     }
   };

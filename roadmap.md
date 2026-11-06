@@ -1,5 +1,5 @@
 # Roadmap BIA
-- [ ] Anagrafica: allineare salvataggio alla sessione Supabase, persistenza di tutti i campi e classificazione NIS2; verifica autenticata non disponibile (Supabase esterna).
+- [x] Anagrafica: salvataggio unico su organization_profiles, campi tecnici additivi e classificazione NIS2 normalizzata in lettura/scrittura; build OK e verifica API con servizio simulato. Test Vitest bloccati dall'incompatibilità esistente; verifica autenticata non disponibile (Supabase esterna).
 - [x] NIS2: aggiunto accesso nel menu con permessi Assessment e intestazione adattabile; tooltip badge verificato prima/dopo, tastiera e larghezze 1280/909/390. Verifica cliente autenticato non disponibile (auth esterna); test NIS2 bloccati dall'incompatibilità Vitest 4 / Vite 5.
 - [x] Asset Management: uniform column headers and Excel-style column resizing; isolated browser checks passed (drag, keyboard, reset, aligned filters). Authenticated client view remains unverified because authentication is externally managed.
 - [x] Schema DB, calcolo, workflow, audit
