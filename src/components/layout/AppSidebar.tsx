@@ -87,6 +87,7 @@ const navigation = [
 
 const hiComplianceModules = [
 	{ title: "Assessment", href: "/assessment", icon: ClipboardCheck },
+	{ title: "Percorso NIS2 ACN", href: "/assessment/nis2", icon: ShieldCheck },
 	{ title: "Remediation", href: "/remediation", icon: Wrench },
 	{ title: "Consistenze", href: "/consistenze", icon: Package },
 	{ title: "Supply Chain", href: "/supply-chain", icon: Network },
@@ -210,10 +211,10 @@ export const AppSidebar: React.FC = () => {
 	});
 
 	const visibleHiCompliance = hiComplianceModules.filter(
-		(item) =>
-			isModuleEnabled(item.href) &&
-			isFeatureAllowed(item.href) &&
-			isUserAllowed(item.href),
+		(item) => {
+			const accessRoute = item.href === "/assessment/nis2" ? "/assessment" : item.href;
+			return isModuleEnabled(accessRoute) && isFeatureAllowed(accessRoute) && isUserAllowed(accessRoute);
+		},
 	);
 	const visibleComplianceEvents = complianceEventItems.filter(
 		(item) =>
