@@ -25,7 +25,7 @@ function Calendar({
 				nav: "absolute top-0 inset-x-0 flex items-center justify-between z-10 pointer-events-none [&>button]:pointer-events-auto",
 				dropdowns: "flex items-center gap-2 text-sm font-medium",
 				dropdown_root: "relative rounded-md border border-input bg-background px-2 py-1",
-				dropdown: "absolute inset-0 opacity-0 cursor-pointer",,
+				dropdown: "absolute inset-0 opacity-0 cursor-pointer",
 				button_previous: cn(
 					buttonVariants({ variant: "outline" }),
 					"h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 ",
