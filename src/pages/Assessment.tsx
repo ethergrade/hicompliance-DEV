@@ -223,6 +223,11 @@ const Assessment: React.FC = () => {
   // input, salvataggi e azioni di massa passano tutti da questo unico flag.
   const isLocked = isReadOnlyView || isConfirmed;
 
+  // Import da Excel e gestione score esterni: solo Super Admin e Sales, e mai
+  // a questionario confermato (le risposte sarebbero chiuse).
+  const canImportAssessment = (isSuperAdmin || isSales) && !isLocked;
+  const canManageExternalScores = isSuperAdmin || isSales;
+
   // Question responses state: { [questionId]: response }
   const [responses, setResponses] = useState<Record<number, AssessmentResponse>>({});
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
@@ -407,13 +412,16 @@ const Assessment: React.FC = () => {
           uuidToIndex[uuid] = Number(idx);
         });
         const mapped: Record<number, string | null> = {};
+        let imported = 0;
         items.forEach((item) => {
           const idx = uuidToIndex[item.question_id];
           if (idx) {
             mapped[idx] = mapToUiStatus(item.status);
+            if ((item as { source?: string }).source === 'import') imported++;
           }
         });
         setResponses(mapped);
+        setImportedCount(imported);
       } catch (error) {
         console.error('Assessment load error:', error);
         setResponses({});
@@ -421,7 +429,7 @@ const Assessment: React.FC = () => {
     };
 
     loadResponses();
-  }, [orgId, user, v2Categories.length, indexToUuid, isUsingFallbackData, v1AssessmentId, selectedOrganization?.group_id]);
+  }, [orgId, user, v2Categories.length, indexToUuid, isUsingFallbackData, v1AssessmentId, selectedOrganization?.group_id, responsesReloadKey]);
 
   // Auto-save: debounced save after each response change
   const snapshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
