@@ -26,6 +26,7 @@ export const C03_ALLEGATO_III = ['centrale', 'regione', 'citta_metropolitana', '
 export interface WizardAnswers {
   C00?: 'essenziale' | 'importante' | 'no' | 'non_so';
   C01?: number;
+  pecDate?: string;
   C02?: 'si' | 'servizi_in_IT' | 'no';
   C03?: string; // one of C03_ALLEGATO_III | 'altra_pa' | 'no'
   C04?: string[]; // telco, fiduciari_qualificati, fiduciari_non_qualificati, TLD, DNS, registrar, CER

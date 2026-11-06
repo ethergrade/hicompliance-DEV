@@ -54,12 +54,13 @@ export function Nis2AcnAssessment({ orgId, profile, readOnly }: Props) {
       });
   }, [orgId]);
 
-  const save = async (code: string, patch: Partial<Row>) => {
+  const save = async (code: string, rawPatch: Partial<Row> & { _fromLegacy?: boolean }) => {
+    const { _fromLegacy, ...patch } = rawPatch;
     const prev = rows[code];
     const next: Row = { requirement_code: code, status: prev?.status ?? 'non_implementato', note: null, owner: null, due_date: null, document_id: null, ...prev, ...patch };
     setRows((r) => ({ ...r, [code]: next }));
     const { data: u } = await supabase.auth.getUser();
-    const { error } = await db.from('nis2_acn_responses').upsert({ organization_id: orgId, ...next, source: patch.status && (patch as any)._fromLegacy ? 'suggested' : 'manual', updated_by: u.user?.id }, { onConflict: 'organization_id,requirement_code' });
+    const { error } = await db.from('nis2_acn_responses').upsert({ organization_id: orgId, ...next, source: _fromLegacy ? 'suggested_from_assessment' : 'manual', updated_by: u.user?.id }, { onConflict: 'organization_id,requirement_code' });
     if (error) toast.error('Salvataggio non riuscito');
   };
 
@@ -159,7 +160,7 @@ export function Nis2AcnAssessment({ orgId, profile, readOnly }: Props) {
                           </Button>
                         ))}
                         {suggestion && !row && !readOnly && (
-                          <Button size="sm" variant="ghost" onClick={() => save(r.code, { status: suggestion, _fromLegacy: true } as any)}>Usa suggerimento</Button>
+                          <Button size="sm" variant="ghost" onClick={() => save(r.code, { status: suggestion, _fromLegacy: true })}>Usa suggerimento</Button>
                         )}
                       </div>
                       {row && (
