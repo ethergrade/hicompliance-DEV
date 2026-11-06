@@ -143,7 +143,7 @@ const DocumentMetadataDialog: React.FC<DocumentMetadataDialogProps> = ({
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
                     <Calendar mode="single" locale={it} selected={form.review_due_date ? parseISO(form.review_due_date) : undefined}
-                      onSelect={d => update({ review_due_date: d ? format(d, 'yyyy-MM-dd') : null })} initialFocus className="p-3 pointer-events-auto" />
+                      onSelect={d => update({ review_due_date: d ? format(d, 'yyyy-MM-dd') : null })} autoFocus className="p-3 pointer-events-auto" />
                   </PopoverContent>
                 </Popover>
                 {form.review_due_date && <Button variant="ghost" size="icon" aria-label="Rimuovi data" onClick={() => update({ review_due_date: null })}><X className="w-4 h-4" /></Button>}
