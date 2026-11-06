@@ -27,6 +27,7 @@ import {
   ChevronRight,
   Loader2,
   Filter,
+  Upload,
 } from 'lucide-react';
 import { useOrganizationProfile } from '@/hooks/useOrganizationProfile';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
@@ -48,6 +49,8 @@ import FullReportView, { type FullReportReadyPayload } from '@/components/report
 import { exportFullReportPdf } from '@/lib/report/exportFullReportPdf';
 import GapAnalysisSection from '@/components/assessment/GapAnalysisSection';
 import { AssessmentRadarChart } from '@/components/assessment/AssessmentRadarChart';
+import { ImportAssessmentDialog } from '@/components/assessment/ImportAssessmentDialog';
+import { ExternalScoresSection } from '@/components/assessment/ExternalScoresSection';
 import { moduleVisibility } from '@/config/moduleVisibility';
 
 // Local type for UI assessment response values
@@ -236,6 +239,9 @@ const Assessment: React.FC = () => {
   const [anagraficaOpen, setAnagraficaOpen] = useState(false);
   const [v1AssessmentId, setV1AssessmentId] = useState<string | null>(null);
   const [latestSnapshot, setLatestSnapshot] = useState<AssessmentSnapshot | null>(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [responsesReloadKey, setResponsesReloadKey] = useState(0);
+  const [importedCount, setImportedCount] = useState(0);
   const categoriesLoaded = useRef(false);
   const guidedOrgRef = useRef<string | null>(null);
 
