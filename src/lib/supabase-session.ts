@@ -30,7 +30,7 @@ export async function buildLoginUser(authUserId: string, email: string): Promise
 		role: groupRole,
 	} as Group & { role: string };
 
-    return mergeCompanyProfile({
+	return {
 		id: authUserId,
 		name: profile?.full_name || email,
 		email,
@@ -55,7 +55,7 @@ export async function listSupabaseTenants(): Promise<TenantResource[]> {
 	const byOrg = new Map((profiles ?? []).map((p) => [p.organization_id, p]));
 	return (orgs ?? []).map((o) => {
 		const p = byOrg.get(o.id);
-		return {
+		return mergeCompanyProfile({
 			id: o.id,
 			group_id: SUPABASE_GROUP_ID,
 			customer_code: o.code,
