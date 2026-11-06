@@ -10,7 +10,7 @@ import { X, CalendarIcon } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, addMonths } from 'date-fns';
 import { it } from 'date-fns/locale';
 import ContactPicker from './ContactPicker';
 import { DOCUMENT_STATUSES, CONFIDENTIALITY_LEVELS, type DocumentCategory } from './DocumentCodeGenerator';
@@ -142,7 +142,17 @@ const DocumentMetadataDialog: React.FC<DocumentMetadataDialogProps> = ({
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar mode="single" locale={it} selected={form.review_due_date ? parseISO(form.review_due_date) : undefined}
+                    <div className="flex flex-wrap gap-1 p-2 border-b border-border">
+                      {[1, 3, 6, 12, 24].map(m => (
+                        <Button key={m} size="sm" variant="outline" className="h-7 px-2 text-xs"
+                          onClick={() => update({ review_due_date: format(addMonths(new Date(), m), 'yyyy-MM-dd') })}>
+                          +{m < 12 ? `${m} mesi` : `${m / 12} ann${m === 12 ? 'o' : 'i'}`}
+                        </Button>
+                      ))}
+                    </div>
+                    <Calendar mode="single" locale={it} captionLayout="dropdown" startMonth={new Date(new Date().getFullYear() - 1, 0)} endMonth={new Date(new Date().getFullYear() + 10, 11)}
+                      defaultMonth={form.review_due_date ? parseISO(form.review_due_date) : new Date()}
+                      selected={form.review_due_date ? parseISO(form.review_due_date) : undefined}
                       onSelect={d => update({ review_due_date: d ? format(d, 'yyyy-MM-dd') : null })} autoFocus className="p-3 pointer-events-auto" />
                   </PopoverContent>
                 </Popover>

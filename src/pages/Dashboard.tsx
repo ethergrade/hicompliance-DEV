@@ -381,7 +381,7 @@ const Dashboard: React.FC = () => {
 					</div>
 				)}
 
-				<DocumentReviewBoardForOrg organizationId={activeOrgId} onOpen={() => navigate('/documents')} />
+				<DocumentReviewBoardForOrg organizationId={activeOrgId} onOpen={(id) => navigate('/documents', { state: { openDocumentId: id } })} />
 
 				<Card className="border-border">
 					<CardHeader className="pb-6">
