@@ -3,3 +3,4 @@
 - Module visibility per client is decided only by src/config/moduleServiceMap.ts + useModuleAccess (route → active tenant_services.service_type), so sidebar, guard and dashboard never diverge.
 - Asset Management register column geometry is defined by ASSET_TABLE_COLUMNS and ResizableAssetHeader with a fixed-layout colgroup, so headers, filters and body cells remain aligned during pointer resizing.
 - Nove VA requests use server-only NOVE_API_BASE_URL with legacy NOVE_API_HOST fallback and normalize the API root once, preventing duplicated version paths.
+- Assessment import/external scores are additive only: imported answers enter assessment_responses with source='import' and external scores live in assessment_external_scores shown side-by-side, because scoring.ts, snapshots and Gap Analysis must keep reading the same tables unchanged.

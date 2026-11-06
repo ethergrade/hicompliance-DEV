@@ -27,6 +27,7 @@ import {
   ChevronRight,
   Loader2,
   Filter,
+  Upload,
 } from 'lucide-react';
 import { useOrganizationProfile } from '@/hooks/useOrganizationProfile';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
@@ -48,6 +49,8 @@ import FullReportView, { type FullReportReadyPayload } from '@/components/report
 import { exportFullReportPdf } from '@/lib/report/exportFullReportPdf';
 import GapAnalysisSection from '@/components/assessment/GapAnalysisSection';
 import { AssessmentRadarChart } from '@/components/assessment/AssessmentRadarChart';
+import { ImportAssessmentDialog } from '@/components/assessment/ImportAssessmentDialog';
+import { ExternalScoresSection } from '@/components/assessment/ExternalScoresSection';
 import { moduleVisibility } from '@/config/moduleVisibility';
 
 // Local type for UI assessment response values
@@ -220,6 +223,11 @@ const Assessment: React.FC = () => {
   // input, salvataggi e azioni di massa passano tutti da questo unico flag.
   const isLocked = isReadOnlyView || isConfirmed;
 
+  // Import da Excel e gestione score esterni: solo Super Admin e Sales, e mai
+  // a questionario confermato (le risposte sarebbero chiuse).
+  const canImportAssessment = (isSuperAdmin || isSales) && !isLocked;
+  const canManageExternalScores = isSuperAdmin || isSales;
+
   // Question responses state: { [questionId]: response }
   const [responses, setResponses] = useState<Record<number, AssessmentResponse>>({});
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
@@ -236,6 +244,9 @@ const Assessment: React.FC = () => {
   const [anagraficaOpen, setAnagraficaOpen] = useState(false);
   const [v1AssessmentId, setV1AssessmentId] = useState<string | null>(null);
   const [latestSnapshot, setLatestSnapshot] = useState<AssessmentSnapshot | null>(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [responsesReloadKey, setResponsesReloadKey] = useState(0);
+  const [importedCount, setImportedCount] = useState(0);
   const categoriesLoaded = useRef(false);
   const guidedOrgRef = useRef<string | null>(null);
 
@@ -393,6 +404,7 @@ const Assessment: React.FC = () => {
         const items = await assessmentV2Api.responses(orgId, groupId);
         if (!items || items.length === 0) {
           setResponses({});
+          setImportedCount(0);
           return;
         }
         // Map v2 responses to UI format
@@ -401,13 +413,16 @@ const Assessment: React.FC = () => {
           uuidToIndex[uuid] = Number(idx);
         });
         const mapped: Record<number, string | null> = {};
+        let imported = 0;
         items.forEach((item) => {
           const idx = uuidToIndex[item.question_id];
           if (idx) {
             mapped[idx] = mapToUiStatus(item.status);
+            if ((item as { source?: string }).source === 'import') imported++;
           }
         });
         setResponses(mapped);
+        setImportedCount(imported);
       } catch (error) {
         console.error('Assessment load error:', error);
         setResponses({});
@@ -415,7 +430,7 @@ const Assessment: React.FC = () => {
     };
 
     loadResponses();
-  }, [orgId, user, v2Categories.length, indexToUuid, isUsingFallbackData, v1AssessmentId, selectedOrganization?.group_id]);
+  }, [orgId, user, v2Categories.length, indexToUuid, isUsingFallbackData, v1AssessmentId, selectedOrganization?.group_id, responsesReloadKey]);
 
   // Auto-save: debounced save after each response change
   const snapshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -958,6 +973,11 @@ const Assessment: React.FC = () => {
                  'Errore salvataggio'}
               </div>
             )}
+            {importedCount > 0 && (
+              <Badge variant="secondary" className="text-xs">
+                {importedCount} risposte importate da file
+              </Badge>
+            )}
             {moduleVisibility.consistenze && (
               <Button 
                 variant="outline"
@@ -966,6 +986,16 @@ const Assessment: React.FC = () => {
               >
                 <FileText className="w-4 h-4" />
                 Gestisci Consistenze
+              </Button>
+            )}
+            {canImportAssessment && orgId && (
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => setImportDialogOpen(true)}
+              >
+                <Upload className="w-4 h-4" />
+                Importa Excel
               </Button>
             )}
             <Button
@@ -1037,6 +1067,16 @@ const Assessment: React.FC = () => {
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {/* Score da assessment esterni del cliente, affiancati a quelli calcolati */}
+        {orgId && v2Categories.length > 0 && (
+          <ExternalScoresSection
+            orgId={orgId}
+            categories={v2Categories}
+            responses={responses}
+            canManage={canManageExternalScores}
+          />
         )}
 
         {/* HiCompliance: warning se servizio attivo ma campi rete primari vuoti */}
@@ -1674,6 +1714,17 @@ const Assessment: React.FC = () => {
             analysisViolations={latestSnapshot.analysis_violations}
             openaiData={latestSnapshot.openai_data}
             onSaved={loadLatestSnapshot}
+          />
+        )}
+
+        {orgId && (
+          <ImportAssessmentDialog
+            open={importDialogOpen}
+            onOpenChange={setImportDialogOpen}
+            orgId={orgId}
+            categories={v2Categories}
+            indexToUuid={indexToUuid}
+            onImported={() => setResponsesReloadKey((k) => k + 1)}
           />
         )}
       </div>
