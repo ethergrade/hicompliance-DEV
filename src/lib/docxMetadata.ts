@@ -147,7 +147,7 @@ export function writeDocxMetadataToZip(zip: PizZip, meta: Partial<Record<DocxMet
   if (!entries.length) return zip;
   // 1. custom properties
   ensureCustomPart(zip);
-  let custom = zip.file('docProps/custom.xml')!.asText();
+  let custom = zip.file('docProps/custom.xml')!.asText().replace(/<Properties([^>]*)\/>/, '<Properties$1></Properties>');
   for (const [k, v] of entries) {
     const name = CUSTOM_PROP[k];
     const re = new RegExp(`(<property[^>]*name="${name}"[^>]*>\\s*<vt:\\w+>)[^<]*(</vt:\\w+>)`);
