@@ -5716,9 +5716,12 @@ export type Database = {
           business_sector: string | null
           ciso_substitute: string | null
           created_at: string
+          customer_sectors: string[] | null
           email: string | null
+          employees_count: number | null
           fiscal_code: string | null
           id: string
+          implemented_technologies: string[] | null
           legal_address: string | null
           legal_name: string | null
           nis2_classification:
@@ -5728,6 +5731,11 @@ export type Database = {
           organization_id: string
           pec: string | null
           phone: string | null
+          primary_domain: string | null
+          primary_subnet: string | null
+          revenue: number | null
+          secondary_domain: string | null
+          secondary_subnet: string | null
           updated_at: string
           vat_number: string | null
         }
@@ -5735,9 +5743,12 @@ export type Database = {
           business_sector?: string | null
           ciso_substitute?: string | null
           created_at?: string
+          customer_sectors?: string[] | null
           email?: string | null
+          employees_count?: number | null
           fiscal_code?: string | null
           id?: string
+          implemented_technologies?: string[] | null
           legal_address?: string | null
           legal_name?: string | null
           nis2_classification?:
@@ -5747,6 +5758,11 @@ export type Database = {
           organization_id: string
           pec?: string | null
           phone?: string | null
+          primary_domain?: string | null
+          primary_subnet?: string | null
+          revenue?: number | null
+          secondary_domain?: string | null
+          secondary_subnet?: string | null
           updated_at?: string
           vat_number?: string | null
         }
@@ -5754,9 +5770,12 @@ export type Database = {
           business_sector?: string | null
           ciso_substitute?: string | null
           created_at?: string
+          customer_sectors?: string[] | null
           email?: string | null
+          employees_count?: number | null
           fiscal_code?: string | null
           id?: string
+          implemented_technologies?: string[] | null
           legal_address?: string | null
           legal_name?: string | null
           nis2_classification?:
@@ -5766,6 +5785,11 @@ export type Database = {
           organization_id?: string
           pec?: string | null
           phone?: string | null
+          primary_domain?: string | null
+          primary_subnet?: string | null
+          revenue?: number | null
+          secondary_domain?: string | null
+          secondary_subnet?: string | null
           updated_at?: string
           vat_number?: string | null
         }
