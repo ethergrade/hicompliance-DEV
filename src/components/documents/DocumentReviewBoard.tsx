@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { CalendarClock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CalendarClock, ChevronLeft, ChevronRight, Pencil } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { documentsApi } from '@/lib/api';
 import { daysUntil, reviewState, withReviewDates, type ReviewDoc, type ReviewState } from '@/lib/documentReview';
@@ -70,11 +70,12 @@ export const DocumentReviewBoard: React.FC<{ documents: ReviewDoc[]; onOpen?: (i
                 <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="Mesi successivi" onClick={() => setOffset(o => o + 3)}><ChevronRight className="w-4 h-4" /></Button>
               </div>
             </div>
-            <div className="grid grid-cols-[minmax(0,14rem)_minmax(0,1fr)] gap-x-3 text-xs">
+            <div className="grid grid-cols-[minmax(0,14rem)_minmax(0,1fr)_auto] gap-x-3 text-xs">
               <div />
               <div className="relative flex border-b border-border">
                 {months.map(m => <div key={m.toISOString()} className="flex-1 px-1 py-1 text-muted-foreground border-l border-border capitalize">{m.toLocaleDateString('it-IT', { month: 'short', year: '2-digit' })}</div>)}
               </div>
+              <div />
               {visible.map(d => {
                 const st = reviewState(d.review_due_date);
                 const due = parse(d.review_due_date);
@@ -84,7 +85,7 @@ export const DocumentReviewBoard: React.FC<{ documents: ReviewDoc[]; onOpen?: (i
                 return (
                   <React.Fragment key={d.id}>
                     <button type="button" onClick={() => onOpen?.(d.id)} className="truncate text-left py-1.5 hover:underline" title={d.name}>{d.name}</button>
-                    <div className="relative h-7 border-l border-border">
+                    <div role="button" tabIndex={0} onClick={() => onOpen?.(d.id)} onKeyDown={e => e.key === 'Enter' && onOpen?.(d.id)} className="relative h-7 border-l border-border cursor-pointer hover:bg-muted/40" title="Apri impostazioni documento">
                       <div className="absolute top-0 bottom-0 w-px bg-foreground/40" style={{ left: `${pct(today)}%` }} />
                       <div className={cn('absolute top-1.5 h-4 rounded', STATE_STYLE[st].bar)} style={{ left: `${from}%`, width: `${Math.max(1, to - from)}%` }}
                         title={`${d.name} — ${due.toLocaleDateString('it-IT')}`} />
@@ -92,6 +93,7 @@ export const DocumentReviewBoard: React.FC<{ documents: ReviewDoc[]; onOpen?: (i
                         {n < 0 ? `${-n}g fa` : n === 0 ? 'oggi' : `tra ${n}g`}
                       </Badge>
                     </div>
+                    <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => onOpen?.(d.id)} aria-label={`Modifica ${d.name}`}><Pencil className="w-3.5 h-3.5 mr-1" />Modifica</Button>
                   </React.Fragment>
                 );
               })}
@@ -104,12 +106,12 @@ export const DocumentReviewBoard: React.FC<{ documents: ReviewDoc[]; onOpen?: (i
 };
 
 /** Self-loading variant for the dashboard. */
-export const DocumentReviewBoardForOrg: React.FC<{ organizationId?: string | null; onOpen?: () => void }> = ({ organizationId, onOpen }) => {
+export const DocumentReviewBoardForOrg: React.FC<{ organizationId?: string | null; onOpen?: (id: string) => void }> = ({ organizationId, onOpen }) => {
   const [docs, setDocs] = useState<ReviewDoc[]>([]);
   useEffect(() => {
     if (!organizationId) return;
     documentsApi.list(organizationId).then(d => setDocs(d as any)).catch(() => setDocs([]));
   }, [organizationId]);
   if (!organizationId) return null;
-  return <DocumentReviewBoard documents={docs} onOpen={onOpen ? () => onOpen() : undefined} title="Revisioni documentali in scadenza" />;
+  return <DocumentReviewBoard documents={docs} onOpen={onOpen} title="Revisioni documentali in scadenza" />;
 };
