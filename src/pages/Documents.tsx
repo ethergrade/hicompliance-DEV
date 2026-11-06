@@ -75,6 +75,7 @@ const Documents: React.FC = () => {
   // Preview dialog
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<ISODocument | null>(null);
+  const [versionsDoc, setVersionsDoc] = useState<ISODocument | null>(null);
 
   const openPreview = (doc: ISODocument) => {
     setPreviewDoc(doc);
