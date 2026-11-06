@@ -404,6 +404,7 @@ const Assessment: React.FC = () => {
         const items = await assessmentV2Api.responses(orgId, groupId);
         if (!items || items.length === 0) {
           setResponses({});
+          setImportedCount(0);
           return;
         }
         // Map v2 responses to UI format
@@ -972,6 +973,11 @@ const Assessment: React.FC = () => {
                  'Errore salvataggio'}
               </div>
             )}
+            {importedCount > 0 && (
+              <Badge variant="secondary" className="text-xs">
+                {importedCount} risposte importate da file
+              </Badge>
+            )}
             {moduleVisibility.consistenze && (
               <Button 
                 variant="outline"
@@ -980,6 +986,16 @@ const Assessment: React.FC = () => {
               >
                 <FileText className="w-4 h-4" />
                 Gestisci Consistenze
+              </Button>
+            )}
+            {canImportAssessment && orgId && (
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => setImportDialogOpen(true)}
+              >
+                <Upload className="w-4 h-4" />
+                Importa Excel
               </Button>
             )}
             <Button
