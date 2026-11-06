@@ -52,6 +52,8 @@ import { AssessmentRadarChart } from '@/components/assessment/AssessmentRadarCha
 import { ImportAssessmentDialog } from '@/components/assessment/ImportAssessmentDialog';
 import { ExternalScoresSection } from '@/components/assessment/ExternalScoresSection';
 import { moduleVisibility } from '@/config/moduleVisibility';
+import { measuresForQuestion } from '@/lib/nis2Acn/legacyMapping';
+import { ACN_CATALOG } from '@/lib/nis2Acn/catalog';
 
 // Local type for UI assessment response values
 type AssessmentResponse = 'completato' | 'pianificato_in_corso' | 'non_iniziato' | 'non_applicabile' | null;
@@ -1580,6 +1582,21 @@ const Assessment: React.FC = () => {
                                 <span className="text-xs text-muted-foreground font-mono">{qi + 1}</span>
                                 <div className="flex items-start gap-2">
                                   <span className="text-sm text-foreground leading-relaxed">{q.question}</span>
+                                  {measuresForQuestion(q.question).slice(0, 2).map((code) => {
+                                    const m = ACN_CATALOG.find((x) => x.code === code);
+                                    return (
+                                      <UITooltip key={code}>
+                                        <TooltipTrigger asChild>
+                                          <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 cursor-help">NIS2 {code}</Badge>
+                                        </TooltipTrigger>
+                                        <TooltipContent className="max-w-sm">
+                                          <p className="font-medium">{m?.title}</p>
+                                          <p className="text-xs">{m?.simple}</p>
+                                          <p className="text-xs opacity-70 mt-1">Correlazione proposta, da validare</p>
+                                        </TooltipContent>
+                                      </UITooltip>
+                                    );
+                                  })}
                                   {q.priority === 'ALTA' && (
                                     <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 bg-red-500/10 text-red-500 border-red-500/20">ALTA</Badge>
                                   )}
