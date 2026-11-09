@@ -52,13 +52,14 @@ export function DarkRiskNotificationConfigCard() {
 	const [minFindings, setMinFindings] = useState(1);
 	const [weekly, setWeekly] = useState(true);
 
+	// Un cliente senza configurazione riporta il form ai valori vuoti: altrimenti
+	// restano gli indirizzi del cliente visto prima, e un "Salva" li assegna a questo.
 	useEffect(() => {
-		if (!config) return;
-		setEmails((config.recipient_emails ?? []).join("\n"));
-		setAlertOnNew(config.alert_on_new_findings);
-		setThreshold(config.alert_severity_threshold || "high");
-		setMinFindings(config.min_new_findings_to_alert || 1);
-		setWeekly(config.weekly_summary_enabled);
+		setEmails((config?.recipient_emails ?? []).join("\n"));
+		setAlertOnNew(config?.alert_on_new_findings ?? true);
+		setThreshold(config?.alert_severity_threshold || "high");
+		setMinFindings(config?.min_new_findings_to_alert || 1);
+		setWeekly(config?.weekly_summary_enabled ?? true);
 	}, [config]);
 
 	const forbidden = error instanceof ApiError && error.status === 403;
