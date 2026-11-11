@@ -42,7 +42,7 @@ import {
 } from 'lucide-react';
 import { DocumentVersionsDialog } from '@/components/documents/DocumentVersionsDialog';
 import DocumentPreviewDialog from '@/components/documents/DocumentPreviewDialog';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 const DOCUMENT_CATEGORIES: DocumentCategory[] = [
   'Piano Generale', 'Checklist / OPL / SOP', 'Template', 'Processo',
