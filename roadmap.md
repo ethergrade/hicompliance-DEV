@@ -1,4 +1,5 @@
 # Roadmap BIA
+- [x] Documentazione developer Supply Chain e IRP in Markdown: flussi, dati, RPC, persistenza, limiti e checklist; file consegnati in Files.
 - [x] Documentazione richiesta: guide Supply Chain e IRP in Word e PDF, quattro pagine ciascuna; validazione DOCX e verifica visiva di tutte le pagine completate, limiti attuali esplicitati.
 - [x] Anagrafica: salvataggio unico su organization_profiles, campi tecnici additivi e classificazione NIS2 normalizzata in lettura/scrittura; build OK e verifica API con servizio simulato. Test Vitest bloccati dall'incompatibilità esistente; verifica autenticata non disponibile (Supabase esterna).
 - [x] NIS2: aggiunto accesso nel menu con permessi Assessment e intestazione adattabile; tooltip badge verificato prima/dopo, tastiera e larghezze 1280/909/390. Verifica cliente autenticato non disponibile (auth esterna); test NIS2 bloccati dall'incompatibilità Vitest 4 / Vite 5.
