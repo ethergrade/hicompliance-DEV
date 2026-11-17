@@ -844,7 +844,7 @@ const Integrations = () => {
 																			e.target.value,
 																	}))
 																}
-																placeholder="Token di autenticazione client ConnectSecure (opzionale)"
+																placeholder="Vuoto = chiave del tenant Hisolution"
 																type="password"
 															/>
 														</FormControl>
@@ -860,7 +860,7 @@ const Integrations = () => {
 																		connectsecure_pod: e.target.value,
 																	}))
 																}
-																placeholder="URL del pod ConnectSecure (opzionale)"
+																placeholder="Vuoto = pod del tenant Hisolution"
 															/>
 														</FormControl>
 													</FormItem>
@@ -893,7 +893,7 @@ const Integrations = () => {
 																			e.target.value,
 																	}))
 																}
-																placeholder="ID client API NinjaOne"
+																placeholder="Vuoto = credenziali Hisolution"
 																type="password"
 															/>
 														</FormControl>
@@ -912,7 +912,7 @@ const Integrations = () => {
 																			e.target.value,
 																	}))
 																}
-																placeholder="Secret API NinjaOne"
+																placeholder="Vuoto = credenziali Hisolution"
 																type="password"
 															/>
 														</FormControl>
