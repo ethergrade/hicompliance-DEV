@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { AssigneeSelect } from "@/components/shared/AssigneeSelect";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCapabilities } from "@/hooks/useCapabilities";
@@ -77,7 +77,7 @@ export function DarkRiskEvidenceSheet({
 	const [finding, setFinding] = useState<DarkRiskFinding | null>(null);
 	const [events, setEvents] = useState<DarkRiskFindingEvent[]>([]);
 	const [state, setState] = useState<"idle" | "loading" | "missing" | "error">("idle");
-	const [assignee, setAssignee] = useState("");
+	const [assigneeUserId, setAssigneeUserId] = useState<string | null>(null);
 	const [actionStatus, setActionStatus] = useState("");
 	const [saving, setSaving] = useState(false);
 
@@ -98,7 +98,7 @@ export function DarkRiskEvidenceSheet({
 				if (cancelled) return;
 				setFinding(f);
 				setEvents(history);
-				setAssignee(f.assignee ?? "");
+				setAssigneeUserId(f.assigneeUserId);
 				setActionStatus(f.actionStatus ?? "");
 				setState("idle");
 			})
@@ -121,7 +121,7 @@ export function DarkRiskEvidenceSheet({
 		setSaving(true);
 		try {
 			const updated = await darkRiskGateway.updateFindingAction(companyId, groupId, id, {
-				assignee: assignee.trim() || null,
+				assignee_user_id: assigneeUserId,
 				action_status: actionStatus || null,
 			});
 			setFinding(updated);
@@ -194,7 +194,14 @@ export function DarkRiskEvidenceSheet({
 							>
 								<div className="space-y-1">
 									<Label htmlFor="evidence-assignee">Assegnatario</Label>
-									<Input id="evidence-assignee" value={assignee} maxLength={120} placeholder="Da assegnare" onChange={(e) => setAssignee(e.target.value)} />
+									<AssigneeSelect
+										id="evidence-assignee"
+										companyId={companyId}
+										groupId={groupId}
+										value={assigneeUserId}
+										currentName={finding.assignee}
+										onChange={setAssigneeUserId}
+									/>
 								</div>
 								<div className="space-y-1">
 									<Label htmlFor="evidence-action-status">Stato della verifica</Label>

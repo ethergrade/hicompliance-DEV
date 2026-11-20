@@ -361,6 +361,7 @@ export const parseFinding = (value: unknown): DarkRiskFinding => {
 		acknowledgedBy: nullableString(by.name),
 		acknowledgementNote: nullableString(item.acknowledgement_note),
 		assignee: nullableString(item.assignee),
+		assigneeUserId: nullableString(item.assignee_user_id),
 		actionStatus: nullableString(item.action_status),
 		compromiseType: nullableString(objectValue(item.metadata).compromise_type),
 	};

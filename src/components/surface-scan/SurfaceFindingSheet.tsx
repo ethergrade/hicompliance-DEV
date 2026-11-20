@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { AssigneeSelect } from "@/components/shared/AssigneeSelect";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { surfaceScan360Api } from "@/lib/api/surface-scan360";
@@ -77,7 +77,7 @@ export const SurfaceFindingSheet: React.FC<{ canManage: boolean }> = ({ canManag
 
 	const [finding, setFinding] = useState<Record<string, unknown> | null>(null);
 	const [state, setState] = useState<"idle" | "loading" | "missing" | "error">("idle");
-	const [assignee, setAssignee] = useState("");
+	const [assigneeUserId, setAssigneeUserId] = useState<string | null>(null);
 	const [actionStatus, setActionStatus] = useState<string>("");
 	const [saving, setSaving] = useState(false);
 
@@ -94,7 +94,7 @@ export const SurfaceFindingSheet: React.FC<{ canManage: boolean }> = ({ canManag
 			.then((data) => {
 				if (cancelled) return;
 				setFinding(data);
-				setAssignee(String(data.assignee ?? ""));
+				setAssigneeUserId(data.assignee_user_id ? String(data.assignee_user_id) : null);
 				setActionStatus(String(data.action_status ?? ""));
 				setState("idle");
 			})
@@ -119,7 +119,7 @@ export const SurfaceFindingSheet: React.FC<{ canManage: boolean }> = ({ canManag
 			const updated = await surfaceScan360Api.updateFindingAction(
 				organizationId,
 				findingId,
-				{ assignee: assignee.trim() || null, action_status: actionStatus || null },
+				{ assignee_user_id: assigneeUserId, action_status: actionStatus || null },
 				groupId,
 			);
 			setFinding(updated);
@@ -207,12 +207,13 @@ export const SurfaceFindingSheet: React.FC<{ canManage: boolean }> = ({ canManag
 							>
 								<div className="space-y-1">
 									<Label htmlFor="finding-assignee">Assegnatario</Label>
-									<Input
+									<AssigneeSelect
 										id="finding-assignee"
-										value={assignee}
-										maxLength={120}
-										placeholder="Da assegnare"
-										onChange={(e) => setAssignee(e.target.value)}
+										companyId={organizationId!}
+										groupId={groupId}
+										value={assigneeUserId}
+										currentName={finding.assignee ? String(finding.assignee) : null}
+										onChange={setAssigneeUserId}
 									/>
 								</div>
 								<div className="space-y-1">

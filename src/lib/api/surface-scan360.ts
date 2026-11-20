@@ -777,11 +777,11 @@ export const surfaceScan360Api = {
 		return res.data;
 	},
 
-	/** Assegnatario e stato dell'intervento (da_fare, in_corso, da_verificare). */
+	/** Assegnatario (utente dell'azienda) e stato dell'intervento (da_fare, in_corso, da_verificare). */
 	async updateFindingAction(
 		companyId: string,
 		findingId: string,
-		payload: { assignee?: string | null; action_status?: string | null },
+		payload: { assignee_user_id?: string | null; action_status?: string | null },
 		groupId?: string | null,
 	): Promise<Record<string, unknown>> {
 		const res = await complianceApiClient.patch<ApiResponse<Record<string, unknown>>>(

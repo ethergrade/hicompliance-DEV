@@ -187,6 +187,8 @@ export interface DarkRiskFinding {
 	acknowledgementNote: string | null;
 	/** Chi interviene; null = da assegnare. */
 	assignee: string | null;
+	/** Utente dell'azienda assegnato; il nome sta in `assignee`. */
+	assigneeUserId: string | null;
 	/** Stato della verifica: da_fare, in_corso, da_verificare; null = da valutare. */
 	actionStatus: string | null;
 	/** direct = riguarda direttamente il perimetro, indirect = terze parti. */

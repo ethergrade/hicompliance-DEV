@@ -71,7 +71,7 @@ export const darkRiskGateway = {
 		companyId: string,
 		groupId: string | null | undefined,
 		findingId: string,
-		payload: { assignee?: string | null; action_status?: string | null },
+		payload: { assignee_user_id?: string | null; action_status?: string | null },
 	): Promise<DarkRiskFinding> {
 		const response = await complianceApiClient.patch<ApiResponse<unknown>>(
 			`/companies/${companyId}/darkrisk/findings/${findingId}/action`,
