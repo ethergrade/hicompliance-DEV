@@ -16,10 +16,10 @@ interface CveDetailDialogProps {
 
 const severityColor = (sev?: string | null) => {
   switch ((sev || '').toUpperCase()) {
-    case 'CRITICAL': return 'bg-red-100 text-red-800 border-red-200';
-    case 'HIGH': return 'bg-orange-100 text-orange-800 border-orange-200';
-    case 'MEDIUM': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-    case 'LOW': return 'bg-green-100 text-green-800 border-green-200';
+    case 'CRITICAL': return 'bg-red-100 text-red-800 border-red-200 dark:bg-red-500/15 dark:text-red-300 dark:border-red-500/40';
+    case 'HIGH': return 'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-500/15 dark:text-orange-300 dark:border-orange-500/40';
+    case 'MEDIUM': return 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-500/15 dark:text-yellow-300 dark:border-yellow-500/40';
+    case 'LOW': return 'bg-green-100 text-green-800 border-green-200 dark:bg-green-500/15 dark:text-green-300 dark:border-green-500/40';
     default: return 'bg-muted text-muted-foreground';
   }
 };
@@ -129,13 +129,13 @@ export const CveDetailDialog: React.FC<CveDetailDialogProps> = ({ cveId, open, o
               </div>
 
               {intel.kev_required_action && (
-                <div className="p-3 rounded-lg border border-red-200 bg-red-50/40">
-                  <div className="flex items-center gap-2 font-semibold text-red-700 mb-1">
+                <div className="p-3 rounded-lg border border-red-500/40 bg-red-500/10">
+                  <div className="flex items-center gap-2 font-semibold text-red-700 dark:text-red-300 mb-1">
                     <AlertTriangle className="w-4 h-4" /> Azione richiesta CISA
                   </div>
-                  <p className="text-sm">{intel.kev_required_action}</p>
+                  <p className="text-sm text-foreground">{intel.kev_required_action}</p>
                   {intel.kev_due_date && (
-                    <p className="text-xs mt-1 text-red-700">
+                    <p className="text-xs mt-1 font-medium text-red-700 dark:text-red-300">
                       Scadenza: {new Date(intel.kev_due_date).toLocaleDateString('it-IT')}
                     </p>
                   )}
