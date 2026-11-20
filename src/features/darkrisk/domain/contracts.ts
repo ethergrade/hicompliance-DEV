@@ -187,6 +187,8 @@ export interface DarkRiskFinding {
 	status: string;
 	asset: string | null;
 	leakDate: string | null;
+	/** Id del rilievo SurfaceScan di origine, per i rilievi importati da lì. */
+	surfaceFindingId: string | null;
 	firstSeenAt: string | null;
 	lastSeenAt: string | null;
 	acknowledged: boolean;

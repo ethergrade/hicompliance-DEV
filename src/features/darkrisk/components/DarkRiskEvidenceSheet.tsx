@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -177,6 +177,16 @@ export function DarkRiskEvidenceSheet({
 							<Row label="Ultima osservazione" value={fmtDay(finding.lastSeenAt) ?? "Non disponibile"} />
 							<Row label="Assegnatario" value={finding.assignee ?? "Da assegnare"} />
 							<Row label="Verifica" value={ACTION_LABEL[finding.actionStatus ?? ""] ?? "Da valutare"} />
+							{finding.surfaceFindingId && (
+								<Row
+									label="Rilievo d'origine"
+									value={
+										<Link className="text-primary underline-offset-4 hover:underline" to={`/surface-scan?vista=azioni&finding=${encodeURIComponent(finding.surfaceFindingId)}`}>
+											Apri in SurfaceScan360
+										</Link>
+									}
+								/>
+							)}
 						</dl>
 
 						<div>

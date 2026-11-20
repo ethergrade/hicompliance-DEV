@@ -368,6 +368,7 @@ export const parseFinding = (value: unknown): DarkRiskFinding => {
 		status: stringValue(item.status, "new"),
 		asset: nullableString(item.affected_asset),
 		leakDate: nullableString(item.leak_date),
+		surfaceFindingId: nullableString(item.surface_finding_id),
 		firstSeenAt: nullableString(item.first_seen_at),
 		lastSeenAt: nullableString(item.last_seen_at),
 		acknowledged: item.acknowledged === true,
