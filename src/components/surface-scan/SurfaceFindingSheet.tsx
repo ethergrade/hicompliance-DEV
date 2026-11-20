@@ -55,7 +55,28 @@ const fmtDay = (value: unknown): string | null => {
 const actionTitle = (f: Record<string, unknown>): string => {
 	const type = String(f.finding_type ?? "");
 	if (type.startsWith("ssl_certificate_")) return "Rinnovare il certificato TLS";
+	if (type === "domain_expiry") return "Rinnovare il dominio";
 	return String(f.title ?? "Intervento");
+};
+
+/** Giorni di calendario da oggi alla data: calcolati alla visualizzazione, non alla rilevazione. */
+const daysUntil = (value: unknown): number | null => {
+	if (!value) return null;
+	const d = new Date(String(value));
+	if (Number.isNaN(d.getTime())) return null;
+	const oggi = new Date();
+	const utc = (x: Date) => Date.UTC(x.getFullYear(), x.getMonth(), x.getDate());
+	return Math.round((utc(d) - utc(oggi)) / 86_400_000);
+};
+
+const domainExpiryText = (expires: unknown, kind: unknown): string => {
+	const giorno = fmtDay(expires);
+	if (!giorno) return "Data non acquisita";
+	const giorni = daysUntil(expires);
+	const quando =
+		giorni === null ? "" : giorni < 0 ? ` (scaduto da ${-giorni} giorni)` : giorni === 0 ? " (scade oggi)" : ` (fra ${giorni} giorni)`;
+	const fonte = kind === "registry" ? " · dato del registro" : kind === "registrar" ? " · dato del registrar" : "";
+	return `${giorno}${quando}${fonte}`;
 };
 
 /** Le prime 20 CVE, poi quante ne restano: un servizio può averne decine. */
@@ -137,6 +158,7 @@ export const SurfaceFindingSheet: React.FC<{ canManage: boolean }> = ({ canManag
 
 	const evidence = (finding?.evidence ?? {}) as Record<string, unknown>;
 	const isTls = String(finding?.finding_type ?? "").startsWith("ssl_certificate_");
+	const isDomainExpiry = String(finding?.finding_type ?? "") === "domain_expiry";
 	const resolved = String(finding?.status ?? "") === "resolved";
 	const cvss = toCvss(finding?.cvss);
 	const host = String(finding?.affected_asset ?? finding?.ip ?? "");
@@ -179,6 +201,8 @@ export const SurfaceFindingSheet: React.FC<{ canManage: boolean }> = ({ canManag
 							<Row label="Ultima rilevazione" value={fmt(finding.last_seen_at) ?? fmt(finding.created_at) ?? "Data non acquisita"} />
 							{isTls && <Row label="Scadenza" value={fmtDay(evidence.valid_to) ?? "Data non acquisita"} />}
 							{isTls && evidence.issuer ? <Row label="Emittente" value={String(evidence.issuer)} /> : null}
+							{isDomainExpiry && <Row label="Scadenza" value={domainExpiryText(evidence.expires, evidence.expires_kind)} />}
+							{isDomainExpiry && evidence.registrar ? <Row label="Registrar" value={String(evidence.registrar)} /> : null}
 							{cvss !== null && <Row label="CVSS" value={cvss.toLocaleString("it-IT", { maximumFractionDigits: 1 })} />}
 							{Array.isArray(finding.cve) && finding.cve.length > 0 && <Row label="CVE" value={cveList(finding.cve as string[])} />}
 							<Row label="Assegnatario" value={String(finding.assignee ?? "").trim() || "Da assegnare"} />
