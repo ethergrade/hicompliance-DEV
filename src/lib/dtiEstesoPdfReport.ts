@@ -291,7 +291,7 @@ export function generateDtiEstesoPdf(report: DtiEstesoReportJson): void {
   const c = report.counters;
   const tc = report.tag_counts || {};
   if (c) {
-    kv('Sintesi', `${c.domains} domini · ${c.emails} email · ${report.total_creds || 0} password in chiaro · ${c.enriched_hits_total} evidenze · ${c.surface_findings_count} findings SurfaceScan`);
+    kv('Sintesi', `${c.domains} domini · ${c.emails} email · ${report.total_creds || 0} password esposte · ${c.enriched_hits_total} evidenze · ${c.surface_findings_count} findings SurfaceScan`);
   }
 
   // ===== PERIMETRO =====
@@ -365,7 +365,7 @@ export function generateDtiEstesoPdf(report: DtiEstesoReportJson): void {
       const k = d.dti_kpi;
       if (k) {
         subTitle('DTI - Rilevazioni DarkRisk360');
-        text(`Totale risultati: ${k.total_results}  ·  Password in chiaro: ${k.passwords}  ·  Hit sensibili: ${k.total_hits}`,
+        text(`Totale risultati: ${k.total_results}  ·  Password esposte: ${k.passwords}  ·  Hit sensibili: ${k.total_hits}`,
           { size: 9, bold: true, color: k.passwords > 0 ? [200, 50, 50] : [16, 133, 89] });
         const runs = (d.source_runs || []).filter((r) => String(r.status || '').toLowerCase() !== 'failed');
         if (runs.length > 0) {
@@ -377,9 +377,9 @@ export function generateDtiEstesoPdf(report: DtiEstesoReportJson): void {
 
       // Password in chiaro REALI (asset/username/password) — niente stringhe URL/segnali
       if ((d.passwords || []).length > 0) {
-        subTitle(`Password in chiaro rilevate (${d.passwords_total})`, [200, 50, 50]);
+        subTitle(`Password esposte rilevate (${d.passwords_total})`, [200, 50, 50]);
         text('Dati sensibili - riservato. Mostrare solo a personale autorizzato.', { size: 8, color: [200, 50, 50] });
-        drawTable(['#', 'Account / Username', 'Password in chiaro', 'Fonte', 'Data'],
+        drawTable(['#', 'Account / Username', 'Password (primi 3 car.)', 'Fonte', 'Data'],
           d.passwords.slice(0, 300).map((p, i) => [String(i + 1), String(p.username || '-'), p.value, p.collection_title, fmtDate(p.data_collection)]),
           [30, 150, 150, 120, 65]);
         if (d.passwords_total > d.passwords.length) {
@@ -402,9 +402,9 @@ export function generateDtiEstesoPdf(report: DtiEstesoReportJson): void {
   // ===== CREDENZIALI ESPOSTE — elenco globale password reali =====
   const allPw = report.all_passwords || [];
   if (allPw.length > 0) {
-    sectionTitle(`Credenziali esposte — Password in chiaro (${allPw.length})`);
+    sectionTitle(`Credenziali esposte — Password (${allPw.length})`);
     text('Dati sensibili - riservato. Mostrare solo a personale autorizzato.', { size: 8, color: [200, 50, 50] });
-    drawTable(['#', 'Asset', 'Account / Username', 'Password in chiaro', 'Fonte', 'Data'],
+    drawTable(['#', 'Asset', 'Account / Username', 'Password (primi 3 car.)', 'Fonte', 'Data'],
       allPw.slice(0, 500).map((p, i) => [String(i + 1), p.asset, String(p.username || '-'), p.value, p.source, fmtDate(p.date)]),
       [28, 110, 120, 120, 72, 65]);
     if (allPw.length > 500) text(`Mostrate 500 di ${allPw.length} password.`, { size: 8, color: [MUTED.r, MUTED.g, MUTED.b] });
@@ -447,7 +447,7 @@ export function generateDtiEstesoPdf(report: DtiEstesoReportJson): void {
     const tcol = sevColor(ra.threat_score);
     text(`Threat Score complessivo: ${ra.threat_score}`, { size: 11, bold: true, color: tcol });
     const cnt = report.counters;
-    if (cnt) text(`Basato su ${cnt.passwords_count} password in chiaro, ${cnt.surface_findings_count} findings SurfaceScan, ${cnt.enriched_hits_total} evidenze sensibili.`,
+    if (cnt) text(`Basato su ${cnt.passwords_count} password esposte, ${cnt.surface_findings_count} findings SurfaceScan, ${cnt.enriched_hits_total} evidenze sensibili.`,
       { size: 9, color: [MUTED.r, MUTED.g, MUTED.b] });
   }
 

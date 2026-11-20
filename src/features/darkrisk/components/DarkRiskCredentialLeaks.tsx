@@ -1,6 +1,7 @@
 // Credenziali esposte (profilo Esteso).
 //
-// Nel profilo Esteso il backend manda account e password in chiaro
+// Nel profilo Esteso il backend manda l'account intero e la password con i soli
+// primi tre caratteri
 // (`clearAccount`, `clearValue`) a tutti gli utenti del gruppo. Sugli hit
 // ingeriti prima che l'account venisse conservato `clearAccount` è null e la
 // riga mostra il selector (dominio o email cercata). Nessun reveal né copia:
@@ -321,7 +322,7 @@ export function DarkRiskCredentialLeaks({ records, onExport, limit = 50, company
 				</div>
 
 				<p className="text-[11px] leading-snug text-muted-foreground">
-					Profilo Esteso: account e password sono mostrati in chiaro. Una riga per credenziale, anche se
+					Profilo Esteso: l'account è mostrato per intero, la password solo con i primi tre caratteri. Una riga per credenziale, anche se
 					la rilevano più scansioni. Le righe senza account provengono da scansioni precedenti e riportano
 					il dominio o l'email cercata. Il riconoscimento vale solo per le credenziali scelte.
 				</p>

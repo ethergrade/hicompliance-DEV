@@ -243,8 +243,8 @@ export default function ExtendedDarkRiskPage() {
 				) : (
 					<>
 						<div className="rounded-md border border-amber-500/25 bg-amber-500/5 p-3 text-sm text-amber-100">
-							<strong>Dati altamente sensibili.</strong> Account e password sono
-							mostrati in chiaro: trattali con riservatezza e non condividere
+							<strong>Dati altamente sensibili.</strong> Gli account sono mostrati
+							per intero, le password solo con i primi tre caratteri: trattali con riservatezza e non condividere
 							export o schermate al di fuori del cliente. Le credenziali provengono
 							dal bucket <code>leaks.private.general</code>.
 						</div>

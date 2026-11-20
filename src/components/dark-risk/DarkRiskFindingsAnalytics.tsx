@@ -276,7 +276,7 @@ function IdentityCredentialTooltip({ active, payload, label }: any) {
         <span className="text-foreground font-semibold">{row.domains}</span>
       </div>
       <p className="text-[11px] text-muted-foreground mb-1">
-        Password in chiaro (lista completa):
+        Password esposte (primi tre caratteri, lista completa):
       </p>
       {preview.length === 0 ? (
         <p className="text-[11px] text-muted-foreground">
@@ -876,7 +876,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{
             return (
               <p className="mt-3 text-xs text-amber-300">
                 Sono presenti segnali di compromissione credenziale ma non sono
-                stati estratti valori password in chiaro dai payload correnti.
+                stati estratti valori password dai payload correnti.
               </p>
             );
           })()}
@@ -1038,7 +1038,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{
         <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
           <div className="flex items-center justify-between gap-3 mb-3">
             <p className="text-sm font-medium">
-              Compromissioni credenziali rilevate (lista in chiaro per identity)
+              Compromissioni credenziali rilevate (per identity)
             </p>
             <Badge variant="outline">
               {
@@ -1060,7 +1060,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{
                   <tr className="border-b border-border/60 text-left text-muted-foreground">
                     <th className="py-2 pr-3">Identity (Email)</th>
                     <th className="py-2 pr-3">Password valide</th>
-                    <th className="py-2 pr-3">Password in chiaro</th>
+                    <th className="py-2 pr-3">Password (primi 3 caratteri)</th>
                     <th className="py-2 pr-3">Domini</th>
                     <th className="py-2 pr-3">Altri dati</th>
                     <th className="py-2 pr-3">Marcato il</th>
@@ -1241,7 +1241,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{
                               ) : null}
                               {row.passwordValues.length === 0 ? (
                                 <div className="text-[11px] text-muted-foreground">
-                                  Nessuna password valida in chiaro nel campione
+                                  Nessuna password valida nel campione
                                   corrente.
                                 </div>
                               ) : null}
