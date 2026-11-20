@@ -17,6 +17,8 @@ import { darkRiskGateway } from "../api/darkRiskGateway";
 import { presentDarkRiskFindingType } from "@/lib/darkrisk/presentation";
 import type { DarkRiskFinding } from "../domain/contracts";
 import { AckDialog, AckHistoryDialog, type AckTarget } from "./DarkRiskAckDialogs";
+import { useSearchParams } from "react-router-dom";
+import { EVIDENCE_PARAM } from "./DarkRiskEvidenceSheet";
 
 const PER_PAGE = 25;
 
@@ -66,6 +68,12 @@ interface Props {
 export function DarkRiskFindingsList({ companyId, groupId, scope }: Props) {
 	const { hasCapability } = useCapabilities();
 	const canAck = hasCapability("darkrisk.findings.ack");
+	const [urlParams, setUrlParams] = useSearchParams();
+	const openEvidence = (id: string) => {
+		const next = new URLSearchParams(urlParams);
+		next.set(EVIDENCE_PARAM, id);
+		setUrlParams(next);
+	};
 
 	const [q, setQ] = useState("");
 	const [type, setType] = useState("all");
@@ -197,6 +205,7 @@ export function DarkRiskFindingsList({ companyId, groupId, scope }: Props) {
 										canAck={canAck}
 										onAck={() => setAckTarget({ findingId: f.id, title: f.title, acknowledged: f.acknowledged })}
 										onHistory={() => setHistoryTarget({ findingId: f.id, title: f.title })}
+										onOpen={() => openEvidence(f.id)}
 									/>
 								))}
 							</TableBody>
@@ -232,18 +241,27 @@ function FindingRow({
 	canAck,
 	onAck,
 	onHistory,
+	onOpen,
 }: {
 	finding: DarkRiskFinding;
 	canAck: boolean;
 	onAck: () => void;
 	onHistory: () => void;
+	onOpen: () => void;
 }) {
 	const sev = SEVERITY[f.severity] ?? SEVERITY.info;
 
 	return (
 		<TableRow className="align-top">
 			<TableCell className="max-w-sm">
-				<div className="font-medium">{f.title}</div>
+				{/* Il titolo apre la scheda: prima il clic non portava a nessun dettaglio. */}
+				<button
+					type="button"
+					className="text-left font-medium underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+					onClick={onOpen}
+				>
+					{f.title}
+				</button>
 				<div className="text-xs text-muted-foreground">{FINDING_TYPE_LABEL[f.findingType] ?? presentDarkRiskFindingType(f.findingType)}</div>
 			</TableCell>
 			<TableCell><Badge variant={sev.variant}>{sev.label}</Badge></TableCell>

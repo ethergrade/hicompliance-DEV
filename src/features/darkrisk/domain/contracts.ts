@@ -185,6 +185,12 @@ export interface DarkRiskFinding {
 	acknowledgedAt: string | null;
 	acknowledgedBy: string | null;
 	acknowledgementNote: string | null;
+	/** Chi interviene; null = da assegnare. */
+	assignee: string | null;
+	/** Stato della verifica: da_fare, in_corso, da_verificare; null = da valutare. */
+	actionStatus: string | null;
+	/** direct = riguarda direttamente il perimetro, indirect = terze parti. */
+	compromiseType: string | null;
 }
 
 export interface DarkRiskFindingPage {

@@ -54,6 +54,33 @@ export const darkRiskGateway = {
 		return parseFindingPage(await getData(`/companies/${companyId}/darkrisk/findings`, groupId, filters));
 	},
 
+	/** Dettaglio di un'evidenza; `scope=extended` solo dalla pagina Esteso. */
+	async getFinding(
+		companyId: string,
+		groupId: string | null | undefined,
+		findingId: string,
+		scope: "standard" | "extended" = "standard",
+	): Promise<DarkRiskFinding> {
+		return parseFinding(
+			await getData(`/companies/${companyId}/darkrisk/findings/${findingId}`, groupId, scope === "extended" ? { scope } : undefined),
+		);
+	},
+
+	/** Assegnatario e stato della verifica. */
+	async updateFindingAction(
+		companyId: string,
+		groupId: string | null | undefined,
+		findingId: string,
+		payload: { assignee?: string | null; action_status?: string | null },
+	): Promise<DarkRiskFinding> {
+		const response = await complianceApiClient.patch<ApiResponse<unknown>>(
+			`/companies/${companyId}/darkrisk/findings/${findingId}/action`,
+			payload,
+			requestOptions(groupId),
+		);
+		return parseFinding(response.data);
+	},
+
 	async acknowledgeFinding(
 		companyId: string,
 		groupId: string | null | undefined,

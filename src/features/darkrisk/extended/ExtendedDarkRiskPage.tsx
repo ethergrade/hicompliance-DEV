@@ -31,6 +31,7 @@ import { exportCredentialLeaksXlsx, exportRunRecordsXlsx } from "../shared/expor
 import type { CredentialLeak } from "../domain/contracts";
 import { ReportList } from "../shared/ReportList";
 import { DarkRiskFindingsList } from "../components/DarkRiskFindingsList";
+import { DarkRiskEvidenceSheet } from "../components/DarkRiskEvidenceSheet";
 import { DarkRiskMonitoringCoverage } from "../components/DarkRiskMonitoringCoverage";
 import { ScopeEditor } from "../shared/ScopeEditor";
 import { useDarkRiskEntitlements } from "../shared/useDarkRiskEntitlements";
@@ -418,6 +419,7 @@ export default function ExtendedDarkRiskPage() {
 						</Card>
 						<DarkRiskMonitoringCoverage coverage={overviewQuery.data?.monitoringCoverage} />
 						{organizationId && <DarkRiskFindingsList companyId={organizationId} groupId={groupId} scope="extended" />}
+						{organizationId && <DarkRiskEvidenceSheet companyId={organizationId} groupId={groupId} scope="extended" />}
 
 						<ReportList
 							title="Report per scansione"

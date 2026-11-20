@@ -10,7 +10,7 @@ import {
 	Target,
 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,17 @@ import { DarkRiskFindingsList } from "../components/DarkRiskFindingsList";
 import { DarkRiskMonitoringCoverage } from "../components/DarkRiskMonitoringCoverage";
 import { ScopeEditor } from "../shared/ScopeEditor";
 import { useDarkRiskEntitlements } from "../shared/useDarkRiskEntitlements";
+import { DarkRiskEvidenceSheet } from "../components/DarkRiskEvidenceSheet";
+import { DarkRiskTodo } from "../components/DarkRiskTodo";
+
+// Stesse quattro viste di SurfaceScan360, con la vista nell'URL (?vista=…).
+const VIEWS = [
+	{ key: "panoramica", label: "Panoramica" },
+	{ key: "azioni", label: "Azioni" },
+	{ key: "perimetro", label: "Perimetro" },
+	{ key: "report", label: "Report" },
+] as const;
+type DarkRiskView = (typeof VIEWS)[number]["key"];
 
 const formatDate = (value: string | null) =>
 	value
@@ -52,6 +63,15 @@ export default function StandardDarkRiskPage() {
 	} = useDarkRiskEntitlements(organizationId, groupId);
 	const canManage = isSuperAdmin || userProfile?.user_type === "admin";
 	const queryClient = useQueryClient();
+	const [searchParams, setSearchParams] = useSearchParams();
+	const requested = searchParams.get("vista");
+	const view: DarkRiskView = VIEWS.some((v) => v.key === requested) ? (requested as DarkRiskView) : "panoramica";
+	const setView = (next: DarkRiskView) => {
+		const params = new URLSearchParams(searchParams);
+		params.set("vista", next);
+		setSearchParams(params);
+		window.scrollTo({ top: 0 });
+	};
 
 	const scopeQuery = useQuery({
 		queryKey: darkRiskQueryKeys.scope(organizationId),
@@ -225,6 +245,25 @@ export default function StandardDarkRiskPage() {
 					</Card>
 				) : (
 					<>
+						<nav aria-label="Sezioni DarkRisk360" className="flex min-w-0 gap-1 overflow-x-auto rounded-md bg-muted p-1">
+							{VIEWS.map((v) => (
+								<Button
+									key={v.key}
+									variant="ghost"
+									size="sm"
+									aria-current={view === v.key ? "page" : undefined}
+									className={`h-9 shrink-0 px-3 text-xs font-semibold ${view === v.key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
+									onClick={() => setView(v.key)}
+								>
+									{v.label}
+								</Button>
+							))}
+						</nav>
+
+						{view === "panoramica" && organizationId && (
+							<DarkRiskTodo companyId={organizationId} groupId={groupId} onShowAll={() => setView("azioni")} />
+						)}
+						{view === "panoramica" && (
 						<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
 							{cards.map(({ label, value, hint, icon: Icon }) => (
 								<Card key={label} className="border-cyan-500/10">
@@ -245,6 +284,14 @@ export default function StandardDarkRiskPage() {
 								</Card>
 							))}
 						</div>
+						)}
+						{view === "panoramica" && <DarkRiskMonitoringCoverage coverage={overview?.monitoringCoverage} />}
+
+						{view === "perimetro" && (
+						<>
+						<p className="text-sm text-muted-foreground">
+							Lo scope è condiviso con SurfaceScan360: una modifica qui vale anche per la superficie esposta.
+						</p>
 						<div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
 							<ScopeEditor
 								scope={scopeQuery.data ?? { targets: [] }}
@@ -283,6 +330,12 @@ export default function StandardDarkRiskPage() {
 								</CardContent>
 							</Card>
 						</div>
+						<DarkRiskNotificationConfigCard />
+						</>
+						)}
+
+						{view === "report" && (
+						<>
 						<Card>
 							<CardHeader>
 								<CardTitle className="text-base">Trend settimanale</CardTitle>
@@ -376,16 +429,20 @@ export default function StandardDarkRiskPage() {
 							</Card>
 						)}
 
-						<DarkRiskMonitoringCoverage coverage={overview?.monitoringCoverage} />
-						{organizationId && <DarkRiskFindingsList companyId={organizationId} groupId={groupId} scope="standard" />}
-
 						<ReportList
 							title="Report mensili"
 							reports={reportsQuery.data ?? []}
 							isLoading={reportsQuery.isLoading}
 							onDownload={handleDownloadReport}
 						/>
-						<DarkRiskNotificationConfigCard />
+						</>
+						)}
+
+						{view === "azioni" && organizationId && (
+							<DarkRiskFindingsList companyId={organizationId} groupId={groupId} scope="standard" />
+						)}
+
+						{organizationId && <DarkRiskEvidenceSheet companyId={organizationId} groupId={groupId} scope="standard" />}
 					</>
 				)}
 			</div>

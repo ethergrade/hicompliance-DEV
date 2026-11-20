@@ -58,17 +58,22 @@ function MiniPie({ data }: { data: Record<string, number> }) {
 
 function AssetCard({ asset, data, defaultOpen = false }: { asset: string; data: AssetData; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
+  const panelId = `darkrisk-asset-${asset.replace(/[^a-z0-9]+/gi, "-")}`;
   const topSources = Object.entries(data.bySource).sort((a, b) => b[1] - a[1]).slice(0, 3);
 
   return (
     <div className="border border-border rounded-lg overflow-hidden">
       <button
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/40 transition-colors text-left"
+        type="button"
+        aria-expanded={open}
+        aria-controls={panelId}
+        aria-label={`${open ? "Nascondi" : "Mostra"} il dettaglio di ${asset}`}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/40 transition-colors text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => setOpen((o) => !o)}
       >
         <div className="flex items-center gap-3 min-w-0">
           <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
-          <span className="font-mono text-sm font-medium truncate">{asset}</span>
+          <span className="font-mono text-sm font-medium break-all">{asset}</span>
           <div className="flex gap-1.5 flex-wrap">
             {topSources.map(([k, v]) => (
               <Badge key={k} variant="secondary" className="text-[10px] px-1.5 py-0">
@@ -79,12 +84,12 @@ function AssetCard({ asset, data, defaultOpen = false }: { asset: string; data: 
         </div>
         <div className="flex items-center gap-3 shrink-0 ml-3">
           <span className="text-sm font-semibold text-foreground">{data.total}</span>
-          {open ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+          {open ? <ChevronDown className="h-4 w-4 text-muted-foreground" aria-hidden /> : <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden />}
         </div>
       </button>
 
       {open && (
-        <div className="border-t border-border bg-muted/20 px-4 py-3">
+        <div id={panelId} className="border-t border-border bg-muted/20 px-4 py-3">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-xs font-medium text-muted-foreground mb-2">Sorgenti</p>
@@ -109,7 +114,7 @@ function AssetCard({ asset, data, defaultOpen = false }: { asset: string; data: 
                   <div key={k} className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-1.5">
                       <div className="h-2 w-2 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
-                      <span className="text-muted-foreground capitalize">{k}</span>
+                      <span className="text-muted-foreground">{k}</span>
                     </div>
                     <span className="font-medium">{v}</span>
                   </div>
