@@ -30,9 +30,19 @@ const ExternalEndpointsPanel: React.FC = () => {
 	const { endpoints, loading, saving, isAdmin, runEndpoint } =
 		useSurfaceExternalEndpoints();
 
+	const endpointStatusLabel = (status: string): string =>
+		({
+			completed: "Completata",
+			partial: "Parziale",
+			running: "In corso",
+			pending: "In coda",
+			failed: "Fallita",
+		})[status] ?? status;
+
 	const statusVariant = (status: string | null) => {
 		switch (status) {
 			case "completed":
+			case "partial":
 				return "default" as const;
 			case "running":
 			case "pending":
@@ -98,7 +108,11 @@ const ExternalEndpointsPanel: React.FC = () => {
 									<TableCell className="capitalize">{ep.scan_profile}</TableCell>
 									<TableCell>
 										<Badge variant={statusVariant(ep.last_status)}>
-											{ep.last_status ?? (ep.enabled ? "idle" : "disabled")}
+											{ep.last_status
+												? endpointStatusLabel(ep.last_status)
+												: ep.enabled
+													? "Mai eseguito"
+													: "Disattivato"}
 										</Badge>
 									</TableCell>
 									<TableCell>{ep.last_grade ?? "—"}</TableCell>
@@ -107,7 +121,7 @@ const ExternalEndpointsPanel: React.FC = () => {
 									</TableCell>
 									<TableCell className="text-xs">
 										{ep.last_scan_at
-											? new Date(ep.last_scan_at).toLocaleString()
+											? new Date(ep.last_scan_at).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })
 											: "—"}
 									</TableCell>
 									{isAdmin && (

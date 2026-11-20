@@ -38,6 +38,7 @@ import {
   type SurfaceMonitoredScopeRule,
 } from '@/lib/surfaceScopeGuard';
 import { publicSourceLabel } from '@/lib/surfaceSourceLabels';
+import { jobPostureScore, jobRiskLevel } from '@/lib/surfacescan/riskLevel';
 
 interface SurfaceScanModuleCardsProps {
   isAdminView?: boolean;
@@ -261,12 +262,6 @@ const scoreTone = (score: number): string => {
   return 'bg-red-500/20 text-red-300 border-red-500/30';
 };
 
-const riskLevelFromScore = (score: number): string => {
-  if (score < 40) return 'critico';
-  if (score < 60) return 'high';
-  if (score < 80) return 'medium';
-  return 'low';
-};
 
 const toLabelValue = (value: unknown): string | null => {
   const text = String(value || '').trim();
@@ -305,9 +300,9 @@ const extractFindingTargets = (finding: FindingRow): string[] => {
 
 const formatRiskLevel = (risk: string | null | undefined): string => {
   const key = String(risk || '').toLowerCase();
-  if (key === 'low') return 'Basso';
-  if (key === 'medium') return 'Medio';
-  if (key === 'high') return 'Alto';
+  if (key === 'low' || key === 'basso') return 'Basso';
+  if (key === 'medium' || key === 'medio') return 'Medio';
+  if (key === 'high' || key === 'alto') return 'Alto';
   if (key === 'critical' || key === 'critico') return 'Critico';
   return 'N/D';
 };
@@ -665,8 +660,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
           const completedWithScore = sorted.find((entry) => {
             const status = String(entry.status || '').toLowerCase();
             if (!['completed', 'partial', 'success'].includes(status)) return false;
-            const score = Number(entry.summary?.overall_score);
-            return Number.isFinite(score);
+            return jobPostureScore(entry.summary) !== null;
           });
           const completedAny = sorted.find((entry) => ['completed', 'partial', 'success'].includes(String(entry.status || '').toLowerCase()));
           selectedByTarget.set(targetKey, completedWithScore || completedAny || liveJob);
@@ -736,11 +730,10 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
       const canonicalLabel = extractHostFromTarget(rawLabel) || rawLabel;
       const targetKey = scopeTargetKeyFromTarget(canonicalLabel);
       const liveJob = latestLiveScopeJobs[targetKey];
-      const score = Number(job.summary?.overall_score);
-      const hasScore = Number.isFinite(score);
-      const riskFromSummary = String(job.summary?.risk_level || '').toLowerCase();
-      const computedRisk = hasScore ? riskLevelFromScore(score) : 'unknown';
-      const riskLevel = riskFromSummary || computedRisk;
+      const score = jobPostureScore(job.summary);
+      const hasScore = score !== null;
+      // Una sola regola per la fascia: quella del server (vedi riskLevel.ts).
+      const riskLevel = jobRiskLevel(job.summary) ?? 'unknown';
       return {
         id: job.id,
         targetKey,
@@ -751,7 +744,7 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
         liveCreatedAt: liveJob?.created_at || job.created_at || null,
         snapshotSource: liveJob?.id && String(liveJob.id) !== String(job.id) ? 'last_good' : 'live',
         profile: String(liveJob?.scan_profile || job.scan_profile || '-'),
-        score: hasScore ? Math.round(score) : null,
+        score: hasScore ? Math.round(score as number) : null,
         riskLevel,
         completedAt: job.completed_at,
         liveErrorMessage: String(liveJob?.error_message || job.error_message || '').trim() || null,
@@ -1247,19 +1240,11 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
 
   const scoreSummary = useMemo(() => {
     const scores = latestScopeJobs
-      .map((entry) => Number(entry.summary?.overall_score))
-      .filter((entry) => Number.isFinite(entry));
-    if (scores.length === 0) {
-      return {
-        overallScore: 0,
-        riskLevel: 'unknown',
-      };
-    }
-    const avgScore = Math.round(scores.reduce((acc, value) => acc + value, 0) / scores.length);
-    return {
-      overallScore: avgScore,
-      riskLevel: riskLevelFromScore(avgScore),
-    };
+      .map((entry) => jobPostureScore(entry.summary))
+      .filter((entry): entry is number => entry !== null);
+    // Senza punteggi la media non esiste: niente «0/100».
+    if (scores.length === 0) return { overallScore: null as number | null };
+    return { overallScore: Math.round(scores.reduce((acc, value) => acc + value, 0) / scores.length) };
   }, [latestScopeJobs]);
 
   const filteredScopeTargetRows = useMemo(() => {
@@ -1651,7 +1636,11 @@ export const SurfaceScanModuleCards: React.FC<SurfaceScanModuleCardsProps> = ({
             </div>
             <div className="rounded-lg border border-border p-3">
               <p className="text-xs text-muted-foreground">Score medio scope</p>
-              <Badge className={scoreTone(scoreSummary.overallScore)}>{scoreSummary.overallScore}/100</Badge>
+              {scoreSummary.overallScore !== null ? (
+                <Badge className={scoreTone(scoreSummary.overallScore)}>{scoreSummary.overallScore}/100</Badge>
+              ) : (
+                <Badge variant="outline">N/D</Badge>
+              )}
             </div>
             <div className="rounded-lg border border-border p-3">
               <p className="text-xs text-muted-foreground">Ultimo aggiornamento scope</p>

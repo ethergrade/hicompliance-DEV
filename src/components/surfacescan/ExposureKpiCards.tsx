@@ -18,9 +18,11 @@ export const ExposureKpiCards: React.FC<ExposureKpiCardsProps> = ({
   loading = false,
   onAssetsClick,
 }) => {
-  const postureScore = Number(summary?.posture_score ?? 100);
-  const riskLevel = summary?.risk_level || 'Basso';
-  const riskPoints = Number(summary?.risk_points ?? 0);
+  // Punteggio e fascia vengono dal server, dalle stesse soglie del report
+  // mensile. Senza punteggio non si inventa «100/100 · Basso».
+  const postureScore = summary?.posture_score ?? null;
+  const riskLevel = postureScore !== null ? summary?.risk_level ?? null : null;
+  const riskPoints = summary?.risk_points ?? null;
 
   const valueOrPlaceholder = (value: string | number) => (loading ? placeholder : value);
 
@@ -91,13 +93,21 @@ export const ExposureKpiCards: React.FC<ExposureKpiCardsProps> = ({
             <div className="space-y-1">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Indice postura exposure</p>
               <div className="flex items-center gap-2">
-                <p className="text-2xl font-semibold">{valueOrPlaceholder(`${postureScore}/100`)}</p>
-                <Badge className={severityBadgeClass(riskLevel === 'Critico' ? 'critical' : riskLevel === 'Alto' ? 'high' : riskLevel === 'Medio' ? 'medium' : 'low')}>
-                  Rischio {riskLevel}
-                </Badge>
+                <p className="text-2xl font-semibold">
+                  {valueOrPlaceholder(postureScore !== null ? `${Math.round(Number(postureScore))}/100` : 'Non disponibile')}
+                </p>
+                {riskLevel && (
+                  <Badge className={severityBadgeClass(riskLevel === 'Critico' ? 'critical' : riskLevel === 'Alto' ? 'high' : riskLevel === 'Medio' ? 'medium' : 'low')}>
+                    Rischio {riskLevel}
+                  </Badge>
+                )}
                 {summary?.score_version && <Badge variant="outline">V{summary.score_version}</Badge>}
               </div>
-              <p className="text-xs text-muted-foreground">100 = postura ottima · {riskPoints} punti rischio</p>
+              <p className="text-xs text-muted-foreground">
+                {postureScore !== null
+                  ? `100 = postura ottima · ${riskPoints ?? 0} punti rischio`
+                  : 'Nessuna scansione utilizzabile per calcolare il punteggio'}
+              </p>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <AlertTriangle className="w-3.5 h-3.5" />
                 <span>{summary?.vulnerability_summary?.exposure_findings || 0} esposizioni di servizio operative</span>

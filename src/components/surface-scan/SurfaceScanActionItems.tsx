@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { ArrowRight, Loader2 } from 'lucide-react';
+import { toCvss } from '@/lib/surfacescan/normalize';
 import { surfaceScan360Api } from '@/lib/api/surface-scan360';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 import {
@@ -9,6 +11,8 @@ import {
 } from '@/lib/surfacescan/storageFindingPresentation';
 
 interface ActionItem {
+  /** ID del finding: serve per aprirne il dettaglio, non la posizione in lista. */
+  id: string;
   rank: number;
   title: string;
   detail: string;
@@ -29,26 +33,42 @@ const severityStyle: Record<string, string> = {
 export const SurfaceScanActionItems: React.FC = () => {
   const { organizationId, groupId } = useClientOrganization();
   const [items, setItems] = useState<ActionItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  // Un errore non è «nessuna vulnerabilità»: prima `.catch(() => [])` lo
+  // trasformava in una falsa rassicurazione.
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
 
   useEffect(() => {
+    setItems([]);
+    setFailed(false);
     if (!organizationId) return;
     let cancelled = false;
 
     const load = async () => {
       setLoading(true);
 
-      const raw = await surfaceScan360Api.getFindings(organizationId, {
-        status: 'open',
-        severity: 'critical,high',
-        per_page: 50,
-      }, groupId).catch(() => []);
+      let raw: unknown[];
+      try {
+        raw = await surfaceScan360Api.getFindings(organizationId, {
+          status: 'open',
+          severity: 'critical,high',
+          per_page: 50,
+        }, groupId);
+      } catch {
+        if (!cancelled) {
+          setFailed(true);
+          setLoading(false);
+        }
+        return;
+      }
 
       // Sort client-side: cisa_kev DESC, cvss DESC, severity ASC
       const findings = [...(raw as any[])].sort((a, b) => {
         if (Boolean(b.cisa_kev) !== Boolean(a.cisa_kev)) return Boolean(b.cisa_kev) ? 1 : -1;
-        const aScore = Number(a.cvss ?? -1);
-        const bScore = Number(b.cvss ?? -1);
+        const aScore = toCvss(a.cvss) ?? -1;
+        const bScore = toCvss(b.cvss) ?? -1;
         if (bScore !== aScore) return bScore - aScore;
         const order: Record<string, number> = { critical: 0, high: 1 };
         return (order[a.severity] ?? 2) - (order[b.severity] ?? 2);
@@ -67,13 +87,14 @@ export const SurfaceScanActionItems: React.FC = () => {
             : `Risolvere ${f.finding_type?.replace(/_/g, ' ') || 'vulnerabilità'} su ${asset}`;
 
           return {
+            id: String(f.id),
             rank: idx + 1,
             title: String(f.title || f.finding_type || 'Vulnerabilità'),
             detail,
             severity: String(f.severity || 'high').toLowerCase(),
             asset,
             isKev: Boolean(f.cisa_kev),
-            cvss: f.cvss != null ? Number(f.cvss) : null,
+            cvss: toCvss(f.cvss),
           };
         });
         setItems(ranked);
@@ -83,7 +104,16 @@ export const SurfaceScanActionItems: React.FC = () => {
 
     load();
     return () => { cancelled = true; };
-  }, [organizationId, groupId]);
+  }, [organizationId, groupId, attempt]);
+
+  if (failed) {
+    return (
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-500/40 p-4 text-sm" role="alert">
+        <span>Non è stato possibile caricare le priorità: il dato non è disponibile, non vuol dire che non ce ne siano.</span>
+        <Button size="sm" variant="outline" onClick={retry}>Riprova</Button>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -97,7 +127,7 @@ export const SurfaceScanActionItems: React.FC = () => {
   if (items.length === 0) {
     return (
       <div className="rounded-lg border border-border p-4 text-sm text-muted-foreground">
-        Nessuna vulnerabilità critica/alta aperta rilevata.
+        Nessuna vulnerabilità critica o alta aperta nei dati disponibili.
       </div>
     );
   }
@@ -110,7 +140,7 @@ export const SurfaceScanActionItems: React.FC = () => {
         </p>
       </div>
       {items.map((item) => (
-        <div key={item.rank} className="flex items-start gap-3 px-4 py-3">
+        <div key={item.id} className="flex items-start gap-3 px-4 py-3" data-finding-id={item.id}>
           <div className="flex-shrink-0 w-6 h-6 rounded-full bg-muted/50 flex items-center justify-center text-xs font-bold text-muted-foreground">
             {item.rank}
           </div>

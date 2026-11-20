@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
-import { AlertTriangle, CheckCircle2, ShieldAlert, TrendingDown } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ShieldAlert } from 'lucide-react';
 import { surfaceScan360Api } from '@/lib/api/surface-scan360';
 import { useClientOrganization } from '@/hooks/useClientOrganization';
 
 interface Alert {
-  type: 'cert_expiry' | 'cisa_kev' | 'score_drop' | 'critical_port';
+  type: 'cert_expiry' | 'cisa_kev' | 'critical_finding' | 'critical_port';
   label: string;
   detail: string;
   level: 'critical' | 'warning' | 'info';
@@ -14,9 +14,13 @@ interface Alert {
 export const SurfaceScanAlertBanner: React.FC = () => {
   const { organizationId, groupId } = useClientOrganization();
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  // Se nessuna fonte risponde il banner non può dire «tutto a posto».
+  const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
+    setAlerts([]);
+    setUnavailable(false);
     if (!organizationId) return;
     let cancelled = false;
 
@@ -24,14 +28,16 @@ export const SurfaceScanAlertBanner: React.FC = () => {
       setLoading(true);
       const found: Alert[] = [];
 
-      const [certFindings, kevFindings, recentJobs] = await Promise.allSettled([
+      const [certFindings, kevFindings, criticalFindings] = await Promise.allSettled([
         surfaceScan360Api.getFindings(organizationId, {
           finding_type: 'ssl_certificate_expired,ssl_certificate_expiring_15d,ssl_certificate_expiring_30d',
           status: 'open',
           per_page: 5,
         }, groupId),
         surfaceScan360Api.getCisaKev(organizationId, { status: 'open' }, groupId),
-        surfaceScan360Api.listJobs(organizationId, { status: 'completed', per_page: 2 }, groupId),
+        // Le stesse critiche aperte delle priorità: prima una CVE da 9,9 non
+        // in KEV lasciava il banner verde accanto a una priorità critica.
+        surfaceScan360Api.getFindings(organizationId, { status: 'open', severity: 'critical', per_page: 50 }, groupId),
       ]);
 
       // 1. SSL cert expiry
@@ -55,19 +61,20 @@ export const SurfaceScanAlertBanner: React.FC = () => {
         found.push({ type: 'cisa_kev', label: `${kevs.length} CVE CISA KEV`, detail: `${kevs[0].title || 'CVE attivamente sfruttata'} su ${kevs[0].affected_asset || '-'}`, level: 'critical' });
       }
 
-      // 3. Score drop — compare last 2 completed jobs' posture score
-      const jobs = (recentJobs.status === 'fulfilled' ? recentJobs.value : []) as any[];
-      if (jobs.length === 2) {
-        const latest = Number(jobs[0]?.posture_score ?? jobs[0]?.summary?.overall_score ?? 0);
-        const prev = Number(jobs[1]?.posture_score ?? jobs[1]?.summary?.overall_score ?? 0);
-        const drop = prev - latest;
-        if (drop > 10) {
-          found.push({ type: 'score_drop', label: `Score -${drop.toFixed(0)}pt`, detail: `Punteggio sceso da ${prev.toFixed(0)} a ${latest.toFixed(0)} rispetto alla settimana scorsa`, level: 'warning' });
-        }
+      // 3. Vulnerabilità critiche aperte. Il calo di punteggio fra due job
+      // non si usa più: la postura del singolo job non è affidabile (la
+      // deduplica lascia porte e finding sul job che li ha visti per primo).
+      const criticals = (criticalFindings.status === 'fulfilled' ? criticalFindings.value : []) as any[];
+      if (criticals.length > 0) {
+        const n = criticals.length >= 50 ? '50+' : String(criticals.length);
+        found.push({ type: 'critical_finding', label: `${n} vulnerabilit${criticals.length > 1 ? 'à critiche aperte' : 'à critica aperta'}`, detail: `${criticals[0].title || 'Vulnerabilità critica'} su ${criticals[0].affected_asset || '-'}`, level: 'critical' });
       }
+
+      const allFailed = [certFindings, kevFindings, criticalFindings].every((r) => r.status === 'rejected');
 
       if (!cancelled) {
         setAlerts(found);
+        setUnavailable(allFailed);
         setLoading(false);
       }
     };
@@ -76,11 +83,20 @@ export const SurfaceScanAlertBanner: React.FC = () => {
     return () => { cancelled = true; };
   }, [organizationId, groupId]);
 
+  if (unavailable) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm text-muted-foreground" role="status">
+        <AlertTriangle className="w-4 h-4 shrink-0" />
+        Avvisi non disponibili al momento: i dati non sono stati caricati.
+      </div>
+    );
+  }
+
   if (loading || alerts.length === 0) {
     return (
       <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-2.5 text-sm text-emerald-400">
         <CheckCircle2 className="w-4 h-4 shrink-0" />
-        {loading ? 'Controllo avvisi in corso...' : 'Nessun allarme critico rilevato questa settimana.'}
+        {loading ? 'Controllo avvisi in corso...' : 'Nessun allarme critico nei dati disponibili.'}
       </div>
     );
   }

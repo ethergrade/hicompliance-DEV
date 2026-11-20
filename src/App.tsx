@@ -119,7 +119,9 @@ const App = () => (
 								path="/surface-scan"
 								element={
 									<ClientSelectionGuard>
-										<SurfaceScan360 />
+										<ErrorBoundary>
+											<SurfaceScan360 />
+										</ErrorBoundary>
 									</ClientSelectionGuard>
 								}
 							/>

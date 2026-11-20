@@ -976,7 +976,7 @@ const SurfaceScan360: React.FC = () => {
                     <p className="text-sm text-muted-foreground">Finding Totali</p>
                     <p className="text-2xl font-bold text-foreground">{findingsCounts.total}</p>
                     <p className="text-xs text-muted-foreground">
-                      High: {findingsCounts.high} • Medium: {findingsCounts.medium} • Low: {findingsCounts.low}
+                      Critical: {findingsCounts.critical} • High: {findingsCounts.high} • Medium: {findingsCounts.medium} • Low: {findingsCounts.low} • Info: {findingsCounts.info}
                     </p>
                   </div>
                   <Shield className="w-8 h-8 text-primary" />

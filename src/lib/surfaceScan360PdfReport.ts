@@ -496,28 +496,15 @@ export const formatDateIt = (value: unknown, withTime = true): string => {
 	return withTime ? d.toLocaleString("it-IT") : d.toLocaleDateString("it-IT");
 };
 
+/**
+ * Report senza `exposure_score` (generati prima dell'indice V3): la postura
+ * non si ricostruisce. Prima veniva stimata da una penalità sulle severità con
+ * soglie proprie, e lo stesso cliente compariva con una fascia diversa da
+ * quella della Console. Senza il dato del server: «Non determinabile».
+ */
 export const computeFallbackRisk = (
-	report: SurfaceScan360Report,
-): { score: number | null; level: string } => {
-	const sev = report.findings_by_severity || {};
-	const observed =
-		(report.findings || []).length +
-		Object.values(sev).reduce((sum: number, v) => sum + (Number(v) || 0), 0);
-	// Zero finding su zero dati non è una postura perfetta: senza niente di
-	// osservato il punteggio non si dà.
-	if (observed === 0) return { score: null, level: "Non determinabile" };
-	const penalty =
-		Number(sev.critical || 0) * 22 +
-		Number(sev.high || 0) * 12 +
-		Number(sev.medium || 0) * 6 +
-		Number(sev.low || 0) * 2 +
-		Number(sev.info || 0);
-	const score = Math.max(5, Math.min(100, 100 - penalty));
-	if (score <= 30) return { score, level: "Critico" };
-	if (score <= 50) return { score, level: "Alto" };
-	if (score <= 75) return { score, level: "Medio" };
-	return { score, level: "Basso" };
-};
+	_report: SurfaceScan360Report,
+): { score: number | null; level: string } => ({ score: null, level: "Non determinabile" });
 
 const buildFallbackAi = (report: SurfaceScan360Report) => {
 	const fallbackRisk = computeFallbackRisk(report);

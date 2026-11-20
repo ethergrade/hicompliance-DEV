@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import EnricherBadges from '@/components/shared/EnricherBadges';
 import { parseJobEnrichers } from '@/types/enrichers';
 import { getErrorDetail } from "@/lib/api-client";
+import { jobPostureScore, jobRiskLevel } from '@/lib/surfacescan/riskLevel';
 
 const statusIcon: Record<string, React.ReactNode> = {
   queued: <Clock className="h-4 w-4 text-muted-foreground" />,
@@ -88,7 +89,9 @@ export function SurfaceScanJobsPanel() {
               <div className="flex items-center gap-2">
                 {job.summary && (
                   <span className="text-xs text-muted-foreground">
-                    Score {job.summary.overall_score} ({job.summary.risk_level})
+                    {jobPostureScore(job.summary) !== null
+                      ? `Postura ${Math.round(jobPostureScore(job.summary) as number)}/100${jobRiskLevel(job.summary) ? ` (${jobRiskLevel(job.summary)})` : ''}`
+                      : 'Postura N/D'}
                   </span>
                 )}
                 <Badge className={statusTone[job.status] || statusTone.queued}>

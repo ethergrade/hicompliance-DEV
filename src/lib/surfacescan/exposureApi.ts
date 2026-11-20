@@ -124,9 +124,11 @@ export type ExposureSummary = {
   top_open_ports: Array<{ port: number; count: number }>;
   included_scan_types?: string[];
   source_counts?: Record<string, number>;
-  posture_score: number;
-  risk_level: 'Basso' | 'Medio' | 'Alto' | 'Critico';
-  risk_points: number;
+  /** null quando non c'è una scansione utilizzabile. */
+  posture_score: number | null;
+  /** Fascia decisa dal server (soglie del report mensile); null senza punteggio. */
+  risk_level: 'Basso' | 'Medio' | 'Alto' | 'Critico' | null;
+  risk_points: number | null;
   risk_breakdown: {
     service_exposure: ExposureRiskComponent & {
       primary_points: number;

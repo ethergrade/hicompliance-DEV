@@ -11,6 +11,7 @@ import {
   type SurfaceMonitoredScopeRule,
 } from '@/lib/surfaceScopeGuard';
 import { presentStorageBucketFinding } from '@/lib/surfacescan/storageFindingPresentation';
+import { toCvss, toEpss } from '@/lib/surfacescan/normalize';
 
 export interface SurfaceFindingRow {
   id: string;
@@ -268,8 +269,8 @@ const mapApiFinding = (record: Record<string, any> | null): SurfaceFindingRow | 
     protocol: record.protocol ?? null,
     cve: Array.isArray(record.cve) ? record.cve : null,
     cwe: Array.isArray(record.cwe) ? record.cwe : null,
-    cvss: record.cvss ?? null,
-    epss: record.epss ?? null,
+    cvss: toCvss(record.cvss),
+    epss: toEpss(record.epss),
     cisa_kev: record.cisa_kev ?? null,
     remediation: record.remediation ?? null,
     evidence: record.evidence && typeof record.evidence === 'object' ? (record.evidence as Record<string, any>) : null,

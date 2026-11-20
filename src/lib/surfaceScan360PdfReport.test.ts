@@ -21,9 +21,9 @@ describe('computeFallbackRisk', () => {
     expect(computeFallbackRisk(report({}))).toEqual({ score: null, level: 'Non determinabile' });
   });
 
-  it('con finding il punteggio scende', () => {
-    const risk = computeFallbackRisk(report({ findings_by_severity: { high: 2 } }));
-    expect(risk.score).not.toBeNull();
-    expect(risk.score).toBeLessThan(100);
+  // Una postura stimata dalle severità avrebbe una fascia diversa da quella
+  // della Console: senza exposure_score del server non si inventa.
+  it('nemmeno con finding si inventa una postura', () => {
+    expect(computeFallbackRisk(report({ findings_by_severity: { high: 2 } }))).toEqual({ score: null, level: 'Non determinabile' });
   });
 });

@@ -34,6 +34,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { CveDetailDialog } from '@/components/surface-scan/CveDetailDialog';
 import { CVE_REGEX, cweDescription, cweLink, findingSummary, getFindingTaxonomy, owaspDescription } from '@/lib/findingTaxonomy';
 import { publicSourceLabel, redactInternalSourceNames } from '@/lib/surfaceSourceLabels';
+import { toCvss, toEpss } from "@/lib/surfacescan/normalize";
 
 const severityOrder: Record<string, number> = {
   critical: 5,
@@ -397,7 +398,9 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ printMode = false }
       </CardHeader>
 
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 p-3 bg-muted/20 rounded-lg">
+        {/* Anche gli informativi: il totale li comprende, e senza la loro
+            casella la somma non tornava (261 contro 149 nel PDF di CSBNO). */}
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-3 p-3 bg-muted/20 rounded-lg">
           <div className="text-center">
             <div className="text-xl font-bold">{counts.total}</div>
             <div className="text-xs text-muted-foreground">Totali</div>
@@ -417,6 +420,10 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ printMode = false }
           <div className="text-center">
             <div className="text-xl font-bold text-green-600">{counts.low}</div>
             <div className="text-xs text-muted-foreground">Low</div>
+          </div>
+          <div className="text-center">
+            <div className="text-xl font-bold text-muted-foreground">{counts.info}</div>
+            <div className="text-xs text-muted-foreground">Info</div>
           </div>
         </div>
 
@@ -597,13 +604,13 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ printMode = false }
                                                 .map((cve) => cveIntelMap?.[cve.toUpperCase()])
                                                 .filter(Boolean);
                                               const inferredCvss =
-                                                row.cvss ??
+                                                toCvss(row.cvss) ??
                                                 rowIntel
                                                   .map((intel) => Number(intel?.cvss_v3_score ?? NaN))
                                                   .filter((score) => Number.isFinite(score))
                                                   .sort((a, b) => b - a)[0];
                                               const inferredEpss =
-                                                row.epss ??
+                                                toEpss(row.epss) ??
                                                 rowIntel
                                                   .map((intel) => Number(intel?.epss_score ?? NaN))
                                                   .filter((score) => Number.isFinite(score))
