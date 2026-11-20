@@ -34,7 +34,7 @@ import type { HipatchCveAsset } from '@/lib/api/hipatch';
 import { nvdLink } from '@/lib/findingTaxonomy';
 import { severityColors } from './vulnerabilitySeverity';
 import { CveDetailDialog } from '@/components/surface-scan/CveDetailDialog';
-import { assetOs, OS_NON_RILEVATO, OS_NON_RILEVATO_HINT } from '@/lib/hipatch/assetOs';
+import { assetOs, OS_ASSENTE, OS_NON_RILEVATO_HINT } from '@/lib/hipatch/assetOs';
 import { DEFAULT_CVE_FILTERS, filterCves, hasActiveCveFilters, type CveFilters } from '@/lib/hipatch/hipatchFilters';
 import { exportCvesXlsx, type ExportCve } from '@/lib/hipatch/exportHipatchXlsx';
 
@@ -122,7 +122,7 @@ const AssetsModal: React.FC<{ assets: HipatchCveAsset[]; title: string; open: bo
               <TableCell>{a['data.asset_type'] === 'other_asset' ? 'non riconosciuto' : a['data.asset_type'] || '-'}</TableCell>
               <TableCell>{a['data.ip'] ?? '-'}</TableCell>
               <TableCell>{a['data.mac'] ?? '-'}</TableCell>
-              <TableCell>{assetOs(a) ?? <span className="text-muted-foreground" title={OS_NON_RILEVATO_HINT}>{OS_NON_RILEVATO}</span>}</TableCell>
+              <TableCell>{assetOs(a) ?? <span className="text-muted-foreground" title={OS_NON_RILEVATO_HINT} aria-label="Sistema operativo non rilevato">{OS_ASSENTE}</span>}</TableCell>
               <TableCell>{a['data.last_ping_time'] ?? '-'}</TableCell>
               <TableCell>{a['data.last_discovered_time'] ?? '-'}</TableCell>
             </TableRow>

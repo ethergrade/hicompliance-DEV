@@ -3,7 +3,7 @@
 // ha l'autofiltro di Excel già acceso.
 import * as XLSX from "xlsx";
 import type { HipatchCveAsset } from "@/lib/api/hipatch";
-import { assetOs, OS_NON_RILEVATO } from "./assetOs";
+import { assetOs, OS_ASSENTE } from "./assetOs";
 import type { FilterableCve, FilterableOsPatch } from "./hipatchFilters";
 
 type Row = Record<string, string | number>;
@@ -54,7 +54,7 @@ export const exportCvesXlsx = (cves: ExportCve[], opts: { runDate?: string | nul
 			Asset: assetName(a),
 			Hostname: a["data.host_name"] ?? "",
 			IP: a["data.ip"] ?? "",
-			OS: assetOs(a) ?? OS_NON_RILEVATO,
+			OS: assetOs(a) ?? OS_ASSENTE,
 			Tipo: a["data.asset_type"] === "other_asset" ? "non riconosciuto" : a["data.asset_type"] ?? "",
 			"Ultimo ping": day(a["data.last_ping_time"]),
 			Descrizione: c.description ?? "",

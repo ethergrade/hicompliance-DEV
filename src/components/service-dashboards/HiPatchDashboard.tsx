@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
 import { OsPatchesTable } from './OsPatchesTable';
 import { SoftwarePatchesTable } from './SoftwarePatchesTable';
 import { useHipatchDashboard } from '@/hooks/useHipatch';
-import { assetOs, OS_NON_RILEVATO, OS_NON_RILEVATO_HINT } from '@/lib/hipatch/assetOs';
+import { assetOs, OS_ASSENTE, OS_NON_RILEVATO_HINT } from '@/lib/hipatch/assetOs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DEFAULT_ASSET_FILTERS,
@@ -512,7 +512,7 @@ export const HiPatchDashboard: React.FC = () => {
                       </TableCell>
                       <TableCell>{a['data.ip'] || '-'}</TableCell>
                       <TableCell>
-                        {assetOs(a) ?? <span className="text-muted-foreground cursor-help" title={OS_NON_RILEVATO_HINT}>{OS_NON_RILEVATO}</span>}
+                        {assetOs(a) ?? <span className="text-muted-foreground cursor-help" title={OS_NON_RILEVATO_HINT} aria-label="Sistema operativo non rilevato">{OS_ASSENTE}</span>}
                       </TableCell>
                       <TableCell>{isUnrecognized(a) ? 'non riconosciuto' : a['data.asset_type'] || '-'}</TableCell>
                       <TableCell>
