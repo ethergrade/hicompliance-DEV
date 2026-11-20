@@ -1,4 +1,5 @@
 // @ts-nocheck -- type drift vs API contract, da riallineare
+import type { ReactNode } from "react";
 import {
 	Activity,
 	CalendarClock,
@@ -88,28 +89,44 @@ export default function StandardDarkRiskPage() {
 			toast.error("Impossibile scaricare il report.");
 		}
 	};
-	const cards = [
+	// «Non disponibile» quando il dato non c'è: zero vuol dire «valutato e
+	// niente trovato», e prima le due cose si confondevano.
+	const ND = "Non disponibile";
+	const weekLabel = overview?.snapshotWeekStart
+		? `Settimana dal ${new Date(overview.snapshotWeekStart).toLocaleDateString("it-IT")}`
+		: null;
+	const cards: Array<{ label: string; value: ReactNode; hint?: string | null; icon: typeof Gauge }> = [
 		{
-			label: "Leak rilevati",
+			label: "Record raccolti",
 			value: overview
-				? `${overview.isMinimum ? "Almeno " : ""}${overview.totalLeaks}`
+				? overview.totalLeaks === null
+					? ND
+					: `${overview.isMinimum ? "Almeno " : ""}${overview.totalLeaks}`
 				: "—",
+			hint: "Record della fonte che citano il perimetro",
 			icon: DatabaseZap,
 		},
 		{
-			label: "Nuovi nel periodo",
-			value: overview?.newLeaks ?? "—",
+			label: "Nuovi nella settimana",
+			value: overview ? (overview.newLeaks ?? ND) : "—",
+			hint: weekLabel,
 			icon: Activity,
 		},
 		{
-			label: "Indice di rischio",
-			value: overview ? `${overview.riskScore}/100` : "—",
+			label: "Indice di esposizione",
+			value: overview ? (overview.riskScore === null ? ND : `${overview.riskScore}/100`) : "—",
+			// Il verso va detto: in questa pagina l'indice cresce con il rischio.
+			hint: overview?.riskScore != null
+				? `${overview.riskLevel ? `Fascia ${overview.riskLevel} · ` : ""}0 = nessuna esposizione, 100 = massima`
+				: null,
 			icon: Gauge,
 		},
 		{
-			label: "Target monitorati",
-			value:
-				overview?.monitoredTargets ?? scopeQuery.data?.targets.length ?? "—",
+			label: "Voci di perimetro",
+			value: overview
+				? (overview.monitoredTargets ?? scopeQuery.data?.targets.length ?? ND)
+				: (scopeQuery.data?.targets.length ?? "—"),
+			hint: "Domini, IP ed email nello scope DarkRisk",
 			icon: Target,
 		},
 		{
@@ -209,7 +226,7 @@ export default function StandardDarkRiskPage() {
 				) : (
 					<>
 						<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-							{cards.map(({ label, value, icon: Icon }) => (
+							{cards.map(({ label, value, hint, icon: Icon }) => (
 								<Card key={label} className="border-cyan-500/10">
 									<CardContent className="flex items-center gap-4 p-5">
 										<div className="rounded-md bg-cyan-500/10 p-2 text-cyan-400">
@@ -220,6 +237,9 @@ export default function StandardDarkRiskPage() {
 												{label}
 											</p>
 											<p className="mt-1 text-2xl font-semibold">{value}</p>
+											{hint ? (
+												<p className="mt-1 text-xs text-muted-foreground">{hint}</p>
+											) : null}
 										</div>
 									</CardContent>
 								</Card>
@@ -258,7 +278,7 @@ export default function StandardDarkRiskPage() {
 										</p>
 									</div>
 									<Badge variant="outline">
-										{overview?.riskLevel ?? "In attesa di dati"}
+										{overview?.riskLevel ? `Esposizione ${overview.riskLevel}` : "In attesa di dati"}
 									</Badge>
 								</CardContent>
 							</Card>

@@ -28,6 +28,12 @@ const numberValue = (value: unknown, fallback = 0): number => {
 	const parsed = typeof value === "number" ? value : Number(value);
 	return Number.isFinite(parsed) ? parsed : fallback;
 };
+/** Numero o null: null, assente e stringa vuota restano «non disponibile», non 0. */
+const nullableNumber = (value: unknown): number | null => {
+	if (value === null || value === undefined || value === "") return null;
+	const parsed = typeof value === "number" ? value : Number(value);
+	return Number.isFinite(parsed) ? parsed : null;
+};
 const stringValue = (value: unknown, fallback = ""): string =>
 	typeof value === "string" || typeof value === "number" ? String(value) : fallback;
 const nullableString = (value: unknown): string | null => {
@@ -205,18 +211,23 @@ export const parseStandardOverview = (value: unknown): StandardOverview => {
 	const item = objectValue(unwrapApiData(value));
 	const kpis = objectValue(item.kpis);
 	const credentials = objectValue(kpis.credential_leaks);
-	const risk = objectValue(kpis.risk_score);
-	const lastScan = objectValue(item.latest_scan);
 	const weekly = Array.isArray(item.historical_weeks) ? item.historical_weeks : [];
-	const total = numberValue(item.total_leaks ?? item.total_records ?? credentials.value);
+	const coverage = parseMonitoringCoverage(item.monitoring_coverage);
 	return {
-		totalLeaks: total,
+		// Senza snapshot il server manda null: resta null, non diventa 0.
+		totalLeaks: nullableNumber(item.total_leaks ?? item.total_records),
 		isMinimum: item.is_minimum === true || item.limit_reached === true,
-		newLeaks: numberValue(item.new_leaks ?? item.new_this_week ?? credentials.delta),
-		riskScore: numberValue(item.risk_score ?? risk.value),
-		riskLevel: stringValue(item.risk_level ?? risk.level, "Non calcolato"),
-		lastScanAt: nullableString(item.last_scan_at || lastScan.completed_at || lastScan.started_at),
-		monitoredTargets: numberValue(item.monitored_targets ?? objectValue(kpis.monitored_domains).value),
+		newLeaks: nullableNumber(item.new_leaks ?? item.new_this_week),
+		// L'indice è quello dello snapshot DarkRisk (come PDF e mail). Prima la
+		// pagina leggeva kpis.risk_score, calcolato sui finding SurfaceScan con il
+		// verso opposto (100 = meglio) e «100/100 Basso» anche senza dati.
+		riskScore: nullableNumber(item.risk_index),
+		riskLevel: nullableString(item.risk_level),
+		snapshotWeekStart: nullableString(item.snapshot_week_start),
+		// Ultimo run DarkRisk, non l'ultimo job SurfaceScan.
+		lastScanAt: coverage?.lastRunAt ?? null,
+		// Voci dello scope DarkRisk, non i domini monitorati da SurfaceScan.
+		monitoredTargets: coverage ? coverage.scopeEntries : null,
 		weeklyTrend: weekly.map((row) => {
 			const point = objectValue(row);
 			return {
@@ -231,7 +242,7 @@ export const parseStandardOverview = (value: unknown): StandardOverview => {
 		credentialLeaks: numberValue(
 			objectValue(objectValue(item.dti).sensitive_totals).passwords ?? credentials.value,
 		),
-		monitoringCoverage: parseMonitoringCoverage(item.monitoring_coverage),
+		monitoringCoverage: coverage,
 	};
 };
 

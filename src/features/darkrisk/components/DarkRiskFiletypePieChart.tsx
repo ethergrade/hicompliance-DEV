@@ -3,22 +3,29 @@ import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recha
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { FileText } from 'lucide-react';
 
+/**
+ * Il backend manda già etichette italiane ("File di testo", "File CSV"…);
+ * qui restano le chiavi dei vecchi snapshot. Prima la chiave del backend era
+ * "Unknown" con la maiuscola e non corrispondeva a nessuna voce.
+ */
+const UNCLASSIFIED = new Set(['unknown', 'other', 'non classificato', '']);
+
 const FILETYPE_LABELS: Record<string, string> = {
-  html:        'Website HTMLs',
-  text:        'Text Files',
-  csv:         'CSV Files',
+  html:        'Pagina web',
+  text:        'File di testo',
+  csv:         'File CSV',
   pdf:         'PDF',
-  word:        'Word Docs',
+  word:        'Word',
   paste:       'Paste',
   database:    'Database',
-  archive:     'Archive',
+  archive:     'Archivio',
   email_body:  'Email',
   forum:       'Forum',
-  code:        'Code',
-  certificate: 'Certificate',
+  code:        'Codice',
+  certificate: 'Certificato',
   social:      'Social',
-  image:       'Image',
-  unknown:     'Other',
+  image:       'Immagine',
+  unknown:     'Non classificato',
 };
 
 const FILETYPE_COLORS = [
@@ -32,16 +39,35 @@ interface Props {
   title?: string;
 }
 
-export function DarkRiskFiletypePieChart({ data, title = 'Results per File Type' }: Props) {
+export function DarkRiskFiletypePieChart({ data, title = 'Risultati per tipo di file' }: Props) {
   const chartData = Object.entries(data)
     .sort((a, b) => b[1] - a[1])
     .map(([key, value], idx) => ({
-      name: FILETYPE_LABELS[key] ?? key,
+      name: FILETYPE_LABELS[key.toLowerCase()] ?? key,
       value,
       color: FILETYPE_COLORS[idx % FILETYPE_COLORS.length],
     }));
 
   const total = chartData.reduce((s, d) => s + d.value, 0);
+  // Una torta al 100% di una sola voce «non classificato» non dice niente:
+  // meglio una riga di testo.
+  const allUnclassified = total > 0 && Object.keys(data).every((key) => UNCLASSIFIED.has(key.trim().toLowerCase()));
+
+  if (allUnclassified) {
+    return (
+      <Card className="bg-card">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <FileText className="h-4 w-4" />
+            {title}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground">
+          Tipo di file non classificato dalla fonte per tutti i {total} record.
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (total === 0) {
     return (

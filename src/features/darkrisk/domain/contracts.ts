@@ -65,13 +65,21 @@ export interface DarkRiskWeeklySnapshot {
 }
 
 export interface StandardOverview {
-	totalLeaks: number;
+	/** Record raccolti; null se non c'è ancora uno snapshot (≠ zero trovati). */
+	totalLeaks: number | null;
 	isMinimum: boolean;
-	newLeaks: number;
-	riskScore: number;
-	riskLevel: string;
+	/** Record nuovi nella settimana dello snapshot; null senza snapshot. */
+	newLeaks: number | null;
+	/** Indice DarkRisk 0–100 dallo snapshot: più alto = più esposto. */
+	riskScore: number | null;
+	/** Fascia calcolata dal server sullo stesso indice; null senza snapshot. */
+	riskLevel: string | null;
+	/** Lunedì della settimana a cui si riferiscono i numeri dello snapshot. */
+	snapshotWeekStart: string | null;
+	/** Ultimo run DarkRisk (non l'ultima scansione SurfaceScan). */
 	lastScanAt: string | null;
-	monitoredTargets: number;
+	/** Voci dello scope DarkRisk; null se la copertura non è disponibile. */
+	monitoredTargets: number | null;
 	weeklyTrend: Array<{ period: string; total: number; newLeaks: number }>;
 	snapshot: DarkRiskWeeklySnapshot | null;
 	/** Contatore aggregato delle credenziali esposte: visibile anche in Standard. */
