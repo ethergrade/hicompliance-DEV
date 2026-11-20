@@ -92,7 +92,8 @@ export interface StandardOverview {
 
 /** Quanto è coperto il monitoraggio DarkRisk (backend overview.monitoring_coverage). */
 export interface MonitoringCoverage {
-	status: "sufficient" | "insufficient";
+	/** partial: scansione recente ma con ricerche non riuscite o con risultati limitati. */
+	status: "sufficient" | "partial" | "insufficient";
 	reasons: string[];
 	scopeEntries: number;
 	scopeByKind: Record<string, number>;
@@ -100,6 +101,10 @@ export interface MonitoringCoverage {
 	runsLast30Days: number;
 	lastRunAt: string | null;
 	daysSinceLastRun: number | null;
+	/** Esito per selettore dell'ultima scansione; null se non registrato. */
+	lastRunOutcome: { selectors: number; withResults: number; noMatch: number; limited: number; failed: number } | null;
+	/** Ultima scansione senza ricerche fallite. */
+	lastGoodRunAt: string | null;
 	monthly: Array<{ period: string; status: string | null; riskLevel: string | null; findings: number | null }>;
 }
 

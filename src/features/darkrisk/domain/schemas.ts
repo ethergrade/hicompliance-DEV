@@ -253,7 +253,7 @@ const parseMonitoringCoverage = (value: unknown): MonitoringCoverage | null => {
 	const item = objectValue(value);
 	const byKind = objectValue(item.scope_by_kind);
 	return {
-		status: item.status === "sufficient" ? "sufficient" : "insufficient",
+		status: item.status === "sufficient" ? "sufficient" : item.status === "partial" ? "partial" : "insufficient",
 		reasons: (Array.isArray(item.reasons) ? item.reasons : []).map((r) => stringValue(r)),
 		scopeEntries: numberValue(item.scope_entries),
 		scopeByKind: Object.fromEntries(Object.entries(byKind).map(([k, v]) => [k, numberValue(v)])),
@@ -261,6 +261,18 @@ const parseMonitoringCoverage = (value: unknown): MonitoringCoverage | null => {
 		runsLast30Days: numberValue(item.runs_last_30_days),
 		lastRunAt: nullableString(item.last_run_at),
 		daysSinceLastRun: item.days_since_last_run === null || item.days_since_last_run === undefined ? null : numberValue(item.days_since_last_run),
+		lastRunOutcome: (() => {
+			if (!item.last_run_outcome || typeof item.last_run_outcome !== "object") return null;
+			const o = objectValue(item.last_run_outcome);
+			return {
+				selectors: numberValue(o.selectors),
+				withResults: numberValue(o.with_results),
+				noMatch: numberValue(o.no_match),
+				limited: numberValue(o.limited),
+				failed: numberValue(o.failed),
+			};
+		})(),
+		lastGoodRunAt: nullableString(item.last_good_run_at),
 		monthly: (Array.isArray(item.monthly) ? item.monthly : []).map((row) => {
 			const m = objectValue(row);
 			return {

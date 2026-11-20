@@ -18,6 +18,11 @@ const monthLabel = (key: string) => {
 export function DarkRiskMonitoringCoverage({ coverage }: { coverage: MonitoringCoverage | null | undefined }) {
 	if (!coverage) return null;
 	const sufficient = coverage.status === "sufficient";
+	const partial = coverage.status === "partial";
+	const outcome = coverage.lastRunOutcome;
+	const lastGood = coverage.lastGoodRunAt
+		? new Date(coverage.lastGoodRunAt).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
+		: null;
 	const kinds = Object.entries(coverage.scopeByKind)
 		.map(([k, n]) => `${n} ${KIND_LABEL[k] ?? k}`)
 		.join(" · ");
@@ -27,9 +32,9 @@ export function DarkRiskMonitoringCoverage({ coverage }: { coverage: MonitoringC
 			<CardHeader className="pb-2">
 				<CardTitle className="flex items-center justify-between text-base">
 					Copertura del monitoraggio
-					<Badge variant={sufficient ? "default" : "destructive"} className="gap-1">
+					<Badge variant={sufficient ? "default" : partial ? "secondary" : "destructive"} className="gap-1">
 						{sufficient ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
-						{sufficient ? "Attivo" : "Insufficiente"}
+						{sufficient ? "Attivo" : partial ? "Parziale" : "Insufficiente"}
 					</Badge>
 				</CardTitle>
 			</CardHeader>
@@ -55,6 +60,17 @@ export function DarkRiskMonitoringCoverage({ coverage }: { coverage: MonitoringC
 					</div>
 				</div>
 				{kinds && <p className="text-xs text-muted-foreground">Perimetro: {kinds}</p>}
+				{outcome && outcome.selectors > 0 && (
+					<p className="text-xs text-muted-foreground">
+						Ultima scansione: {outcome.selectors} ricerche · {outcome.withResults} con riscontri · {outcome.noMatch} senza
+						riscontri
+						{outcome.limited > 0 && ` · ${outcome.limited} con risultati limitati`}
+						{outcome.failed > 0 && ` · ${outcome.failed} non riuscite`}
+					</p>
+				)}
+				{!sufficient && lastGood && (
+					<p className="text-xs text-muted-foreground">Ultima scansione con tutte le ricerche riuscite: {lastGood}</p>
+				)}
 				{!sufficient && coverage.reasons.length > 0 && (
 					<div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-300">
 						{coverage.reasons.map((r) => (
