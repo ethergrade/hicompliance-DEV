@@ -39,10 +39,43 @@ export function isQuestionVisible(
   return parentStatus === 'pianificato_in_corso' || parentStatus === 'completato';
 }
 
+/**
+ * Stato di una categoria, distinto dal punteggio:
+ * - `scored`: tutte le domande visibili hanno una risposta, almeno una applicabile;
+ * - `partial`: ci sono risposte applicabili ma restano domande visibili senza risposta;
+ * - `not_applicable`: tutte le domande visibili sono N/A (nessuna senza risposta);
+ * - `not_assessed`: nessuna risposta applicabile (vuota, o N/A con domande ancora da compilare).
+ *
+ * Prima bastava un N/A con le altre domande senza risposta per dichiarare la
+ * categoria non applicabile, e il PDF stampava «0/100 Altissimo» anche per le
+ * categorie tutte N/A (Certificazioni di CSBNO).
+ */
+export type CategoryStatus = 'scored' | 'partial' | 'not_applicable' | 'not_assessed';
+
+export interface CategoryCounts {
+  completato: number;
+  pianificato_in_corso: number;
+  non_iniziato: number;
+  non_applicabile: number;
+  /** Domande visibili senza risposta. */
+  mancanti: number;
+}
+
 export interface CategoryScore {
   name: string;
+  /** Punteggio grezzo (0 senza risposte applicabili): per compatibilità. */
   score: number;
+  /** Punteggio da mostrare: null se la categoria non è valutabile. */
+  displayScore: number | null;
+  status: CategoryStatus;
+  /** Risposte date sulle domande visibili, N/A compresi. */
   answered: number;
+  /** Risposte applicabili (Completato, Pianificato, Non iniziato). */
+  applicable: number;
+  /** Domande visibili. */
+  visibleTotal: number;
+  counts: CategoryCounts;
+  /** Vero solo per `not_applicable`. */
   isNotApplicable: boolean;
 }
 
@@ -51,39 +84,50 @@ export function buildCategoryScore(
   responses: Record<number, AssessmentResponse>,
   allCategories: AssessmentCategory[]
 ): CategoryScore {
-  const counts = {
+  const counts: CategoryCounts = {
     completato: 0,
     pianificato_in_corso: 0,
     non_iniziato: 0,
     non_applicabile: 0,
+    mancanti: 0,
   };
 
+  let visibleTotal = 0;
   for (const q of cat.questions) {
     // Only count visible questions, mirroring getCategoryCounts in Assessment.tsx
     if (!isQuestionVisible(q, responses, allCategories)) continue;
+    visibleTotal++;
     const r = responses[q.id];
-    if (r && counts[r] !== undefined) counts[r]++;
+    if (r && r in counts) counts[r as keyof CategoryCounts]++;
+    else counts.mancanti++;
   }
 
-  const answered =
-    counts.completato +
-    counts.pianificato_in_corso +
-    counts.non_iniziato +
-    counts.non_applicabile;
+  const applicable = counts.completato + counts.pianificato_in_corso + counts.non_iniziato;
+  const answered = applicable + counts.non_applicabile;
 
-  const isNotApplicable =
-    counts.non_applicabile > 0 &&
-    counts.completato === 0 &&
-    counts.pianificato_in_corso === 0 &&
-    counts.non_iniziato === 0;
+  const status: CategoryStatus =
+    applicable === 0
+      ? counts.non_applicabile > 0 && counts.mancanti === 0
+        ? 'not_applicable'
+        : 'not_assessed'
+      : counts.mancanti > 0
+        ? 'partial'
+        : 'scored';
+
+  // Score intentionally uses all answered questions (calculateCategoryScore
+  // ignores visibility), identical to Assessment.tsx behavior.
+  const score = calculateCategoryScore(cat.questions, responses);
 
   return {
     name: cat.name,
-    // Score intentionally uses all answered questions (calculateCategoryScore
-    // ignores visibility), identical to Assessment.tsx behavior.
-    score: calculateCategoryScore(cat.questions, responses),
+    score,
+    displayScore: applicable > 0 ? score : null,
+    status,
     answered,
-    isNotApplicable,
+    applicable,
+    visibleTotal,
+    counts,
+    isNotApplicable: status === 'not_applicable',
   };
 }
 
@@ -92,9 +136,17 @@ export function computeOverallScore(
   responses: Record<number, AssessmentResponse>
 ): number {
   const cats = categories.map((c) => buildCategoryScore(c, responses, categories));
-  const withAnswers = cats.filter((c) => c.answered > 0 && !c.isNotApplicable);
-  if (withAnswers.length === 0) return 0;
-  return Math.round(
-    withAnswers.reduce((a, c) => a + c.score, 0) / withAnswers.length
-  );
+  // Solo categorie con risposte applicabili: N/A e categorie vuote fuori dal
+  // denominatore (stessa popolazione di prima, detta in modo esplicito).
+  const valutate = cats.filter((c) => c.applicable > 0);
+  if (valutate.length === 0) return 0;
+  return Math.round(valutate.reduce((a, c) => a + c.score, 0) / valutate.length);
 }
+
+/** Etichetta italiana dello stato, per tabelle e grafici. */
+export const CATEGORY_STATUS_LABELS: Record<CategoryStatus, string> = {
+  scored: 'Valutata',
+  partial: 'Parziale',
+  not_applicable: 'Non applicabile',
+  not_assessed: 'Non valutata',
+};

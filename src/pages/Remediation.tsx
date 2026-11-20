@@ -57,6 +57,7 @@ import {
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { getErrorDetail } from "@/lib/api-client";
+import { budgetCoverageLabel, computeRemediationKpis, formatTaskDate } from "@/lib/remediation/kpis";
 
 /* ─── Types ─── */
 interface DbTask {
@@ -310,7 +311,6 @@ const Remediation: React.FC = () => {
 		};
 	});
 
-	const totalBudget = ganttData.reduce((sum, t) => sum + (t.budget || 0), 0);
 
 	/* ─── DB mutation helpers ─── */
 	// Optimistic update + per-task PUT against v2 API
@@ -654,38 +654,9 @@ const Remediation: React.FC = () => {
 		}
 	};
 
-	const criticalTasks = activeTasks.filter((t) => t.priority === "critical");
-	const highPriorityTasks = activeTasks.filter((t) => t.priority === "high");
-	const totalProgress =
-		activeTasks.length > 0
-			? Math.round(
-					activeTasks.reduce((sum, t) => sum + (t.progress || 0), 0) /
-						activeTasks.length,
-				)
-			: 0;
-	const avgDaysRemaining =
-		activeTasks.length > 0
-			? Math.round(
-					activeTasks.reduce((sum, t) => {
-						const end = new Date(t.end_date);
-						const diff = Math.max(
-							0,
-							Math.ceil((end.getTime() - Date.now()) / 86400000),
-						);
-						return sum + diff;
-					}, 0) / activeTasks.length,
-				)
-			: 0;
-
-	const actionableMetrics = {
-		totalBudget: `€${totalBudget.toLocaleString("it-IT")}`,
-		estimatedCompletion:
-			activeTasks.length > 0 ? `${avgDaysRemaining} giorni` : "—",
-		riskReduction: `${totalProgress}%`,
-		complianceImprovement: `${Math.min(100, Math.round(totalProgress * 1.2))}%`,
-		criticalIssues: criticalTasks.length,
-		highPriorityActions: highPriorityTasks.length,
-	};
+	// KPI condivisi con il report PDF (src/lib/remediation/kpis.ts): solo
+	// grandezze verificabili sulle righe, niente benefici stimati.
+	const kpis = computeRemediationKpis(activeTasks);
 
 	return (
 		<DashboardLayout>
@@ -822,88 +793,84 @@ const Remediation: React.FC = () => {
 				</div>
 
 				{/* Executive Summary Metrics */}
-				<div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+				<div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4">
 					<Card className="border-border">
 						<CardContent className="p-4">
-							<div className="flex items-center justify-between">
-								<div>
-									<p className="text-sm text-muted-foreground">Budget Totale</p>
-									<p className="text-xl font-bold text-foreground">
-										{actionableMetrics.totalBudget}
-									</p>
-								</div>
-								<Target className="w-6 h-6 text-primary" />
-							</div>
-						</CardContent>
-					</Card>
-					<Card className="border-border">
-						<CardContent className="p-4">
-							<div className="flex items-center justify-between">
-								<div>
-									<p className="text-sm text-muted-foreground">Tempo Stimato</p>
-									<p className="text-xl font-bold text-foreground">
-										{actionableMetrics.estimatedCompletion}
-									</p>
-								</div>
-								<Clock className="w-6 h-6 text-yellow-500" />
-							</div>
-						</CardContent>
-					</Card>
-					<Card className="border-border">
-						<CardContent className="p-4">
-							<div className="flex items-center justify-between">
-								<div>
-									<p className="text-sm text-muted-foreground">
-										Riduzione Rischio
-									</p>
-									<p className="text-xl font-bold text-green-500">
-										{actionableMetrics.riskReduction}
-									</p>
-								</div>
-								<TrendingUp className="w-6 h-6 text-green-500" />
-							</div>
-						</CardContent>
-					</Card>
-					<Card className="border-border">
-						<CardContent className="p-4">
-							<div className="flex items-center justify-between">
-								<div>
-									<p className="text-sm text-muted-foreground">
-										Miglioramento Compliance
-									</p>
-									<p className="text-xl font-bold text-blue-500">
-										{actionableMetrics.complianceImprovement}
-									</p>
-								</div>
-								<CheckCircle className="w-6 h-6 text-blue-500" />
-							</div>
-						</CardContent>
-					</Card>
-					<Card className="border-border">
-						<CardContent className="p-4">
-							<div className="flex items-center justify-between">
-								<div>
-									<p className="text-sm text-muted-foreground">Criticità</p>
+							<div className="flex items-center justify-between gap-2">
+								<div className="min-w-0">
+									<p className="text-sm text-muted-foreground">Critiche/alte aperte</p>
 									<p className="text-xl font-bold text-red-500">
-										{actionableMetrics.criticalIssues}
+										{kpis.openCriticalHigh}
 									</p>
 								</div>
-								<AlertTriangle className="w-6 h-6 text-red-500" />
+								<AlertTriangle className="w-6 h-6 shrink-0 text-red-500" />
 							</div>
 						</CardContent>
 					</Card>
 					<Card className="border-border">
 						<CardContent className="p-4">
-							<div className="flex items-center justify-between">
-								<div>
-									<p className="text-sm text-muted-foreground">
-										Azioni Prioritarie
-									</p>
+							<div className="flex items-center justify-between gap-2">
+								<div className="min-w-0">
+									<p className="text-sm text-muted-foreground">Scadute</p>
 									<p className="text-xl font-bold text-orange-500">
-										{actionableMetrics.highPriorityActions}
+										{kpis.overdue}
 									</p>
 								</div>
-								<Wrench className="w-6 h-6 text-orange-500" />
+								<Clock className="w-6 h-6 shrink-0 text-orange-500" />
+							</div>
+						</CardContent>
+					</Card>
+					<Card className="border-border">
+						<CardContent className="p-4">
+							<div className="flex items-center justify-between gap-2">
+								<div className="min-w-0">
+									<p className="text-sm text-muted-foreground">Senza assegnatario</p>
+									<p className="text-xl font-bold text-foreground">
+										{kpis.unassigned}
+									</p>
+								</div>
+								<Wrench className="w-6 h-6 shrink-0 text-orange-500" />
+							</div>
+						</CardContent>
+					</Card>
+					<Card className="border-border">
+						<CardContent className="p-4">
+							<div className="flex items-center justify-between gap-2">
+								<div className="min-w-0">
+									<p className="text-sm text-muted-foreground">Prossima scadenza</p>
+									<p className="text-xl font-bold text-foreground">
+										{kpis.nextDeadline ? formatTaskDate(kpis.nextDeadline.date) : "—"}
+									</p>
+									<p className="text-xs text-muted-foreground line-clamp-2">{kpis.nextDeadline?.task}</p>
+								</div>
+								<Clock className="w-6 h-6 shrink-0 text-yellow-500" />
+							</div>
+						</CardContent>
+					</Card>
+					<Card className="border-border">
+						<CardContent className="p-4">
+							<div className="flex items-center justify-between gap-2">
+								<div className="min-w-0">
+									<p className="text-sm text-muted-foreground">Avanzamento piano</p>
+									<p className="text-xl font-bold text-foreground">
+										{kpis.progressAvg === null ? "—" : `${kpis.progressAvg}%`}
+									</p>
+									<p className="text-xs text-muted-foreground line-clamp-2">Media dell'avanzamento dichiarato</p>
+								</div>
+								<TrendingUp className="w-6 h-6 shrink-0 text-green-500" />
+							</div>
+						</CardContent>
+					</Card>
+					<Card className="border-border">
+						<CardContent className="p-4">
+							<div className="flex items-center justify-between gap-2">
+								<div className="min-w-0">
+									<p className="text-sm text-muted-foreground">Budget indicato</p>
+									<p className="text-xl font-bold text-foreground">
+										{budgetCoverageLabel(kpis)}
+									</p>
+								</div>
+								<Target className="w-6 h-6 shrink-0 text-primary" />
 							</div>
 						</CardContent>
 					</Card>

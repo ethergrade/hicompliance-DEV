@@ -421,6 +421,65 @@ const shouldHideFindingByScope = (
   return false;
 };
 
+/** Stati che escono dalla coda corrente (chiusi o accettati). */
+export const INACTIVE_FINDING_STATUSES = ['resolved', 'suppressed', 'false_positive', 'accepted_risk'];
+
+export interface SurfaceFindingSources {
+  jobFindings: SurfaceFindingRow[];
+  directFindings: SurfaceFindingRow[];
+  openPorts: SurfaceOpenPortRow[];
+  aiReports: Record<string, any>[];
+  jobs: SurfaceScanJob[];
+  scopeRules: SurfaceMonitoredScopeRule[];
+}
+
+/**
+ * La coda dei finding come la vede il cliente: finding per job e diretti
+ * deduplicati, righe sintetiche da porte e report AI, senza stati chiusi né
+ * righe fuori scope. Funzione pura: la usano la pagina (via hook) e il report
+ * PDF, così i due contano la stessa popolazione.
+ */
+export const combineSurfaceFindings = (sources: SurfaceFindingSources): SurfaceFindingRow[] => {
+  const byId = new Map<string, SurfaceFindingRow>();
+  for (const row of sources.jobFindings) byId.set(row.id, row);
+  for (const row of sources.directFindings) byId.set(row.id, row);
+  const jobTargets = new Map<string, { raw_target: string; normalized_target: string; hostname: string }>();
+  for (const job of sources.jobs) {
+    jobTargets.set(String(job.id), {
+      raw_target: String(job.raw_target || ''),
+      normalized_target: String(job.normalized_target || ''),
+      hostname: String((job as any).hostname || ''),
+    });
+  }
+  const normalizedRows = normalizeOpenPortFindingTargets(Array.from(byId.values()), jobTargets);
+  const syntheticOpenPortRows = buildSyntheticOpenPortRows(sources.openPorts, jobTargets, normalizedRows);
+  const canonicalRows = sources.aiReports.filter((row) => isOrganizationScopeReport(row));
+  const selectedReport = canonicalRows[0] || sources.aiReports[0] || null;
+  const syntheticCveRows = buildSyntheticCveRowsFromReport(selectedReport, [...normalizedRows, ...syntheticOpenPortRows]);
+  return [...normalizedRows, ...syntheticOpenPortRows, ...syntheticCveRows]
+    .filter((row) => !INACTIVE_FINDING_STATUSES.includes(String(row.status || '').toLowerCase()))
+    .filter((row) => !shouldHideFindingByScope(row, sources.scopeRules));
+};
+
+/** Conteggi per severità, informativi compresi: il totale è la somma. */
+export const countSurfaceFindings = (findings: SurfaceFindingRow[]) => {
+  const bySeverity = findings.reduce((acc, row) => {
+    acc[row.severity] = (acc[row.severity] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+  return {
+    total: findings.length,
+    critical: bySeverity.critical || 0,
+    high: bySeverity.high || 0,
+    medium: bySeverity.medium || 0,
+    low: bySeverity.low || 0,
+    info: bySeverity.info || 0,
+  };
+};
+
+/** Mappa un finding grezzo dell'API (esportata per il report). */
+export const mapSurfaceFinding = (raw: Record<string, any>): SurfaceFindingRow | null => mapApiFinding(raw);
+
 export const useSurfaceScanFindings = () => {
   const { organizationId, isLoading: clientLoading, groupId } = useClientOrganization();
 
@@ -516,33 +575,6 @@ export const useSurfaceScanFindings = () => {
     staleTime: 30_000,
   });
 
-  const jobTargetIds = useMemo(() => [
-    ...new Set([
-      ...(jobsQuery.data || []).map((job) => String(job.id || '')),
-      ...allApiFindings.map((row) => String(row.scan_job_id || '')),
-      ...(directFindingsQuery.data || []).map((row) => String(row.scan_job_id || '')),
-      ...(openPortsQuery.data || []).map((row) => String(row.scan_job_id || '')),
-    ].filter(Boolean)),
-  ], [allApiFindings, directFindingsQuery.data, jobsQuery.data, openPortsQuery.data]);
-
-  const jobTargetsQuery = useQuery({
-    queryKey: ['surface-scan-findings-job-targets', organizationId, jobTargetIds],
-    queryFn: async () => {
-      const map = new Map<string, { raw_target: string; normalized_target: string; hostname: string }>();
-      for (const job of jobsQuery.data || []) {
-        map.set(String(job.id), {
-          raw_target: String(job.raw_target || ''),
-          normalized_target: String(job.normalized_target || ''),
-          hostname: String(job.hostname || ''),
-        });
-      }
-      // Job targets non in lista vengono ignorati (jobsQuery carica già tutti i job)
-      return map;
-    },
-    enabled: !!organizationId && jobTargetIds.length > 0,
-    staleTime: 30_000,
-  });
-
   const [scopeRules, setScopeRules] = useState<SurfaceMonitoredScopeRule[]>([]);
   const fetchScopeRules = useCallback(async () => {
     if (!organizationId) return;
@@ -558,43 +590,25 @@ export const useSurfaceScanFindings = () => {
     if (organizationId) fetchScopeRules();
   }, [organizationId, groupId, fetchScopeRules]);
 
-  const findings = useMemo(() => {
-    const byId = new Map<string, SurfaceFindingRow>();
-    for (const row of allApiFindings) byId.set(row.id, row);
-    for (const row of directFindingsQuery.data || []) byId.set(row.id, row);
-    const jobTargets = jobTargetsQuery.data || new Map<string, { raw_target: string; normalized_target: string; hostname: string }>();
-    const normalizedRows = normalizeOpenPortFindingTargets(Array.from(byId.values()), jobTargets);
-    const syntheticOpenPortRows = buildSyntheticOpenPortRows(openPortsQuery.data || [], jobTargets, normalizedRows);
-    const reportRows = (aiReportsQuery.data || []) as Record<string, any>[];
-    const canonicalRows = reportRows.filter((row) => isOrganizationScopeReport(row));
-    const selectedReport = canonicalRows[0] || reportRows[0] || null;
-    const syntheticCveRows = buildSyntheticCveRowsFromReport(selectedReport, [...normalizedRows, ...syntheticOpenPortRows]);
-    return [...normalizedRows, ...syntheticOpenPortRows, ...syntheticCveRows]
-      .filter((row) => !['resolved', 'suppressed', 'false_positive', 'accepted_risk'].includes(String(row.status || '').toLowerCase()))
-      .filter((row) => !shouldHideFindingByScope(row, scopeRules));
-  }, [aiReportsQuery.data, allApiFindings, directFindingsQuery.data, jobTargetsQuery.data, openPortsQuery.data, scopeRules]);
+  const findings = useMemo(
+    () => combineSurfaceFindings({
+      jobFindings: allApiFindings,
+      directFindings: directFindingsQuery.data || [],
+      openPorts: openPortsQuery.data || [],
+      aiReports: (aiReportsQuery.data || []) as Record<string, any>[],
+      jobs: jobsQuery.data || [],
+      scopeRules,
+    }),
+    [aiReportsQuery.data, allApiFindings, directFindingsQuery.data, jobsQuery.data, openPortsQuery.data, scopeRules],
+  );
 
   const loading = jobsQuery.isLoading
     || findingsLoading
     || directFindingsQuery.isLoading
     || openPortsQuery.isLoading
-    || aiReportsQuery.isLoading
-    || jobTargetsQuery.isLoading;
+    || aiReportsQuery.isLoading;
 
-  const counts = useMemo(() => {
-    const bySeverity = findings.reduce((acc, row) => {
-      acc[row.severity] = (acc[row.severity] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-    return {
-      total: findings.length,
-      critical: bySeverity.critical || 0,
-      high: bySeverity.high || 0,
-      medium: bySeverity.medium || 0,
-      low: bySeverity.low || 0,
-      info: bySeverity.info || 0,
-    };
-  }, [findings]);
+  const counts = useMemo(() => countSurfaceFindings(findings), [findings]);
 
   const refetch = useCallback(async () => {
     await jobsQuery.refetch();
@@ -602,9 +616,8 @@ export const useSurfaceScanFindings = () => {
     await directFindingsQuery.refetch();
     await openPortsQuery.refetch();
     await aiReportsQuery.refetch();
-    await jobTargetsQuery.refetch();
     await fetchScopeRules();
-  }, [aiReportsQuery, directFindingsQuery, fetchAllFindings, fetchScopeRules, jobTargetsQuery, jobsQuery, openPortsQuery]);
+  }, [aiReportsQuery, directFindingsQuery, fetchAllFindings, fetchScopeRules, jobsQuery, openPortsQuery]);
 
   return { findings, loading, counts, scopeRules, refetch };
 };
