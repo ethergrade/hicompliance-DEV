@@ -6,7 +6,7 @@ import type { AssessmentSnapshot as ApiAssessmentSnapshot } from '@/types/api';
 
 export interface CategorySnapshot {
   name: string;
-  score: number;
+  score: number | null;
   answered: number;
   total: number;
 }
@@ -19,6 +19,8 @@ export interface AssessmentSnapshot {
   overall_score: number;
   total_answered: number;
   total_questions: number;
+  /** Calcolato con il metodo attuale: altrimenti la variazione non si mostra. */
+  score_method_current: boolean;
   created_at: string;
 }
 
@@ -45,6 +47,7 @@ function toSnapshot(item: ApiAssessmentSnapshot, orgId: string): AssessmentSnaps
     overall_score: item.overall_score,
     total_answered: item.total_answered,
     total_questions: item.total_questions,
+    score_method_current: item.score_method_current === true,
     created_at: item.created_at,
   };
 }

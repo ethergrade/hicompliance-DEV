@@ -734,7 +734,9 @@ const Assessment: React.FC = () => {
       const visibleQuestions = cat.questions.filter(q => isQuestionVisible(q, responses, v2Categories.length > 0 ? v2Categories : ASSESSMENT_CATEGORIES));
       const total = visibleQuestions.length;
       const status = answered === 0 ? 'not_started' : answered === total ? 'completed' : 'in_progress';
-      const score = calculateCategoryScore(cat.questions, responses);
+      // Stessa formula di dashboard, PDF e backend: solo domande visibili.
+      const shared = buildCategoryScore(cat, responses, v2Categories.length > 0 ? v2Categories : ASSESSMENT_CATEGORIES);
+      const score = shared.score;
       const isNotApplicable = counts.non_applicabile > 0
         && counts.completato === 0
         && counts.pianificato_in_corso === 0
@@ -749,9 +751,11 @@ const Assessment: React.FC = () => {
         risk,
         isNotApplicable,
         counts,
+        /** null per le aree senza risposte applicabili (N/A o non valutate). */
+        displayScore: shared.displayScore,
       };
     });
-  }, [getCategoryCounts, responses]);
+  }, [getCategoryCounts, responses, v2Categories]);
 
   // Snapshot scelto nello storico: anche allineamento (radar) e riepilogo lo
   // seguono, non solo confronto e variazione per categoria.
@@ -1299,7 +1303,7 @@ const Assessment: React.FC = () => {
         <GapAnalysisSection
           currentCategories={assessmentCategories.map(c => ({
             name: c.name,
-            score: c.score,
+            score: c.displayScore,
             completed: c.completed,
             questions: c.questions,
           }))}
@@ -1330,7 +1334,7 @@ const Assessment: React.FC = () => {
                   <p className="text-sm text-center max-w-[240px]">Rispondi alle domande dell'assessment per visualizzare i risultati nella radar</p>
                 </div>
               ) : (
-                <AssessmentRadarChart data={radarData} previousLabel={snapshotSummary ? String(snapshotSummary.year) : null} />
+                <AssessmentRadarChart data={radarData} previousLabel={snapshotSummary ? `${snapshotSummary.year}${snapshotSummary.available || compareSnapshot?.score_method_current ? '' : ' (metodo precedente)'}` : null} />
               )}
             </CardContent>
           </Card>
@@ -1345,7 +1349,7 @@ const Assessment: React.FC = () => {
                   </CardTitle>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {snapshotSummary && !snapshotSummary.available
-                      ? "Assessment importato: sono salvate le risposte date, non la distribuzione per stato"
+                      ? `Assessment importato: sono salvate le risposte date, non la distribuzione per stato${compareSnapshot?.score_method_current ? '' : '. Punteggi calcolati con il metodo precedente'}`
                       : 'Distribuzione dello stato delle risposte'}
                   </p>
                 </div>

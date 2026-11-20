@@ -12,7 +12,8 @@ import { AssessmentSnapshot, CategorySnapshot, useAssessmentSnapshots } from '@/
 interface GapAnalysisSectionProps {
   currentCategories: {
     name: string;
-    score: number;
+    /** null per le aree senza risposte applicabili. */
+    score: number | null;
     completed: number;
     questions: number;
   }[];
@@ -50,14 +51,18 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
     return snapshots.find(s => s.snapshot_year === parseInt(compareYear)) || null;
   }, [compareYear, snapshots]);
 
+  // Variazione solo fra valori calcolati con lo stesso metodo (decisione del
+  // 20/11/2026): con uno snapshot «Metodo precedente» si mostrano i due valori.
+  const sameMethod = selectedSnapshot?.score_method_current === true;
+
   const gapData = useMemo(() => {
     if (!selectedSnapshot) return [];
     return currentCategories.map(curr => {
       const prev = (selectedSnapshot.category_scores as CategorySnapshot[]).find(
         (s) => s.name === curr.name
       );
-      const prevScore = prev?.score ?? 0;
-      const delta = curr.score - prevScore;
+      const prevScore = prev && prev.score !== null && prev.answered > 0 ? prev.score : null;
+      const delta = sameMethod && prevScore !== null && curr.score !== null ? curr.score - prevScore : null;
       return {
         name: curr.name,
         shortName: curr.name.length > 16 ? curr.name.substring(0, 14) + '…' : curr.name,
@@ -66,9 +71,10 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
         delta,
       };
     });
-  }, [currentCategories, selectedSnapshot]);
+  }, [currentCategories, selectedSnapshot, sameMethod]);
 
-  const overallDelta = selectedSnapshot ? overallScore - selectedSnapshot.overall_score : 0;
+  const overallDelta = selectedSnapshot && sameMethod ? overallScore - selectedSnapshot.overall_score : null;
+  const conDelta = gapData.filter((g): g is typeof g & { delta: number } => g.delta !== null);
 
   return (
     <div className="space-y-6">
@@ -101,7 +107,7 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
                     compareYear === String(s.snapshot_year) ? '' : String(s.snapshot_year)
                   )}
                 >
-                  {s.snapshot_year} — {s.overall_score}/100
+                  {s.snapshot_year} — {s.overall_score}/100{s.score_method_current ? '' : ' · metodo precedente'}
                 </Badge>
               ))}
               <span className="text-[10px] text-muted-foreground ml-2">
@@ -139,6 +145,9 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
                       da {selectedSnapshot.overall_score}/100
                     </span>
                   </div>
+                  {overallDelta === null ? (
+                    <Badge variant="outline" className="text-xs text-muted-foreground">Metodo precedente</Badge>
+                  ) : (
                   <Badge
                     variant="outline"
                     className={`text-xs font-semibold ${
@@ -154,7 +163,14 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
                     {overallDelta === 0 && <Minus className="w-3 h-3 mr-1" />}
                     {overallDelta > 0 ? '+' : ''}{overallDelta}
                   </Badge>
+                  )}
                 </div>
+                {!sameMethod && (
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    Lo snapshot {selectedSnapshot.snapshot_year} è calcolato con il metodo precedente: i valori dei due anni
+                    sono mostrati, la variazione non si calcola.
+                  </p>
+                )}
               </div>
 
               {/* Top gains */}
@@ -162,7 +178,8 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
                 <div className="text-xs font-medium text-muted-foreground mb-2">
                   Migliori miglioramenti
                 </div>
-                {[...gapData]
+                {conDelta.length === 0 && <p className="text-xs text-muted-foreground">Variazione non disponibile.</p>}
+                {[...conDelta]
                   .sort((a, b) => b.delta - a.delta)
                   .slice(0, 3)
                   .map(item => (
@@ -187,7 +204,8 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
                 <div className="text-xs font-medium text-muted-foreground mb-2">
                   Aree critiche (gap)
                 </div>
-                {[...gapData]
+                {conDelta.length === 0 && <p className="text-xs text-muted-foreground">Variazione non disponibile.</p>}
+                {[...conDelta]
                   .sort((a, b) => a.delta - b.delta)
                   .slice(0, 3)
                   .map(item => (
@@ -258,6 +276,7 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
                       formatter={(value: number, key: string, props: any) => {
                         const item = props.payload;
                         if (key === 'previous') return [`${value}/100`, `${selectedSnapshot.snapshot_year}`];
+                        if (item.delta === null) return [`${value}/100`, `${currentYear}`];
                         const segno = item.delta > 0 ? '+' : '';
                         return [`${value}/100 (${segno}${item.delta})`, `${currentYear}`];
                       }}
@@ -280,7 +299,7 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
                       {gapData.map((entry, index) => (
                         <Cell
                           key={index}
-                          fill={entry.delta > 0 ? COLORE_SU : entry.delta < 0 ? COLORE_GIU : COLORE_STABILE}
+                          fill={entry.delta === null ? COLORE_STABILE : entry.delta > 0 ? COLORE_SU : entry.delta < 0 ? COLORE_GIU : COLORE_STABILE}
                         />
                       ))}
                     </Bar>

@@ -1,0 +1,47 @@
+{
+  "_nota": "Casi condivisi fra backend (tests/Unit/AssessmentScoringTest.php) e frontend (src/lib/assessment/scoring.parity.test.ts): il file deve restare identico nei due repo.",
+  "cases": [
+    {
+      "name": "aree valutate, area tutta N/A, area con una sola risposta applicabile a zero",
+      "questions": [
+        {"order": 1, "category": "Governance"}, {"order": 2, "category": "Governance"}, {"order": 3, "category": "Governance"},
+        {"order": 4, "category": "Certificazioni"}, {"order": 5, "category": "Certificazioni"},
+        {"order": 6, "category": "Sviluppo software"}, {"order": 7, "category": "Sviluppo software"}
+      ],
+      "statuses": {"1": "completed", "2": "completed", "3": "planned_in_progress", "4": "not_applicable", "5": "not_applicable", "6": "not_started", "7": "not_applicable"},
+      "expected": {
+        "overall": 42,
+        "scored": 2,
+        "categories": {
+          "Governance": {"score": 83, "status": "scored"},
+          "Certificazioni": {"score": null, "status": "not_applicable"},
+          "Sviluppo software": {"score": 0, "status": "scored"}
+        }
+      }
+    },
+    {
+      "name": "una condizionale nascosta non conta anche se ha una risposta",
+      "questions": [
+        {"order": 1, "category": "Rete"}, {"order": 2, "category": "Rete", "dependency": "1"}, {"order": 3, "category": "Rete"}
+      ],
+      "statuses": {"1": "not_started", "2": "completed", "3": "completed"},
+      "expected": {"overall": 50, "scored": 1, "categories": {"Rete": {"score": 50, "status": "scored"}}}
+    },
+    {
+      "name": "una condizionale visibile conta; dipendenza verso una domanda inesistente = visibile",
+      "questions": [
+        {"order": 1, "category": "Rete"}, {"order": 2, "category": "Rete", "dependency": "1"}, {"order": 3, "category": "Rete", "dependency": "99"}
+      ],
+      "statuses": {"1": "planned_in_progress", "2": "completed", "3": "not_started"},
+      "expected": {"overall": 50, "scored": 1, "categories": {"Rete": {"score": 50, "status": "scored"}}}
+    },
+    {
+      "name": "domande visibili senza risposta: area parziale, punteggio sulle risposte date",
+      "questions": [
+        {"order": 1, "category": "HR"}, {"order": 2, "category": "HR"}, {"order": 3, "category": "Backup"}
+      ],
+      "statuses": {"1": "completed"},
+      "expected": {"overall": 100, "scored": 1, "categories": {"HR": {"score": 100, "status": "partial"}, "Backup": {"score": null, "status": "not_assessed"}}}
+    }
+  ]
+}

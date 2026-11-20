@@ -518,16 +518,20 @@ function areas(w: PdfWriter, data: ReportData, d: Derived): void {
 		const prevByName = new Map(
 			Object.values(prev.category_scores ?? {}).map((c) => [String(c.category_name ?? c.name ?? ""), c]),
 		);
+		// Variazione solo con lo stesso metodo di calcolo; altrimenti i due valori.
+		const sameMethod = prev.score_method_current === true;
 		const rows: Cell[][] = [];
 		for (const s of d.scored) {
 			const p = prevByName.get(s.name);
-			if (!p || !(Number(p.answered) > 0)) continue;
+			if (!p || !(Number(p.answered) > 0) || p.score === null || p.score === undefined) continue;
 			const delta = (s.displayScore as number) - Number(p.score);
 			rows.push([
 				s.name,
 				`${Math.round(Number(p.score))}/100`,
 				`${s.displayScore}/100`,
-				{ text: delta === 0 ? "0" : `${delta > 0 ? "+" : ""}${Math.round(delta)}`, color: delta > 0 ? RISK_BAND.Basso : delta < 0 ? SEVERITY.high : BRAND.muted },
+				sameMethod
+					? { text: delta === 0 ? "0" : `${delta > 0 ? "+" : ""}${Math.round(delta)}`, color: delta > 0 ? RISK_BAND.Basso : delta < 0 ? SEVERITY.high : BRAND.muted }
+					: { text: "—", color: BRAND.muted },
 			]);
 		}
 		if (rows.length) {
@@ -541,7 +545,9 @@ function areas(w: PdfWriter, data: ReportData, d: Derived): void {
 				rows,
 				{
 					title: `Confronto con il ${year - 1}`,
-					note: `I valori del ${year - 1} sono quelli registrati alla chiusura del ciclo precedente, con il metodo di calcolo di allora: il confronto è indicativo. Sono escluse le aree senza risposte valutabili in uno dei due anni.`,
+					note: sameMethod
+						? `Valori dei due anni calcolati con lo stesso metodo. Sono escluse le aree senza risposte valutabili in uno dei due anni.`
+						: `I valori del ${year - 1} sono calcolati con il metodo precedente: sono mostrati, ma la variazione non si calcola. Sono escluse le aree senza risposte valutabili in uno dei due anni.`,
 				},
 			);
 		}

@@ -768,7 +768,10 @@ export interface CategoryScore {
 	/** Il backend scrive `category_name`; `name` resta per gli snapshot più vecchi. */
 	category_name?: string;
 	name?: string;
-	score: number;
+	/** null per le aree senza risposte applicabili (metodo attuale). */
+	score: number | null;
+	/** scored | partial | not_applicable | not_assessed (metodo attuale). */
+	status?: string;
 	answered: number;
 	total: number;
 }
@@ -780,6 +783,12 @@ export interface AssessmentSnapshot {
 	total_answered: number;
 	total_questions: number;
 	category_scores: Record<string, CategoryScore>;
+	/** Metodo del punteggio; null = «Metodo precedente». */
+	score_method?: string | null;
+	/** Vero se calcolato con il metodo attuale: solo allora si mostra la variazione. */
+	score_method_current?: boolean;
+	/** Valori mostrati prima del ricalcolo con il metodo attuale. */
+	published_scores?: { overall_score: number; score_method: string | null } | null;
 	analysis?: AssessmentAnalysis | null;
 	analysis_state?: AnalysisState;
 	analysis_violations?: AnalysisViolation[] | null;

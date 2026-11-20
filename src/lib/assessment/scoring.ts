@@ -17,6 +17,13 @@ import {
  */
 
 /**
+ * Metodo del punteggio: lo stesso valore di AssessmentScoring::METHOD nel
+ * backend. Uno snapshot con un metodo diverso (o senza, «Metodo precedente»)
+ * non si confronta con il punteggio attuale.
+ */
+export const SCORE_METHOD = 'aree-pesate-2026-11';
+
+/**
  * A question is visible unless it depends on a parent that is not in an
  * "active" state (planned/completed). Mirrors Assessment.tsx isQuestionVisible.
  */
@@ -93,10 +100,12 @@ export function buildCategoryScore(
   };
 
   let visibleTotal = 0;
+  const visibleQuestions: AssessmentQuestion[] = [];
   for (const q of cat.questions) {
     // Only count visible questions, mirroring getCategoryCounts in Assessment.tsx
     if (!isQuestionVisible(q, responses, allCategories)) continue;
     visibleTotal++;
+    visibleQuestions.push(q);
     const r = responses[q.id];
     if (r && r in counts) counts[r as keyof CategoryCounts]++;
     else counts.mancanti++;
@@ -114,9 +123,14 @@ export function buildCategoryScore(
         ? 'partial'
         : 'scored';
 
-  // Score intentionally uses all answered questions (calculateCategoryScore
-  // ignores visibility), identical to Assessment.tsx behavior.
-  const score = calculateCategoryScore(cat.questions, responses);
+  // Formula unica con il backend (AssessmentScoring, metodo SCORE_METHOD):
+  // solo le domande visibili (una condizionale nascosta non conta anche se ha
+  // una risposta) e tutte con lo stesso peso, come è sempre stato di fatto
+  // (il mapper v2 assegna «MEDIA» a ogni domanda).
+  const score = calculateCategoryScore(
+    visibleQuestions.map((q) => ({ ...q, priority: 'MEDIA' as const })),
+    responses,
+  );
 
   return {
     name: cat.name,
