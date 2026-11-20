@@ -77,6 +77,9 @@ export const useCveIntel = (cveId?: string | null) => {
   });
 };
 
+/** CVE per richiesta: 150 × ~16 caratteri restano sotto i 3 KB di query. */
+const CVE_BATCH_SIZE = 150;
+
 export const useCveIntelBatch = (cveIds: string[]) => {
   const { groupId } = useClientOrganization();
   const sorted = [...new Set(cveIds.map((c) => c.trim().toUpperCase()).filter(Boolean))].sort();
@@ -86,14 +89,26 @@ export const useCveIntelBatch = (cveIds: string[]) => {
     enabled: sorted.length > 0,
     staleTime: 60 * 1000,
     queryFn: async () => {
-      const res = await complianceApiClient.get<ApiResponse<CveIntel[]>>(
-        '/cve-intel/batch',
-        { cve_ids: sorted.join(',') },
-        groupHeader(groupId),
+      // A blocchi: con molte CVE un'unica GET supera la lunghezza d'URL che
+      // nginx e il WAF accettano (circa 8 KB).
+      const blocchi: string[][] = [];
+      for (let i = 0; i < sorted.length; i += CVE_BATCH_SIZE) {
+        blocchi.push(sorted.slice(i, i + CVE_BATCH_SIZE));
+      }
+      const risposte = await Promise.all(
+        blocchi.map((ids) =>
+          complianceApiClient.get<ApiResponse<CveIntel[]>>(
+            '/cve-intel/batch',
+            { cve_ids: ids.join(',') },
+            groupHeader(groupId),
+          ),
+        ),
       );
       const map: Record<string, CveIntel> = {};
-      for (const row of res.data ?? []) {
-        map[row.cve_id.toUpperCase()] = normalize(row);
+      for (const res of risposte) {
+        for (const row of res.data ?? []) {
+          map[row.cve_id.toUpperCase()] = normalize(row);
+        }
       }
       return map;
     },

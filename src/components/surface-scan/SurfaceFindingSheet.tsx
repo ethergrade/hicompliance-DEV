@@ -58,6 +58,10 @@ const actionTitle = (f: Record<string, unknown>): string => {
 	return String(f.title ?? "Intervento");
 };
 
+/** Le prime 20 CVE, poi quante ne restano: un servizio può averne decine. */
+const cveList = (cves: string[]): string =>
+	cves.length > 20 ? `${cves.slice(0, 20).join(", ")} e altre ${cves.length - 20}` : cves.join(", ");
+
 const Row: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
 	<div className="grid grid-cols-[140px_1fr] gap-3 py-1.5 text-sm">
 		<dt className="text-muted-foreground">{label}</dt>
@@ -176,7 +180,7 @@ export const SurfaceFindingSheet: React.FC<{ canManage: boolean }> = ({ canManag
 							{isTls && <Row label="Scadenza" value={fmtDay(evidence.valid_to) ?? "Data non acquisita"} />}
 							{isTls && evidence.issuer ? <Row label="Emittente" value={String(evidence.issuer)} /> : null}
 							{cvss !== null && <Row label="CVSS" value={cvss.toLocaleString("it-IT", { maximumFractionDigits: 1 })} />}
-							{Array.isArray(finding.cve) && finding.cve.length > 0 && <Row label="CVE" value={(finding.cve as string[]).join(", ")} />}
+							{Array.isArray(finding.cve) && finding.cve.length > 0 && <Row label="CVE" value={cveList(finding.cve as string[])} />}
 							<Row label="Assegnatario" value={String(finding.assignee ?? "").trim() || "Da assegnare"} />
 							<Row label="Intervento" value={ACTION_LABEL[String(finding.action_status ?? "")] ?? "Da valutare"} />
 						</dl>
