@@ -10,10 +10,11 @@ const _h = (groupId?: string | null) =>
 	groupId ? { headers: { "X-Group-Id": groupId } } : undefined;
 
 export const remediationTasksApi = {
-	async list(companyId: string, groupId?: string | null): Promise<RemediationTask[]> {
+	/** Piano corrente; con `snapshotId` il piano di quell'assessment (anni precedenti). */
+	async list(companyId: string, groupId?: string | null, snapshotId?: string | null): Promise<RemediationTask[]> {
 		const res = await apiClient.get<ApiResponse<RemediationTask[]>>(
 			`/companies/${companyId}/remediation-tasks`,
-			undefined,
+			snapshotId ? { snapshot_id: snapshotId } : undefined,
 			_h(groupId),
 		);
 		return res.data;

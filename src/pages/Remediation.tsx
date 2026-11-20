@@ -6,6 +6,11 @@ import React, {
 	useRef,
 } from "react";
 import { remediationTasksApi } from "@/lib/api";
+import { assessmentV2Api } from "@/lib/api/assessment-v2";
+import { useQuery } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type {
 	RemediationTask,
 	StoreRemediationTaskRequest,
@@ -183,12 +188,42 @@ const Remediation: React.FC = () => {
 		}
 	}, [planCompanyName]);
 	const { capabilities } = useAuth();
+
+	// Piani degli anni precedenti: ogni assessment ha il suo piano, che non viene
+	// cancellato quando ne nasce uno nuovo. Si consultano scegliendo l'anno
+	// (?piano=<snapshot>); il piano corrente resta quello di default.
+	const [searchParams, setSearchParams] = useSearchParams();
+	const plansQuery = useQuery({
+		queryKey: ["remediation-plans", orgId, groupId],
+		enabled: Boolean(orgId),
+		staleTime: 60_000,
+		queryFn: async () => {
+			const [snapshots, campaigns] = await Promise.all([
+				assessmentV2Api.snapshots(orgId!, groupId),
+				assessmentV2Api.campaigns(orgId!, groupId).catch(() => null),
+			]);
+			const sorted = [...snapshots].sort((a, b) => b.snapshot_year - a.snapshot_year || b.created_at.localeCompare(a.created_at));
+			const currentId = campaigns?.current?.snapshot_id ?? sorted[0]?.id ?? null;
+			return { snapshots: sorted, currentId };
+		},
+	});
+	const requestedPlan = searchParams.get("piano");
+	const selectedPlan = plansQuery.data?.snapshots.find((s) => s.id === requestedPlan) ?? null;
+	// Un piano diverso dal corrente si consulta e basta: niente modifiche allo storico.
+	const readOnlyPlan = selectedPlan !== null && selectedPlan.id !== plansQuery.data?.currentId;
+	const selectPlan = (snapshotId: string) => {
+		const next = new URLSearchParams(searchParams);
+		if (snapshotId === plansQuery.data?.currentId) next.delete("piano");
+		else next.set("piano", snapshotId);
+		setSearchParams(next);
+	};
+
 	// .edit crea, elimina e ripristina; .update (il commerciale) modifica soltanto
 	// le attività che ci sono: ghiera, budget, date, ordine.
-	const canEdit = capabilities?.["hicompliance.remediation_tasks.edit"] ?? true;
-	const canModify = canEdit || (capabilities?.["hicompliance.remediation_tasks.update"] ?? false);
+	const canEdit = !readOnlyPlan && (capabilities?.["hicompliance.remediation_tasks.edit"] ?? true);
+	const canModify = !readOnlyPlan && (canEdit || (capabilities?.["hicompliance.remediation_tasks.update"] ?? false));
 	const canUpdateProgress =
-		capabilities?.["hicompliance.remediation_tasks.view"] ?? false;
+		!readOnlyPlan && (capabilities?.["hicompliance.remediation_tasks.view"] ?? false);
 	const [baseGanttWindow] = useState(createGanttWindow);
 
 	const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -237,7 +272,7 @@ const Remediation: React.FC = () => {
 		setTasks([]); // Clear previous tasks while loading
 		try {
 			console.log("[Remediation] Loading v2 tasks for orgId:", orgId);
-			const all = await remediationTasksApi.list(orgId, groupId);
+			const all = await remediationTasksApi.list(orgId, groupId, readOnlyPlan ? selectedPlan?.id : null);
 			console.log(
 				"[Remediation] Got tasks:",
 				all.length,
@@ -256,7 +291,7 @@ const Remediation: React.FC = () => {
 		} finally {
 			setLoading(false);
 		}
-	}, [orgId, groupId, apiTaskToDbTask]);
+	}, [orgId, groupId, apiTaskToDbTask, readOnlyPlan, selectedPlan?.id]);
 
 	useEffect(() => {
 		loadTasks();
@@ -670,6 +705,29 @@ const Remediation: React.FC = () => {
 							Azioni prioritarie per mitigare i rischi critici identificati
 							nell'assessment
 						</p>
+						{(plansQuery.data?.snapshots.length ?? 0) > 1 && (
+							<div className="mt-3 flex items-center gap-2">
+								<Label htmlFor="remediation-plan-year" className="text-sm text-muted-foreground">
+									Piano
+								</Label>
+								<Select
+									value={selectedPlan?.id ?? plansQuery.data?.currentId ?? ""}
+									onValueChange={selectPlan}
+								>
+									<SelectTrigger id="remediation-plan-year" className="h-9 w-56">
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										{plansQuery.data!.snapshots.map((snap) => (
+											<SelectItem key={snap.id} value={snap.id}>
+												Assessment {snap.snapshot_year}
+												{snap.id === plansQuery.data!.currentId ? " (corrente)" : ""}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</div>
+						)}
 					</div>
 					<div className="flex space-x-2">
 						<Dialog
@@ -791,6 +849,21 @@ const Remediation: React.FC = () => {
 				>
 					<RemediationPlanTable ref={planRef} tasks={activeTasks} />
 				</div>
+
+				{readOnlyPlan && selectedPlan && (
+					<div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm" role="status">
+						<span>
+							Stai consultando il piano dell'assessment {selectedPlan.snapshot_year}: è in sola lettura.
+						</span>
+						<Button
+							size="sm"
+							variant="outline"
+							onClick={() => plansQuery.data?.currentId && selectPlan(plansQuery.data.currentId)}
+						>
+							Torna al piano corrente
+						</Button>
+					</div>
+				)}
 
 				{/* Executive Summary Metrics */}
 				<div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4">
