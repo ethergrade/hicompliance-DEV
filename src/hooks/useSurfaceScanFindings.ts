@@ -42,7 +42,7 @@ export interface SurfaceFindingRow {
   occurrence_count?: number | null;
 }
 
-interface SurfaceOpenPortRow {
+export interface SurfaceOpenPortRow {
   id: string;
   scan_job_id: string | null;
   host: string | null;

@@ -44,8 +44,10 @@ import { calculateCategoryScore, getRiskFromScore, CATEGORY_DESCRIPTIONS, ASSESS
 import type { AssessmentCategory as UICategory } from '@/data/assessmentQuestions';
 import { computeOverallScore } from '@/lib/assessment/scoring';
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import FullReportView, { type FullReportReadyPayload } from '@/components/report/FullReportView';
-import { exportFullReportPdf } from '@/lib/report/exportFullReportPdf';
+import { collectReportData, ReportAborted } from '@/lib/report/collectReportData';
+import { buildFullReportPdf } from '@/lib/report/pdf/buildFullReport';
+import { loadReportFonts } from '@/lib/report/pdf/fonts';
+import hisolutionLogoUrl from '@/assets/brand/hisolution-logo.png';
 import GapAnalysisSection from '@/components/assessment/GapAnalysisSection';
 import { AssessmentRadarChart } from '@/components/assessment/AssessmentRadarChart';
 import { moduleVisibility } from '@/config/moduleVisibility';
@@ -601,22 +603,51 @@ const Assessment: React.FC = () => {
   // Organization profile for NIS2 classification
   const { formData: orgProfile, loading: profileLoading } = useOrganizationProfile();
 
-  // Report completo: monta FullReportView offscreen, attende onReady, esporta, smonta.
-  const handleFullReportReady = useCallback(async (payload: FullReportReadyPayload) => {
+  // Report completo: dati letti e congelati al click, PDF scritto in testo nativo.
+  // Se nel frattempo cambia il cliente selezionato la generazione si annulla:
+  // un PDF con dati di due clienti non deve uscire.
+  const reportAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => reportAbort.current?.abort(), [orgId]);
+
+  const generateFullReport = useCallback(async () => {
+    if (!orgId) return;
+    reportAbort.current?.abort();
+    const controller = new AbortController();
+    reportAbort.current = controller;
+    setGeneratingFullReport(true);
     try {
-      await exportFullReportPdf({
-        companyName: orgProfile?.legal_name || 'Cliente',
-        assessment: payload.assessment,
-        blocks: payload.blocks,
+      const org = selectedOrganization as unknown as Record<string, unknown> | null;
+      const companyName =
+        orgProfile?.legal_name || (org?.legal_name as string) || (org?.name as string) || 'Cliente';
+      const data = await collectReportData({
+        organizationId: orgId,
+        groupId: selectedOrganization?.group_id ?? null,
+        companyName,
+        org: org as never,
+        signal: controller.signal,
       });
+      const { blob, filename } = await buildFullReportPdf(data, hisolutionLogoUrl, { fonts: await loadReportFonts() });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
       toast.success('Report completo scaricato');
     } catch (e) {
-      console.error('Full report export error:', e);
-      toast.error('Impossibile generare il report completo');
+      if (e instanceof ReportAborted) {
+        toast.info('Generazione annullata: è cambiato il cliente selezionato');
+      } else {
+        console.error('Full report export error:', e);
+        toast.error('Impossibile generare il report completo');
+      }
     } finally {
+      if (reportAbort.current === controller) reportAbort.current = null;
       setGeneratingFullReport(false);
     }
-  }, [orgProfile]);
+  }, [orgId, orgProfile, selectedOrganization]);
   const { groupId } = useClientOrganization();
 
   // Tenant services: rileva se HiCompliance è attivo per il cliente selezionato
@@ -971,7 +1002,7 @@ const Assessment: React.FC = () => {
             <Button
               className="bg-primary text-primary-foreground"
               disabled={generatingFullReport}
-              onClick={() => setGeneratingFullReport(true)}
+              onClick={generateFullReport}
             >
               {generatingFullReport ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -982,13 +1013,6 @@ const Assessment: React.FC = () => {
             </Button>
           </div>
         </div>
-
-        {/* Report completo: vista renderizzata offscreen solo durante la generazione */}
-        {generatingFullReport && (
-          <div style={{ position: 'fixed', left: -10000, top: 0, width: 900, pointerEvents: 'none' }} aria-hidden>
-            <FullReportView onReady={handleFullReportReady} />
-          </div>
-        )}
 
         {/* Organization Profile Banner */}
         {!profileLoading && (
