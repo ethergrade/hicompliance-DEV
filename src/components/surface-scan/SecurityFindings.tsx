@@ -333,7 +333,12 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ printMode = false }
         });
 
         const maxSeverity = sortedRows[0]?.severity || 'info';
-        const lastUpdate = sortedRows[0]?.created_at || new Date(0).toISOString();
+        // L'ultima osservazione fra tutte le righe dell'asset, non la data della
+        // prima riga dopo un ordinamento per severità (caso ARGO).
+        const lastUpdate = rows
+          .map((r) => r.last_seen_at || r.created_at)
+          .filter((d): d is string => Boolean(d) && !Number.isNaN(new Date(String(d)).getTime()))
+          .sort((x, y) => new Date(y).getTime() - new Date(x).getTime())[0] || new Date(0).toISOString();
         const assetLabel = normalizeAsset(sortedRows[0]);
         const primaryIp = sortedRows.find((entry) => entry.ip)?.ip || hostMeta[assetLabel]?.ips?.[0] || null;
         const sourceBadge = hostMeta[assetLabel]?.fromScope
@@ -495,7 +500,7 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ printMode = false }
                 <TableHead>Sub Asset</TableHead>
                 <TableHead>Tot. Finding</TableHead>
                 <TableHead>Severity Max</TableHead>
-                <TableHead>Ultimo Finding</TableHead>
+                <TableHead>Ultima rilevazione</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
