@@ -98,6 +98,20 @@ export function DarkRiskFindingsList({ companyId, groupId, scope }: Props) {
 	if (dateTo) filters.date_to = dateTo;
 
 	const filterKey = JSON.stringify({ ...filters, page: undefined });
+
+	// «Azzera filtri»: tornare alla lista completa con un clic, non campo per campo.
+	const activeFilters =
+		Number(Boolean(q.trim())) + Number(type !== "all") + Number(severity !== "all") + Number(ack !== "all") +
+		Number(Boolean(dateFrom || dateTo));
+	const resetFilters = () => {
+		setQ("");
+		setType("all");
+		setSeverity("all");
+		setAck("all");
+		setDateField("leak");
+		setDateFrom("");
+		setDateTo("");
+	};
 	useEffect(() => setPage(1), [filterKey]);
 
 	const query = useQuery({
@@ -177,12 +191,29 @@ export function DarkRiskFindingsList({ companyId, groupId, scope }: Props) {
 						<Label htmlFor="dr-to" className="text-xs">Al</Label>
 						<Input id="dr-to" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
 					</div>
+					<div className="flex flex-wrap items-end justify-between gap-2 lg:col-span-4">
+						{dateField === "leak" && (dateFrom || dateTo) ? (
+							<p className="text-xs text-muted-foreground">
+								Le evidenze senza data della fonte non rientrano nel filtro per data del leak.
+							</p>
+						) : <span />}
+						<Button type="button" variant="outline" size="sm" onClick={resetFilters} disabled={activeFilters === 0}>
+							Azzera filtri{activeFilters > 0 ? ` (${activeFilters})` : ""}
+						</Button>
+					</div>
 				</div>
 
 				{query.isLoading ? (
 					<Loader2 className="h-4 w-4 animate-spin" />
 				) : rows.length === 0 ? (
-					<p className="text-sm text-muted-foreground">Nessuna evidenza corrispondente ai filtri.</p>
+					<div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+						<span>Nessuna evidenza corrispondente ai filtri.</span>
+						{activeFilters > 0 && (
+							<Button type="button" variant="link" size="sm" className="h-auto p-0" onClick={resetFilters}>
+								Azzera filtri
+							</Button>
+						)}
+					</div>
 				) : (
 					<>
 						<Table>
@@ -266,7 +297,9 @@ function FindingRow({
 			</TableCell>
 			<TableCell><Badge variant={sev.variant}>{sev.label}</Badge></TableCell>
 			<TableCell className="text-xs">{f.asset ?? "—"}</TableCell>
-			<TableCell className="text-xs">{fmtDate(f.leakDate)}</TableCell>
+			<TableCell className="text-xs">
+				{f.leakDate ? fmtDate(f.leakDate) : <span className="text-muted-foreground" title="La fonte non indica la data del leak">Non verificata</span>}
+			</TableCell>
 			<TableCell className="text-xs">{fmtDate(f.firstSeenAt)} → {fmtDate(f.lastSeenAt)}</TableCell>
 			<TableCell className="text-xs">
 				{f.acknowledged ? (
