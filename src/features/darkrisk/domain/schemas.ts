@@ -89,8 +89,9 @@ export const parseWeeklySnapshot = (value: unknown): DarkRiskWeeklySnapshot | nu
 		resultsByAsset: byAsset,
 		severityDistribution: countMap(item.severity_distribution),
 		deltaVsPrev: {
-			totalRecords: delta.total_records === undefined ? null : numberValue(delta.total_records),
-			riskIndex: delta.risk_index === undefined ? null : numberValue(delta.risk_index),
+			// null anche quando il metodo di conteggio è cambiato: nessuna variazione.
+			totalRecords: delta.total_records === undefined || delta.total_records === null ? null : numberValue(delta.total_records),
+			riskIndex: delta.risk_index === undefined || delta.risk_index === null ? null : numberValue(delta.risk_index),
 			newBuckets: Array.isArray(delta.new_buckets)
 				? delta.new_buckets.map((bucket) => stringValue(bucket)).filter(Boolean)
 				: [],

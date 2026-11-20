@@ -693,7 +693,12 @@ function darkRisk(w: PdfWriter, d: Derived): void {
 
 	const delta = obj(snap.delta_vs_prev);
 	const dIndex = num(delta.risk_index);
-	if (dIndex !== null && delta.prev_week_key) {
+	if (delta.method_changed === true && delta.prev_week_key) {
+		w.paragraph(
+			`Variazione rispetto alla settimana ${delta.prev_week_key} non calcolata: da questa settimana un record trovato da più ricerche conta una volta sola.`,
+			{ size: 9 },
+		);
+	} else if (dIndex !== null && delta.prev_week_key) {
 		w.paragraph(
 			dIndex === 0
 				? `Indice invariato rispetto alla settimana ${delta.prev_week_key}.`
