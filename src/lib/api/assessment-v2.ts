@@ -217,6 +217,23 @@ export const assessmentV2Api = {
 		return res.data;
 	},
 
+	/**
+	 * Le risposte com'erano a uno snapshot (cicli dal 2026). Per gli snapshot
+	 * importati `available` è false e le risposte non ci sono.
+	 */
+	async snapshotResponses(
+		companyId: string,
+		snapshotId: string,
+		_g?: string | null,
+	): Promise<{ available: boolean; responses: AssessmentResponseItem[] }> {
+		const res = await apiClient.get<ApiResponse<{ available: boolean; responses: AssessmentResponseItem[] }>>(
+			`/companies/${companyId}/assessment-snapshots/${snapshotId}/responses`,
+			undefined,
+			_h(companyId, _g),
+		);
+		return res.data;
+	},
+
 	/** Create a new snapshot (recalculates scores from current responses) */
 	async createSnapshot(
 		companyId: string,

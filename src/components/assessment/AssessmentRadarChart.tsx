@@ -7,11 +7,15 @@ type AssessmentRadarDatum = {
   fullName: string;
   compliance: number;
   target: number;
+  /** Punteggio allo snapshot di confronto; null se in quell'anno non era valutabile. */
+  previous?: number | null;
 };
 
 interface AssessmentRadarChartProps {
   data: AssessmentRadarDatum[];
   className?: string;
+  /** Etichetta della serie di confronto (es. «2025»): se manca, la serie non si disegna. */
+  previousLabel?: string | null;
 }
 
 const VIEWBOX_WIDTH = 520;
@@ -45,7 +49,7 @@ const getLabelY = (y: number) => {
   return y + 4;
 };
 
-export function AssessmentRadarChart({ data, className }: AssessmentRadarChartProps) {
+export function AssessmentRadarChart({ data, className, previousLabel }: AssessmentRadarChartProps) {
   const geometry = useMemo(() => {
     if (!data.length) return null;
 
@@ -64,8 +68,15 @@ export function AssessmentRadarChart({ data, className }: AssessmentRadarChartPr
         labelPoint,
         compliancePoint: polarToCartesian(angle, item.compliance),
         targetPoint: polarToCartesian(angle, item.target),
+        previousPoint: polarToCartesian(angle, item.previous ?? 0),
       };
     });
+
+    // Confronto con uno snapshot: le aree non valutabili allora contano 0 nel
+    // poligono ma non ricevono il punto, così non sembrano un punteggio.
+    const previousPolygon = previousLabel
+      ? axes.map((axis) => `${axis.previousPoint.x},${axis.previousPoint.y}`).join(' ')
+      : null;
 
     const compliancePolygon = axes.map((axis) => `${axis.compliancePoint.x},${axis.compliancePoint.y}`).join(' ');
     const targetPolygon = axes.map((axis) => `${axis.targetPoint.x},${axis.targetPoint.y}`).join(' ');
@@ -77,8 +88,8 @@ export function AssessmentRadarChart({ data, className }: AssessmentRadarChartPr
       }).join(' '),
     }));
 
-    return { axes, compliancePolygon, targetPolygon, gridPolygons };
-  }, [data]);
+    return { axes, compliancePolygon, targetPolygon, gridPolygons, previousPolygon };
+  }, [data, previousLabel]);
 
   if (!geometry) return null;
 
@@ -126,6 +137,35 @@ export function AssessmentRadarChart({ data, className }: AssessmentRadarChartPr
         >
           <title>Target 90/100 su tutte le categorie</title>
         </polygon>
+
+        {geometry.previousPolygon && (
+          <>
+            <polygon
+              points={geometry.previousPolygon}
+              fill="hsl(var(--muted-foreground))"
+              fillOpacity="0.08"
+              stroke="hsl(var(--muted-foreground))"
+              strokeWidth="2"
+              strokeDasharray="4 4"
+              strokeLinejoin="round"
+            >
+              <title>{`Assessment ${previousLabel}`}</title>
+            </polygon>
+            {geometry.axes
+              .filter((axis) => axis.previous !== null && axis.previous !== undefined)
+              .map((axis) => (
+                <circle
+                  key={`${axis.fullName}-previous`}
+                  cx={axis.previousPoint.x}
+                  cy={axis.previousPoint.y}
+                  r="2.5"
+                  fill="hsl(var(--muted-foreground))"
+                >
+                  <title>{`${axis.fullName} ${previousLabel}: ${Math.round(axis.previous as number)}/100`}</title>
+                </circle>
+              ))}
+          </>
+        )}
 
         <polygon
           points={geometry.compliancePolygon}
@@ -193,12 +233,18 @@ export function AssessmentRadarChart({ data, className }: AssessmentRadarChartPr
           </text>
         ))}
 
-        <g transform="translate(178, 390)">
+        <g transform={`translate(${previousLabel ? 120 : 178}, 390)`}>
           <rect width="18" height="10" rx="2" fill="hsl(var(--primary))" />
           <text x="24" y="9" fontSize="12" fill="hsl(var(--muted-foreground))">Conformità</text>
 
           <rect x="110" width="18" height="10" rx="2" fill="hsl(var(--cyber-green))" />
           <text x="134" y="9" fontSize="12" fill="hsl(var(--muted-foreground))">Target</text>
+          {previousLabel && (
+            <>
+              <rect x="200" width="18" height="10" rx="2" fill="hsl(var(--muted-foreground))" fillOpacity="0.5" />
+              <text x="224" y="9" fontSize="12" fill="hsl(var(--muted-foreground))">{`Assessment ${previousLabel}`}</text>
+            </>
+          )}
         </g>
       </svg>
     </div>

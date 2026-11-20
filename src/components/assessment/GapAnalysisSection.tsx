@@ -18,6 +18,9 @@ interface GapAnalysisSectionProps {
   }[];
   overallScore: number;
   overallProgress: number;
+  /** Anno selezionato, se la pagina lo controlla (per radar e riepilogo). */
+  selectedYear?: string;
+  onSelectYear?: (year: string) => void;
 }
 
 const COLORE_SNAPSHOT = 'hsl(var(--muted-foreground) / 0.45)';
@@ -29,6 +32,8 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
   currentCategories,
   overallScore,
   overallProgress,
+  selectedYear,
+  onSelectYear,
 }) => {
   // Lo snapshot non si crea più da qui: nasce dalla conferma del ciclo di
   // assessment. Il pulsante che stava qui poteva legare uno snapshot a un ciclo
@@ -36,7 +41,9 @@ const GapAnalysisSection: React.FC<GapAnalysisSectionProps> = ({
   const { snapshots, loading } = useAssessmentSnapshots();
   // Serve alle etichette di confronto: "2025 → 2026"
   const currentYear = new Date().getFullYear();
-  const [compareYear, setCompareYear] = useState<string>('');
+  const [localYear, setLocalYear] = useState<string>('');
+  const compareYear = selectedYear ?? localYear;
+  const setCompareYear = onSelectYear ?? setLocalYear;
 
   const selectedSnapshot = useMemo(() => {
     if (!compareYear) return null;

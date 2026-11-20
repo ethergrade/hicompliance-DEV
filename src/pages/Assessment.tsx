@@ -42,7 +42,9 @@ import { assessmentV2Api, assessmentApi } from '@/lib/api';
 import { loadV2AssessmentData, mapToV2Status, mapToUiStatus } from '@/lib/assessmentV2Mapper';
 import { calculateCategoryScore, getRiskFromScore, CATEGORY_DESCRIPTIONS, ASSESSMENT_CATEGORIES } from '@/data/assessmentQuestions';
 import type { AssessmentCategory as UICategory } from '@/data/assessmentQuestions';
-import { computeOverallScore } from '@/lib/assessment/scoring';
+import { buildCategoryScore, computeOverallScore } from '@/lib/assessment/scoring';
+import { useQuery } from '@tanstack/react-query';
+import { useAssessmentSnapshots } from '@/hooks/useAssessmentSnapshots';
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { collectReportData, ReportAborted } from '@/lib/report/collectReportData';
 import { buildFullReportPdf } from '@/lib/report/pdf/buildFullReport';
@@ -751,6 +753,59 @@ const Assessment: React.FC = () => {
     });
   }, [getCategoryCounts, responses]);
 
+  // Snapshot scelto nello storico: anche allineamento (radar) e riepilogo lo
+  // seguono, non solo confronto e variazione per categoria.
+  const [compareYear, setCompareYear] = useState('');
+  const { snapshots: pageSnapshots } = useAssessmentSnapshots();
+  const compareSnapshot = useMemo(
+    () => (compareYear ? pageSnapshots.find((s) => String(s.snapshot_year) === compareYear) ?? null : null),
+    [compareYear, pageSnapshots],
+  );
+  const snapshotResponsesQuery = useQuery({
+    queryKey: ['assessment-snapshot-responses', orgId, compareSnapshot?.id],
+    enabled: Boolean(orgId && compareSnapshot),
+    staleTime: 5 * 60_000,
+    queryFn: () => assessmentV2Api.snapshotResponses(orgId!, compareSnapshot!.id, selectedOrganization?.group_id),
+  });
+
+  /**
+   * Riepilogo dello snapshot scelto. Con le risposte del ciclo (dal 2026) si
+   * ricalcola come oggi; per gli snapshot importati restano solo risposte date
+   * e punteggio salvati allora.
+   */
+  const snapshotSummary = useMemo(() => {
+    if (!compareSnapshot) return null;
+    const data = snapshotResponsesQuery.data;
+    if (data?.available && v2Categories.length > 0) {
+      const uuidToIndex: Record<string, number> = {};
+      Object.entries(indexToUuid).forEach(([idx, uuid]) => {
+        uuidToIndex[uuid] = Number(idx);
+      });
+      const mapped: Record<number, string> = {};
+      data.responses.forEach((item) => {
+        const idx = uuidToIndex[item.question_id];
+        if (idx) mapped[idx] = mapToUiStatus(item.status);
+      });
+      const scores = v2Categories.map((c) => buildCategoryScore(c, mapped as never, v2Categories));
+      return {
+        year: compareSnapshot.snapshot_year,
+        available: true as const,
+        rows: scores.map((c) => ({ name: c.name, total: c.visibleTotal, answered: c.answered, counts: c.counts as typeof c.counts | null, score: c.displayScore })),
+      };
+    }
+    return {
+      year: compareSnapshot.snapshot_year,
+      available: false as const,
+      rows: compareSnapshot.category_scores.map((c) => ({
+        name: c.name,
+        total: c.total,
+        answered: c.answered,
+        counts: null,
+        score: c.answered > 0 ? c.score : null,
+      })),
+    };
+  }, [compareSnapshot, snapshotResponsesQuery.data, v2Categories, indexToUuid]);
+
   const radarData = useMemo(() => {
     // Always use live client-computed scores so the radar matches the category list on the right.
     // The backend report-monthly (backendRadarCategories) uses a different formula and is a
@@ -760,8 +815,9 @@ const Assessment: React.FC = () => {
       fullName: cat.name,
       compliance: Number.isFinite(cat.score) ? cat.score : 0,
       target: 90,
+      previous: snapshotSummary ? (snapshotSummary.rows.find((r) => r.name === cat.name)?.score ?? null) : undefined,
     }));
-  }, [assessmentCategories]);
+  }, [assessmentCategories, snapshotSummary]);
 
   const hasRadarResponses = useMemo(
     () => assessmentCategories.some((cat) => cat.completed > 0),
@@ -1249,6 +1305,8 @@ const Assessment: React.FC = () => {
           }))}
           overallScore={overallScore}
           overallProgress={overallProgress}
+          selectedYear={compareYear}
+          onSelectYear={setCompareYear}
         />
 
         {/* ── RADAR Chart + Category Breakdown ── */}
@@ -1258,7 +1316,11 @@ const Assessment: React.FC = () => {
             <CardHeader className="pb-2">
               <div>
                 <CardTitle className="text-base">Allineamento NIS2 / NIST / ISO</CardTitle>
-                <p className="text-xs text-muted-foreground mt-0.5">Punteggio reale da risposte assessment</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {snapshotSummary
+                    ? `Oggi a confronto con l'assessment ${snapshotSummary.year}`
+                    : 'Punteggio reale da risposte assessment'}
+                </p>
               </div>
             </CardHeader>
             <CardContent className="pt-0">
@@ -1268,7 +1330,7 @@ const Assessment: React.FC = () => {
                   <p className="text-sm text-center max-w-[240px]">Rispondi alle domande dell'assessment per visualizzare i risultati nella radar</p>
                 </div>
               ) : (
-                <AssessmentRadarChart data={radarData} />
+                <AssessmentRadarChart data={radarData} previousLabel={snapshotSummary ? String(snapshotSummary.year) : null} />
               )}
             </CardContent>
           </Card>
@@ -1278,8 +1340,14 @@ const Assessment: React.FC = () => {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle className="text-base">Riepilogo Risposte per Categoria</CardTitle>
-                  <p className="text-xs text-muted-foreground mt-0.5">Distribuzione dello stato delle risposte</p>
+                  <CardTitle className="text-base">
+                    Riepilogo Risposte per Categoria{snapshotSummary ? ` · Assessment ${snapshotSummary.year}` : ''}
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {snapshotSummary && !snapshotSummary.available
+                      ? "Assessment importato: sono salvate le risposte date, non la distribuzione per stato"
+                      : 'Distribuzione dello stato delle risposte'}
+                  </p>
                 </div>
                 <div className="flex items-center gap-3 text-[10px] font-medium">
                   <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-green-500" /> Completato</span>
@@ -1291,10 +1359,13 @@ const Assessment: React.FC = () => {
             </CardHeader>
             <CardContent className="pt-0">
               <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
-                {assessmentCategories.map((cat) => {
-                  const total = cat.questions;
+                {(snapshotSummary
+                  ? snapshotSummary.rows
+                  : assessmentCategories.map((cat) => ({ name: cat.name, total: cat.questions, answered: cat.completed, counts: cat.counts }))
+                ).map((cat) => {
+                  const total = cat.total;
                   const c = cat.counts;
-                  const answered = c.completato + c.pianificato_in_corso + c.non_iniziato + c.non_applicabile;
+                  const answered = c ? c.completato + c.pianificato_in_corso + c.non_iniziato + c.non_applicabile : cat.answered;
                   const pct = total > 0 ? Math.round((answered / total) * 100) : 0;
                   return (
                     <div key={cat.name} className="group rounded-lg border border-border/50 hover:border-border bg-card/50 hover:bg-muted/20 transition-all px-3 py-2.5">
@@ -1312,6 +1383,12 @@ const Assessment: React.FC = () => {
                         </div>
                       </div>
                       {/* Stacked bar - thicker */}
+                      {!c ? (
+                        <div className="flex h-3 rounded-full overflow-hidden bg-muted/40">
+                          <div className="bg-primary/60 transition-all duration-500" style={{ width: `${pct}%` }} />
+                        </div>
+                      ) : (
+                      <>
                       <div className="flex h-3 rounded-full overflow-hidden bg-muted/40 mb-2">
                         {c.completato > 0 && (
                           <div className="bg-green-500 transition-all duration-500" style={{ width: `${(c.completato / total) * 100}%` }} />
@@ -1345,6 +1422,8 @@ const Assessment: React.FC = () => {
                           <span className="text-muted-foreground font-bold">{c.non_applicabile}</span>
                         </div>
                       </div>
+                      </>
+                      )}
                     </div>
                   );
                 })}
