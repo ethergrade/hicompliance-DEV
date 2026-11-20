@@ -71,7 +71,8 @@ export interface ReportSurfaceScan {
 	riskLevel: SurfaceRiskLevel | null;
 	riskPoints: number | null;
 	lastScanAt: string | null;
-	scopeRules: number;
+	/** Regole di perimetro; null se il ruolo non può leggerle (richiedono la modifica). */
+	scopeRules: number | null;
 	history: SurfaceScanHistoryEntry[];
 	mail: MailSecRow[];
 }
@@ -201,7 +202,9 @@ async function loadSurfaceScan(organizationId: string, groupId: string | null): 
 		surfaceScan360Api.getFindings(organizationId, { per_page: 500 }, groupId),
 		surfaceScan360Api.getOpenPorts(organizationId, { per_page: 500 }, groupId),
 		surfaceScan360Api.listAiReports(organizationId, { page: 1 }, groupId),
-		surfaceScan360Api.listMonitoredIps(organizationId, groupId),
+		// Le regole di perimetro richiedono il permesso di modifica: per un
+		// utente in sola lettura la sezione resta, senza il filtro di scope.
+		surfaceScan360Api.listMonitoredIps(organizationId, groupId).catch(() => null),
 		surfaceScan360Api.listHistory(organizationId, 12, groupId),
 		surfaceScan360Api
 			.getObservations(organizationId, { module: "mail_config,connectsecure", observation_type: "mail_config_summary,mail_security_summary" }, groupId)
@@ -254,7 +257,7 @@ async function loadSurfaceScan(organizationId: string, groupId: string | null): 
 		riskLevel: postureScore === null ? null : asSurfaceRiskLevel(summary?.risk_level) ?? surfaceRiskLevelFromPoints(riskPoints),
 		riskPoints: Number.isFinite(riskPoints) ? riskPoints : null,
 		lastScanAt,
-		scopeRules: (scope || []).length,
+		scopeRules: scope === null ? null : scope.length,
 		history: history || [],
 		mail: buildMailSecurityRows((observations || []) as unknown[] as any[], jobs as unknown[] as any[]), // eslint-disable-line @typescript-eslint/no-explicit-any
 	};

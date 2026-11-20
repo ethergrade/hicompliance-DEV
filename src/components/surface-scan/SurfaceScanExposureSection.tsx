@@ -444,17 +444,20 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
             <Button
               variant="outline"
               size="sm"
+              type="button"
+              aria-expanded={!isSectionCollapsed}
+              aria-controls="surface-exposure-body"
               onClick={() => setIsSectionCollapsed((prev) => !prev)}
             >
-              {isSectionCollapsed ? <ChevronRight className="w-4 h-4 mr-2" /> : <ChevronDown className="w-4 h-4 mr-2" />}
-              {isSectionCollapsed ? 'Espandi' : 'Collassa'}
+              {isSectionCollapsed ? <ChevronRight className="w-4 h-4 mr-2" aria-hidden /> : <ChevronDown className="w-4 h-4 mr-2" aria-hidden />}
+              {isSectionCollapsed ? 'Mostra servizi esposti' : 'Nascondi servizi esposti'}
             </Button>
           </div>
         </div>
       </CardHeader>
 
       {!isSectionCollapsed && (
-        <CardContent className="space-y-5">
+        <CardContent id="surface-exposure-body" className="space-y-5">
           <ExposureKpiCards
             summary={summary}
             onAssetsClick={assetPortList.length > 0 ? scrollToAssetList : undefined}
@@ -568,15 +571,18 @@ export const SurfaceScanExposureSection: React.FC<SurfaceScanExposureSectionProp
                   <Button
                     variant="outline"
                     size="sm"
+                    type="button"
+                    aria-expanded={!isControlsCollapsed}
+                    aria-controls="surface-exposure-admin-actions"
                     onClick={() => setIsControlsCollapsed((prev) => !prev)}
                   >
-                    {isControlsCollapsed ? <ChevronRight className="w-4 h-4 mr-2" /> : <ChevronDown className="w-4 h-4 mr-2" />}
-                    {isControlsCollapsed ? 'Espandi' : 'Collassa'}
+                    {isControlsCollapsed ? <ChevronRight className="w-4 h-4 mr-2" aria-hidden /> : <ChevronDown className="w-4 h-4 mr-2" aria-hidden />}
+                    {isControlsCollapsed ? 'Mostra azioni' : 'Nascondi azioni'}
                   </Button>
                 </div>
               </CardHeader>
               {!isControlsCollapsed && (
-                <CardContent className="space-y-4">
+                <CardContent id="surface-exposure-admin-actions" className="space-y-4">
                   <div className="space-y-2">
                     <div className="rounded-md border border-border p-2 space-y-2">
                       <div className="flex flex-wrap gap-1.5">

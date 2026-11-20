@@ -1,4 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { SurfaceFindingSheet } from '@/components/surface-scan/SurfaceFindingSheet';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -262,7 +264,10 @@ const SurfaceScan360: React.FC = () => {
   const [showScopeDiagnostics, setShowScopeDiagnostics] = useState(false);
   const [reverseDnsMap, setReverseDnsMap] = useState<Record<string, string[]>>({});
   const [domainIpMap, setDomainIpMap] = useState<Record<string, { ips: string[]; sources: string[] }>>({});
-  const [activeSection, setActiveSection] = useState('overview');
+  // Quattro viste per il cliente (Panoramica, Azioni, Perimetro, Report) al
+  // posto di nove ancore sulla stessa pagina: la vista sta nell'URL, così un
+  // link porta alla vista giusta e il tasto Indietro la ripristina.
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const assetsPerPage = 15;
   const { organizationId, groupId } = useClientOrganization();
@@ -301,41 +306,21 @@ const SurfaceScan360: React.FC = () => {
   const canViewSurfaceScan = hasCapability('surfacescan.assets.view');
   const canManageSurfaceScan = hasCapability('surfacescan.assets.edit');
 
-  const sectionNavItems = useMemo(() => [
-    { key: 'overview', label: 'Overview', icon: Globe, ref: overviewSectionRef },
-    { key: 'scope', label: 'Scope', icon: Settings, ref: scopeSectionRef, hidden: !canManageSurfaceScan },
-    { key: 'exposure', label: 'Exposure', icon: Server, ref: exposureSectionRef, hidden: !canViewSurfaceScan },
-    { key: 'connectsecure', label: 'Servizi esposti', icon: Network, ref: connectSecureSectionRef, hidden: !canViewSurfaceScan },
-    { key: 'subdomains', label: 'Subdomains', icon: Layers, ref: subdomainsSectionRef, hidden: !canViewSurfaceScan },
-    { key: 'findings', label: 'Findings', icon: Shield, ref: findingsSectionRef },
-    { key: 'email', label: 'Email/TLS', icon: Mail, ref: emailSectionRef },
-    { key: 'reports', label: 'Reports', icon: FileText, ref: reportsSectionRef },
-    { key: 'live', label: 'Live', icon: Activity, ref: liveSectionRef, hidden: !canViewSurfaceScan },
-  ].filter((item) => !item.hidden), [canViewSurfaceScan, canManageSurfaceScan]);
-
-  React.useEffect(() => {
-    if (sectionNavItems.length === 0) return;
-    const visibleSections = new Map<Element, string>();
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-        const nextKey = visible ? visibleSections.get(visible.target) : null;
-        if (nextKey) setActiveSection(nextKey);
-      },
-      { rootMargin: '-120px 0px -55% 0px', threshold: [0.1, 0.35, 0.65] },
-    );
-
-    for (const item of sectionNavItems) {
-      const node = item.ref.current;
-      if (!node) continue;
-      visibleSections.set(node, item.key);
-      observer.observe(node);
-    }
-
-    return () => observer.disconnect();
-  }, [sectionNavItems]);
+  type SurfaceView = 'panoramica' | 'azioni' | 'perimetro' | 'report';
+  const views = useMemo(() => [
+    { key: 'panoramica' as const, label: 'Panoramica', icon: Globe },
+    { key: 'azioni' as const, label: 'Azioni', icon: Shield },
+    { key: 'perimetro' as const, label: 'Perimetro', icon: Network },
+    { key: 'report' as const, label: 'Report', icon: FileText },
+  ], []);
+  const requestedView = searchParams.get('vista');
+  const view: SurfaceView = views.some((v) => v.key === requestedView) ? (requestedView as SurfaceView) : 'panoramica';
+  const setView = (next: SurfaceView) => {
+    const params = new URLSearchParams(searchParams);
+    params.set('vista', next);
+    setSearchParams(params);
+    window.scrollTo({ top: 0 });
+  };
 
   const { ipScopeRules } = useMemo(
     () => splitMonitoredScopeRules(monitoredIpRules as any),
@@ -343,6 +328,7 @@ const SurfaceScan360: React.FC = () => {
   );
 
   const scrollToDependencyMap = () => {
+    if (view !== 'perimetro') setView('perimetro');
     if (isDiscoveryCollapsed) {
       setIsDiscoveryCollapsed(false);
       setTimeout(() => {
@@ -357,10 +343,6 @@ const SurfaceScan360: React.FC = () => {
     exposureSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const scrollToSection = (ref: React.RefObject<HTMLDivElement>, key?: string) => {
-    if (key) setActiveSection(key);
-    ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
 
   const scanDiscovery = useMemo(() => {
     const scannedTargets = new Set<string>();
@@ -915,20 +897,21 @@ const SurfaceScan360: React.FC = () => {
           className="sticky top-0 z-40 -mx-6 border-b border-border bg-background/95 px-6 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/90"
         >
           <div className="flex min-w-0 gap-1 overflow-x-auto rounded-md bg-muted p-1">
-            {sectionNavItems.map((item) => {
+            {views.map((item) => {
               const Icon = item.icon;
-              const isActive = activeSection === item.key;
+              const isActive = view === item.key;
               return (
                 <Button
                   key={item.key}
                   variant="ghost"
                   size="sm"
+                  aria-current={isActive ? 'page' : undefined}
                   className={`h-9 shrink-0 justify-center gap-1.5 px-3 text-xs font-semibold ${
                     isActive
                       ? 'bg-background text-foreground shadow-sm'
                       : 'text-muted-foreground hover:bg-background/60 hover:text-foreground'
                   }`}
-                  onClick={() => scrollToSection(item.ref, item.key)}
+                  onClick={() => setView(item.key)}
                 >
                   <Icon className="h-4 w-4" />
                   <span className="truncate">{item.label}</span>
@@ -938,7 +921,19 @@ const SurfaceScan360: React.FC = () => {
           </div>
         </div>
 
+        {view === 'panoramica' && (
         <div ref={overviewSectionRef} className="scroll-mt-24 space-y-4">
+          {/* Prima le cose da fare, poi i numeri. */}
+          <SurfaceScanAlertBanner />
+          <section aria-labelledby="surface-todo-title" className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <h2 id="surface-todo-title" className="text-lg font-semibold">Da fare</h2>
+              <Button variant="link" size="sm" className="h-auto p-0" onClick={() => setView('azioni')}>
+                Tutte le azioni
+              </Button>
+            </div>
+            <SurfaceScanActionItems limit={3} />
+          </section>
           <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
             <Card className="border-border">
               <CardContent className="p-4">
@@ -1016,18 +1011,16 @@ const SurfaceScan360: React.FC = () => {
           </div>
 
           {canViewSurfaceScan && <SurfaceScanPerimeterOverview />}
-
-          <SurfaceScanAlertBanner />
-          <SurfaceScanActionItems />
         </div>
+        )}
 
-        {canViewSurfaceScan && (
+        {view === 'perimetro' && canViewSurfaceScan && (
           <div ref={exposureSectionRef} className="scroll-mt-24">
             <SurfaceScanExposureSection isAdmin={isAdmin} />
           </div>
         )}
 
-        {canViewSurfaceScan && (
+        {view === 'perimetro' && canViewSurfaceScan && (
           <div ref={connectSecureSectionRef} className="scroll-mt-24">
             <SurfaceScanModuleCards
               isAdminView={isAdminUser}
@@ -1038,11 +1031,15 @@ const SurfaceScan360: React.FC = () => {
           </div>
         )}
 
+        {view === 'azioni' && (
         <div ref={findingsSectionRef} className="scroll-mt-24 space-y-6">
           <SecurityFindings />
           <ExternalScanIntelligenceSection />
         </div>
+        )}
 
+        {view === 'perimetro' && (
+        <>
         <div ref={scopeSectionRef} className="scroll-mt-24 space-y-6">
         {(isAdminUser || isSuperAdmin) && (
           <Card className="border-primary/30 bg-primary/5">
@@ -1564,12 +1561,16 @@ const SurfaceScan360: React.FC = () => {
           )}
         </Card>
         )}
+        </>
+        )}
 
+        {view === 'report' && (
         <div ref={reportsSectionRef} className="scroll-mt-24">
           <SurfaceScanReportRepository scanJobs={scanJobs} organizationId={organizationId ?? undefined} canManage={canManageSurfaceScan} />
         </div>
+        )}
 
-        {canViewSurfaceScan && (
+        {view === 'perimetro' && canViewSurfaceScan && (
         <div ref={liveSectionRef} className="scroll-mt-24 space-y-6">
         {monitoredLiveIps.length > 0 && (
         <Card className="border-border">
@@ -1753,9 +1754,13 @@ const SurfaceScan360: React.FC = () => {
         )}
       </div>
 
-      <div className="mt-6">
-        <SurfaceScanNotificationConfigCard />
-      </div>
+      {view === 'perimetro' && (
+        <div className="mt-6">
+          <SurfaceScanNotificationConfigCard />
+        </div>
+      )}
+
+      <SurfaceFindingSheet canManage={canManageSurfaceScan} />
     </DashboardLayout>
   );
 };

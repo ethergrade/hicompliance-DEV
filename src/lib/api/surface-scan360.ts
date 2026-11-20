@@ -767,6 +767,31 @@ export const surfaceScan360Api = {
 		return extractArray<unknown>(res.data);
 	},
 
+	/** Dettaglio di un finding, per la scheda azione e i link diretti. */
+	async getFinding(companyId: string, findingId: string, groupId?: string | null): Promise<Record<string, unknown>> {
+		const res = await complianceApiClient.get<ApiResponse<Record<string, unknown>>>(
+			`/companies/${companyId}/surface-scan360/findings/${findingId}`,
+			undefined,
+			groupId ? groupHeader(groupId) : undefined,
+		);
+		return res.data;
+	},
+
+	/** Assegnatario e stato dell'intervento (da_fare, in_corso, da_verificare). */
+	async updateFindingAction(
+		companyId: string,
+		findingId: string,
+		payload: { assignee?: string | null; action_status?: string | null },
+		groupId?: string | null,
+	): Promise<Record<string, unknown>> {
+		const res = await complianceApiClient.patch<ApiResponse<Record<string, unknown>>>(
+			`/companies/${companyId}/surface-scan360/findings/${findingId}/action`,
+			payload,
+			groupId ? groupHeader(groupId) : undefined,
+		);
+		return res.data;
+	},
+
 	// Monthly Reports
 	async getMonthlyReports(
 		companyId: string,

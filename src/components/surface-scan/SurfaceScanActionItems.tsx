@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { FINDING_PARAM } from '@/components/surface-scan/SurfaceFindingSheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, Loader2 } from 'lucide-react';
@@ -30,8 +32,15 @@ const severityStyle: Record<string, string> = {
   info: 'bg-muted text-muted-foreground border-border',
 };
 
-export const SurfaceScanActionItems: React.FC = () => {
+export const SurfaceScanActionItems: React.FC<{ limit?: number }> = ({ limit = 5 }) => {
   const { organizationId, groupId } = useClientOrganization();
+  const [params, setParams] = useSearchParams();
+  // Apre la scheda azione del finding: stesso link di notifiche e report.
+  const openFinding = (id: string) => {
+    const next = new URLSearchParams(params);
+    next.set(FINDING_PARAM, id);
+    setParams(next);
+  };
   const [items, setItems] = useState<ActionItem[]>([]);
   const [loading, setLoading] = useState(false);
   // Un errore non è «nessuna vulnerabilità»: prima `.catch(() => [])` lo
@@ -79,7 +88,7 @@ export const SurfaceScanActionItems: React.FC = () => {
           .map((finding: any) => presentStorageBucketFinding(finding))
           .filter((finding: any) => !isUnverifiedStorageBucketFinding(finding));
 
-        const ranked: ActionItem[] = actionableFindings.slice(0, 5).map((f: any, idx) => {
+        const ranked: ActionItem[] = actionableFindings.slice(0, limit).map((f: any, idx) => {
           const asset = String(f.affected_asset || '').replace(/^https?:\/\//, '').split('/')[0];
           const remediation = String(f.remediation || '').trim();
           const detail = remediation
@@ -104,7 +113,7 @@ export const SurfaceScanActionItems: React.FC = () => {
 
     load();
     return () => { cancelled = true; };
-  }, [organizationId, groupId, attempt]);
+  }, [organizationId, groupId, attempt, limit]);
 
   if (failed) {
     return (
@@ -140,7 +149,7 @@ export const SurfaceScanActionItems: React.FC = () => {
         </p>
       </div>
       {items.map((item) => (
-        <div key={item.id} className="flex items-start gap-3 px-4 py-3" data-finding-id={item.id}>
+        <div key={item.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-start sm:gap-3" data-finding-id={item.id}>
           <div className="flex-shrink-0 w-6 h-6 rounded-full bg-muted/50 flex items-center justify-center text-xs font-bold text-muted-foreground">
             {item.rank}
           </div>
@@ -163,7 +172,7 @@ export const SurfaceScanActionItems: React.FC = () => {
             </div>
             <div className="flex items-center gap-1 mt-0.5">
               <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />
-              <p className="text-xs text-muted-foreground truncate">{item.detail}</p>
+              <p className="text-xs text-muted-foreground">{item.detail}</p>
             </div>
             {item.asset && (
               <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
@@ -171,6 +180,15 @@ export const SurfaceScanActionItems: React.FC = () => {
               </p>
             )}
           </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 self-start"
+            onClick={() => openFinding(item.id)}
+            aria-label={`Apri azione: ${item.title}`}
+          >
+            Apri azione
+          </Button>
         </div>
       ))}
     </div>

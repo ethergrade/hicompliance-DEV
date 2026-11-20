@@ -566,7 +566,7 @@ function surfaceScan(w: PdfWriter, data: ReportData, d: Derived): void {
 				color: surfaceLevelColor(ss.riskLevel),
 			},
 			{ label: "Finding aperti", value: String(ss.counts.total), hint: "Coda corrente, informativi compresi" },
-			{ label: "Ultima scansione completata", value: formatShortDate(ss.lastScanAt), hint: `${ss.scopeRules} regole di perimetro monitorate` },
+			{ label: "Ultima scansione completata", value: formatShortDate(ss.lastScanAt), hint: ss.scopeRules === null ? null : `${ss.scopeRules} regole di perimetro monitorate` },
 		],
 		3,
 	);

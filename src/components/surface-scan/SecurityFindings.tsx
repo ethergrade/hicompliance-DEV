@@ -35,6 +35,11 @@ import { CveDetailDialog } from '@/components/surface-scan/CveDetailDialog';
 import { CVE_REGEX, cweDescription, cweLink, findingSummary, getFindingTaxonomy, owaspDescription } from '@/lib/findingTaxonomy';
 import { publicSourceLabel, redactInternalSourceNames } from '@/lib/surfaceSourceLabels';
 import { toCvss, toEpss } from "@/lib/surfacescan/normalize";
+import { useSearchParams } from 'react-router-dom';
+import { FINDING_PARAM } from '@/components/surface-scan/SurfaceFindingSheet';
+
+/** Solo i finding salvati hanno una scheda: le righe sintetiche (porte, catalogo AI) no. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const severityOrder: Record<string, number> = {
   critical: 5,
@@ -248,6 +253,12 @@ interface SecurityFindingsProps {
 
 const SecurityFindings: React.FC<SecurityFindingsProps> = ({ printMode = false }) => {
   const { findings, loading, counts } = useSurfaceScanFindings();
+  const [urlParams, setUrlParams] = useSearchParams();
+  const openFinding = (id: string) => {
+    const next = new URLSearchParams(urlParams);
+    next.set(FINDING_PARAM, id);
+    setUrlParams(next);
+  };
   const { hostMeta } = useSurfaceScanDiscoveredAssets();
   const [searchTerm, setSearchTerm] = useState('');
   const [severityFilter, setSeverityFilter] = useState('all');
@@ -641,7 +652,20 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ printMode = false }
                                                     </Badge>
                                                   </TableCell>
                                                   <TableCell className="min-w-[40rem]">
-                                                    <div className="font-medium">{displayTitle}</div>
+                                                    <div className="flex flex-wrap items-start justify-between gap-2">
+                                                      <div className="font-medium">{displayTitle}</div>
+                                                      {!printMode && UUID_RE.test(row.id) && (
+                                                        <Button
+                                                          size="sm"
+                                                          variant="outline"
+                                                          className="h-7 shrink-0 px-2 text-xs"
+                                                          onClick={() => openFinding(row.id)}
+                                                          aria-label={`Apri la scheda: ${displayTitle}`}
+                                                        >
+                                                          Apri scheda
+                                                        </Button>
+                                                      )}
+                                                    </div>
                                                     <div className="flex flex-wrap gap-1 mt-1">
                                                       <Badge variant="outline" className="text-[10px] font-mono">
                                                         {row.finding_type || 'n/a'}
