@@ -180,8 +180,12 @@ export interface PerimeterOverview {
 		status: "sufficient" | "insufficient";
 		scope_total: number;
 		scope_covered: number;
+		/** Voci coperte in parte (range con solo alcuni IP verificati). */
+		scope_partial?: number;
 		ratio: number;
 		uncovered: string[];
+		partial?: Array<{ value: string; ips_checked: number; ips_total: number | null }>;
+		ranges?: { rules_configured: number; ips_observed: number; ips_checked: number; ips_total: number };
 		last_usable_scan_at: string | null;
 		days_since_last_scan: number | null;
 		reasons: string[];
@@ -202,10 +206,16 @@ export interface PerimeterOverview {
 		month_key: string;
 		comparison: {
 			available: boolean;
+			/** full: variazione; values_only: due mesi senza variazione; unavailable. */
+			mode?: "full" | "values_only" | "unavailable";
 			previous_month_key: string | null;
 			score_delta: number | null;
 			open_findings_delta: number | null;
 			by_severity_delta: Record<string, number> | null;
+			changes?: string[];
+			reason?: string | null;
+			previous_values?: { score: number | null; open_findings: number | null; scope_total: number | null; coverage: number | null } | null;
+			current_values?: { score: number | null; open_findings: number | null; scope_total: number | null; coverage: number | null } | null;
 		} | null;
 	} | null;
 }

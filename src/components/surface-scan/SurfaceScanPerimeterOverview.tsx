@@ -63,7 +63,8 @@ export const SurfaceScanPerimeterOverview: React.FC = () => {
 function CoverageCard({ data }: { data: PerimeterOverview }) {
 	const { coverage, perimeter } = data;
 	const sufficient = coverage.status === "sufficient";
-	const pct = coverage.scope_total > 0 ? Math.round((coverage.scope_covered / coverage.scope_total) * 100) : 0;
+	// Il rapporto del server pesa i range coperti in parte (IP verificati sul totale).
+	const pct = Math.round((coverage.ratio ?? 0) * 100);
 
 	return (
 		<Card>
@@ -78,12 +79,19 @@ function CoverageCard({ data }: { data: PerimeterOverview }) {
 			</CardHeader>
 			<CardContent className="space-y-3">
 				<div className="flex justify-between text-sm">
-					<span>Voci di perimetro scansionate</span>
+					<span>Voci di perimetro verificate</span>
 					<strong>
 						{coverage.scope_covered} / {coverage.scope_total}
+						{coverage.scope_partial ? ` · ${coverage.scope_partial} in parte` : ""}
 					</strong>
 				</div>
-				<Progress value={pct} />
+				<Progress value={pct} aria-label={`Perimetro verificato al ${pct}%`} />
+				{coverage.ranges && coverage.ranges.rules_configured > 0 && (
+					<p className="text-xs text-muted-foreground">
+						Range IP: {coverage.ranges.rules_configured} regole · {coverage.ranges.ips_observed} IP osservati ·{" "}
+						{coverage.ranges.ips_checked} su {coverage.ranges.ips_total} con controllo valido
+					</p>
+				)}
 				<div className="grid grid-cols-3 gap-2 text-center">
 					<div>
 						<p className="text-xl font-semibold">{perimeter.domains}</p>
@@ -107,6 +115,11 @@ function CoverageCard({ data }: { data: PerimeterOverview }) {
 							<div key={r}>{r}</div>
 						))}
 						{coverage.uncovered.length > 0 && <div className="mt-1">Non scansionati: {coverage.uncovered.join(", ")}</div>}
+						{(coverage.partial ?? []).length > 0 && (
+							<div className="mt-1">
+								Coperti in parte: {(coverage.partial ?? []).map((p) => `${p.value} (${p.ips_checked}/${p.ips_total ?? "?"} IP)`).join(", ")}
+							</div>
+						)}
 					</div>
 				)}
 			</CardContent>
@@ -200,8 +213,23 @@ function TrendCard({ data }: { data: PerimeterOverview }) {
 							{SEVERITIES.map(([key, label]) => `${label} ${signed(cmp.by_severity_delta?.[key] ?? 0)}`).join(" · ")}
 						</div>
 					</div>
+				) : cmp?.mode === "values_only" ? (
+					<div className="space-y-1 text-xs">
+						<div className="font-medium">
+							{monthLabel(data.last_month!.month_key)} e {cmp.previous_month_key ? monthLabel(cmp.previous_month_key) : "—"}: mesi non confrontabili
+						</div>
+						<div>
+							Finding aperti: {cmp.previous_values?.open_findings ?? "—"} → {cmp.current_values?.open_findings ?? "—"} · Postura:{" "}
+							{cmp.previous_values?.score ?? "—"} → {cmp.current_values?.score ?? "—"}
+						</div>
+						{(cmp.changes ?? []).map((c) => (
+							<div key={c} className="text-muted-foreground">{c}</div>
+						))}
+					</div>
 				) : (
-					data.last_month && <p className="text-xs text-muted-foreground">Nessun mese precedente confrontabile.</p>
+					data.last_month && (
+						<p className="text-xs text-muted-foreground">{cmp?.reason ?? "Confronto non disponibile."}</p>
+					)
 				)}
 				<p className="text-[11px] text-muted-foreground">Barre: finding aperti a fine mese. Numeri: postura.</p>
 			</CardContent>
