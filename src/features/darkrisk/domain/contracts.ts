@@ -80,7 +80,10 @@ export interface StandardOverview {
 	lastScanAt: string | null;
 	/** Voci dello scope DarkRisk; null se la copertura non è disponibile. */
 	monitoredTargets: number | null;
-	weeklyTrend: Array<{ period: string; total: number; newLeaks: number }>;
+	/** newPublicWeb: quanti dei nuovi sono web pubblico (null se non disponibile). */
+	weeklyTrend: Array<{ period: string; total: number; newLeaks: number; newPublicWeb: number | null }>;
+	/** Di cui web pubblico, sui nuovi della settimana corrente. */
+	newPublicWeb: number | null;
 	snapshot: DarkRiskWeeklySnapshot | null;
 	/** Contatore aggregato delle credenziali esposte: visibile anche in Standard. */
 	credentialLeaks: number;

@@ -224,6 +224,7 @@ export const parseStandardOverview = (value: unknown): StandardOverview => {
 		riskScore: nullableNumber(item.risk_index),
 		riskLevel: nullableString(item.risk_level),
 		snapshotWeekStart: nullableString(item.snapshot_week_start),
+		newPublicWeb: nullableNumber(item.new_public_web_this_week),
 		// Ultimo run DarkRisk, non l'ultimo job SurfaceScan.
 		lastScanAt: coverage?.lastRunAt ?? null,
 		// Voci dello scope DarkRisk, non i domini monitorati da SurfaceScan.
@@ -234,6 +235,7 @@ export const parseStandardOverview = (value: unknown): StandardOverview => {
 				period: stringValue(point.period || point.week_key),
 				total: numberValue(point.total || point.total_records),
 				newLeaks: numberValue(point.new_leaks || point.new_this_week),
+				newPublicWeb: nullableNumber(point.new_public_web),
 			};
 		}),
 		snapshot: parseWeeklySnapshot(item.weekly_snapshot),

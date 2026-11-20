@@ -129,7 +129,10 @@ export default function StandardDarkRiskPage() {
 		{
 			label: "Nuovi nella settimana",
 			value: overview ? (overview.newLeaks ?? ND) : "—",
-			hint: weekLabel,
+			// Il web pubblico pesa molto sui nuovi ma poco sul rischio: si dice a parte.
+			hint: [weekLabel, overview?.newPublicWeb ? `di cui web pubblico: ${overview.newPublicWeb}` : null]
+				.filter(Boolean)
+				.join(" · ") || null,
 			icon: Activity,
 		},
 		{
@@ -361,7 +364,8 @@ export default function StandardDarkRiskPage() {
 											<span>
 												{point.total}{" "}
 												<span className="text-xs text-muted-foreground">
-													(+{point.newLeaks})
+													(+{point.newLeaks}
+													{point.newPublicWeb ? `, di cui web pubblico: ${point.newPublicWeb}` : ""})
 												</span>
 											</span>
 										</div>

@@ -663,7 +663,13 @@ function darkRisk(w: PdfWriter, d: Derived): void {
 	w.kpis(
 		[
 			{ label: "Record raccolti", value: total === null ? "Non disponibile" : String(total), hint: "Record della fonte che citano il perimetro" },
-			{ label: "Nuovi nella settimana", value: fresh === null ? "Non disponibile" : String(fresh), hint: weekStart ? `Settimana dal ${formatShortDate(weekStart)}` : null },
+			{
+				label: "Nuovi nella settimana",
+				value: fresh === null ? "Non disponibile" : String(fresh),
+				hint: [weekStart ? `Settimana dal ${formatShortDate(weekStart)}` : null, num(dark.new_public_web_this_week) ? `di cui web pubblico: ${num(dark.new_public_web_this_week)}` : null]
+					.filter(Boolean)
+					.join(" · ") || null,
+			},
 			{ label: "Indice di esposizione", value: index === null ? "Non disponibile" : `${index}/100`, hint: index === null ? null : `Rischio ${(level ?? "n/d").toLowerCase()} · 0 = nessuna, 100 = massima`, color: surfaceLevelColor(level) },
 			{ label: "Ultima esecuzione", value: formatShortDate((coverage.last_run_at as string) ?? null), hint: `${num(coverage.scope_entries) ?? 0} voci di perimetro monitorate` },
 		],
@@ -749,13 +755,23 @@ function darkRisk(w: PdfWriter, d: Derived): void {
 	if (weeks.length) {
 		w.table(
 			[
-				{ label: "Settimana", width: 46, nowrap: true },
-				{ label: "Record totali", width: 44, align: "right", nowrap: true },
-				{ label: "Nuovi", width: 44, align: "right", nowrap: true },
-				{ label: "Indice", width: 44, align: "right", nowrap: true },
+				{ label: "Settimana", width: 36, nowrap: true },
+				{ label: "Record totali", width: 36, align: "right", nowrap: true },
+				{ label: "Nuovi", width: 34, align: "right", nowrap: true },
+				{ label: "di cui web pubblico", width: 38, align: "right", nowrap: true },
+				{ label: "Indice", width: 34, align: "right", nowrap: true },
 			],
-			weeks.map((r) => [String(r.week_key ?? ""), String(num(r.total_records) ?? "—"), String(num(r.new_this_week) ?? "—"), num(r.risk_index) === null ? "—" : `${num(r.risk_index)}/100`]),
-			{ title: "Andamento settimanale", note: "Indice: 0 = nessuna esposizione, 100 = massima." },
+			weeks.map((r) => [
+				String(r.week_key ?? ""),
+				String(num(r.total_records) ?? "—"),
+				String(num(r.new_this_week) ?? "—"),
+				num(r.new_public_web) === null ? "—" : String(num(r.new_public_web)),
+				num(r.risk_index) === null ? "—" : `${num(r.risk_index)}/100`,
+			]),
+			{
+				title: "Andamento settimanale",
+				note: "Il web pubblico (pagine indicizzate che citano il dominio) è indicato a parte: pesa molto sui nuovi di una settimana, poco sull'esposizione. Indice: 0 = nessuna esposizione, 100 = massima.",
+			},
 		);
 	}
 }
