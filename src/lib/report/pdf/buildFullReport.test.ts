@@ -148,6 +148,15 @@ describe("buildFullReportPdf · CSBNO", () => {
 		expect(text).not.toContain("DarkRisk360 \\267 Esposizione");
 	});
 
+	it("l'elenco dei finding è delimitato e lo dichiara", async () => {
+		const text = (await buildFullReportPdf(reportData(), null, { compress: false })).text();
+		// 1 critico + 33 medi elencati; bassi e informativi solo nel conteggio.
+		expect(text).toContain("Elencati 34 finding su 261 aperti");
+		expect(text).toContain("115 di gravit");
+		expect(text).toContain("112 di gravit");
+		expect(text).not.toContain("(D35)");
+	});
+
 	it("le tabelle lunghe ripetono titolo e intestazione con «continua»", async () => {
 		const text = (await buildFullReportPdf(reportData(), null, { compress: false })).text();
 		expect(text).toContain("continua");

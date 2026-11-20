@@ -858,7 +858,13 @@ function appendices(w: PdfWriter, data: ReportData, d: Derived): void {
 		w.addPage();
 		w.heading("Appendice D · Finding SurfaceScan360 aperti", 1);
 		const rank = (s: string) => SEVERITY_ORDER.indexOf(s as (typeof SEVERITY_ORDER)[number]);
-		const rows = [...ss.findings].sort((a, b) => rank(a.severity) - rank(b.severity) || (toCvss(b.cvss) ?? -1) - (toCvss(a.cvss) ?? -1));
+		const sorted = [...ss.findings].sort((a, b) => rank(a.severity) - rank(b.severity) || (toCvss(b.cvss) ?? -1) - (toCvss(a.cvss) ?? -1));
+		// Inclusione delimitata e dichiarata: critici, alti e medi fino a un tetto,
+		// bassi e informativi solo nel conteggio. Un cliente con 3.700 finding
+		// aperti avrebbe avuto più di 200 pagine di elenco.
+		const MAX_ROWS = 300;
+		const rows = sorted.filter((f) => ["critical", "high", "medium"].includes(f.severity)).slice(0, MAX_ROWS);
+		const omitted = SEVERITY_ORDER.map((sev) => [sev, ss.counts[sev] - rows.filter((f) => f.severity === sev).length] as const).filter(([, n]) => n > 0);
 		w.table(
 			[
 				{ label: "Rif.", width: 13, nowrap: true },
@@ -879,7 +885,11 @@ function appendices(w: PdfWriter, data: ReportData, d: Derived): void {
 			{
 				continueTitle: "Finding SurfaceScan360 aperti",
 				fontSize: 8,
-				note: `${rows.length} finding: la coda corrente della Console, senza stati chiusi o accettati né righe fuori perimetro. Ordinati per gravità e CVSS.`,
+				note:
+					`Elencati ${rows.length} finding su ${ss.counts.total} aperti, ordinati per gravità e CVSS` +
+					(omitted.length
+						? `; non elencati: ${omitted.map(([sev, n]) => `${n} di gravità ${SEVERITY_LABEL[sev].toLowerCase()}`).join(", ")}. L'elenco completo è nella Console, SurfaceScan360 > Azioni.`
+						: ". Coda corrente della Console, senza stati chiusi o accettati né righe fuori perimetro."),
 			},
 		);
 	}
