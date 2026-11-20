@@ -423,11 +423,14 @@ export class PdfWriter {
 	/** Barre orizzontali 0–100 con nome intero a sinistra e valore a destra. */
 	bars(items: Array<{ label: string; value: number | null; valueLabel: string; color: RGB }>, opts: { labelWidth?: number } = {}): void {
 		const labelW = opts.labelWidth ?? 68;
-		const valueW = 34;
-		const barX = PAGE.marginX + labelW + 2;
-		const barW = CONTENT_W - labelW - 2 - valueW;
 		const size = 9;
 		const lh = this.lineHeight(size);
+		// La colonna dei valori si misura sull'etichetta più lunga, con margine:
+		// a larghezza fissa «100/100 · Molto basso» invadeva la fine della barra.
+		this.font(size, "bold");
+		const valueW = Math.max(30, ...items.map((item) => this.textWidth(item.valueLabel))) + 4;
+		const barX = PAGE.marginX + labelW + 2;
+		const barW = CONTENT_W - labelW - 2 - valueW;
 
 		// scala: 0, 20, 40, 60, 80, 100
 		const drawScale = () => {

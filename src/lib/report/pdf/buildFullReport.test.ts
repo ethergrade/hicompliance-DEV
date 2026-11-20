@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import type { AssessmentCategory, AssessmentResponse } from "@/data/assessmentQuestions";
 import { buildCategoryScore, computeOverallScore } from "@/lib/assessment/scoring";
 import { countSurfaceFindings, type SurfaceFindingRow } from "@/hooks/useSurfaceScanFindings";
@@ -182,5 +183,24 @@ describe("PdfWriter.table", () => {
 		expect(text.split("Prova \\(continua\\)").length - 1).toBe(pages - 1);
 		// tutte le righe presenti
 		for (const n of [1, 60, 120]) expect(text).toContain(`(Riga ${n})`);
+	});
+});
+
+describe("PdfWriter.bars", () => {
+	it("la barra piena finisce prima dell'etichetta del valore (Montserrat)", () => {
+		const font = (f: string) => readFileSync(`src/assets/fonts/Montserrat-${f}.ttf`).toString("base64");
+		const w = new PdfWriter({ compress: false, fonts: { regular: font("Regular"), semibold: font("SemiBold"), italic: font("Italic") } });
+		const rects: Array<[number, number]> = [];
+		const original = w.doc.rect.bind(w.doc);
+		w.doc.rect = ((x: number, y: number, width: number, h: number, style?: string) => {
+			rects.push([x, width]);
+			return original(x, y, width, h, style);
+		}) as typeof w.doc.rect;
+		const label = "100/100 · Molto basso";
+		w.bars([{ label: "Gestione del rischio", value: 100, valueLabel: label, color: [0, 0, 0] }]);
+		w.font(9, "bold");
+		const labelStart = 16 + 178 - w.textWidth(label);
+		const barEnd = Math.max(...rects.map(([x, width]) => x + width));
+		expect(barEnd).toBeLessThan(labelStart);
 	});
 });
