@@ -420,35 +420,51 @@ export class PdfWriter {
 		this.y += 4;
 	}
 
-	/** Barre orizzontali 0–100 con nome intero a sinistra e valore a destra. */
-	bars(items: Array<{ label: string; value: number | null; valueLabel: string; color: RGB }>, opts: { labelWidth?: number } = {}): void {
-		const labelW = opts.labelWidth ?? 68;
+	/**
+	 * Barre orizzontali 0–100 in quattro colonne con intestazione: area, scala,
+	 * punteggio, rischio. Punteggio e rischio stanno separati: «100/100 · Molto
+	 * basso» sulla stessa riga si leggeva come una contraddizione (un punteggio
+	 * alto accanto a «basso»). Le colonne si misurano sui valori più lunghi.
+	 */
+	bars(
+		items: Array<{ label: string; value: number | null; scoreLabel: string; riskLabel: string; color: RGB }>,
+		opts: { labelWidth?: number; labelHeader?: string } = {},
+	): void {
+		const labelW = opts.labelWidth ?? 66;
 		const size = 9;
 		const lh = this.lineHeight(size);
-		// La colonna dei valori si misura sull'etichetta più lunga, con margine:
-		// a larghezza fissa «100/100 · Molto basso» invadeva la fine della barra.
-		this.font(size, "bold");
-		const valueW = Math.max(30, ...items.map((item) => this.textWidth(item.valueLabel))) + 4;
-		const barX = PAGE.marginX + labelW + 2;
-		const barW = CONTENT_W - labelW - 2 - valueW;
+		const gap = 3;
 
-		// scala: 0, 20, 40, 60, 80, 100
-		const drawScale = () => {
+		this.font(size, "bold");
+		const scoreW = Math.max(this.textWidth("Punteggio"), ...items.map((i) => this.textWidth(i.scoreLabel))) + gap;
+		const riskW = Math.max(this.textWidth("Rischio"), ...items.map((i) => this.textWidth(i.riskLabel)));
+		const riskX = PAGE.marginX + CONTENT_W - riskW;
+		const scoreRight = riskX - gap * 2;
+		const barX = PAGE.marginX + labelW + 2;
+		const barW = scoreRight - scoreW - gap - barX;
+
+		const drawHeader = () => {
+			this.font(8, "bold", BRAND.muted);
+			this.doc.text(pdfSafe(opts.labelHeader ?? "Area"), PAGE.marginX, this.y, { baseline: "top" });
+			this.doc.text("Punteggio", scoreRight, this.y, { baseline: "top", align: "right" });
+			this.doc.text("Rischio", riskX, this.y, { baseline: "top" });
 			this.font(7, "normal", BRAND.muted);
 			for (let v = 0; v <= 100; v += 20) {
-				const x = barX + (barW * v) / 100;
-				this.doc.text(String(v), x, this.y, { baseline: "top", align: "center" });
+				this.doc.text(String(v), barX + (barW * v) / 100, this.y + 0.4, { baseline: "top", align: "center" });
 			}
-			this.y += 3.5;
+			this.y += 4.5;
+			this.doc.setDrawColor(...BRAND.line);
+			this.doc.setLineWidth(0.2);
+			this.doc.line(PAGE.marginX, this.y - 0.8, PAGE.marginX + CONTENT_W, this.y - 0.8);
 		};
-		this.ensure(14);
-		drawScale();
+		this.ensure(16);
+		drawHeader();
 
 		for (const item of items) {
 			this.font(size);
 			const lines = this.split(item.label, labelW);
 			const h = Math.max(lines.length * lh, 4.5) + 2;
-			if (this.ensure(h)) drawScale();
+			if (this.ensure(h)) drawHeader();
 			this.font(size, "normal", BRAND.text);
 			lines.forEach((line, k) => this.doc.text(line, PAGE.marginX, this.y + 1 + k * lh, { baseline: "top" }));
 			const barY = this.y + 1 + (Math.max(lines.length * lh, 4.5) - 3.5) / 2;
@@ -458,8 +474,10 @@ export class PdfWriter {
 				this.doc.setFillColor(...item.color);
 				this.doc.rect(barX, barY, (barW * Math.min(100, item.value)) / 100, 3.5, "F");
 			}
+			this.font(size, "bold", BRAND.text);
+			this.doc.text(pdfSafe(item.scoreLabel), scoreRight, barY - 0.2, { baseline: "top", align: "right" });
 			this.font(size, "bold", item.color);
-			this.doc.text(pdfSafe(item.valueLabel), PAGE.marginX + CONTENT_W, barY - 0.2, { baseline: "top", align: "right" });
+			this.doc.text(pdfSafe(item.riskLabel), riskX, barY - 0.2, { baseline: "top" });
 			this.y += h;
 		}
 		this.y += 3;

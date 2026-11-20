@@ -187,7 +187,7 @@ describe("PdfWriter.table", () => {
 });
 
 describe("PdfWriter.bars", () => {
-	it("la barra piena finisce prima dell'etichetta del valore (Montserrat)", () => {
+	it("la barra piena finisce prima delle colonne punteggio e rischio (Montserrat)", () => {
 		const font = (f: string) => readFileSync(`src/assets/fonts/Montserrat-${f}.ttf`).toString("base64");
 		const w = new PdfWriter({ compress: false, fonts: { regular: font("Regular"), semibold: font("SemiBold"), italic: font("Italic") } });
 		const rects: Array<[number, number]> = [];
@@ -196,10 +196,10 @@ describe("PdfWriter.bars", () => {
 			rects.push([x, width]);
 			return original(x, y, width, h, style);
 		}) as typeof w.doc.rect;
-		const label = "100/100 · Molto basso";
-		w.bars([{ label: "Gestione del rischio", value: 100, valueLabel: label, color: [0, 0, 0] }]);
+		w.bars([{ label: "Gestione del rischio", value: 100, scoreLabel: "100/100", riskLabel: "Molto basso", color: [0, 0, 0] }]);
 		w.font(9, "bold");
-		const labelStart = 16 + 178 - w.textWidth(label);
+		// la colonna più a sinistra fra le due di testo è il punteggio, allineato a destra
+		const labelStart = 16 + 178 - w.textWidth("Molto basso") - 6 - w.textWidth("Punteggio");
 		const barEnd = Math.max(...rects.map(([x, width]) => x + width));
 		expect(barEnd).toBeLessThan(labelStart);
 	});

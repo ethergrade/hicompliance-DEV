@@ -187,7 +187,7 @@ function priorities(data: ReportData, d: Derived): Priority[] {
 		out.push({
 			weight: s.displayScore < 20 ? 1 : 4,
 			what: `Rafforzare l'area «${s.name}»`,
-			why: `${s.displayScore}/100, fascia ${band}: ${plural(s.counts.non_iniziato, "controllo non iniziato", "controlli non iniziati")} e ${plural(s.counts.pianificato_in_corso, "pianificato o in corso", "pianificati o in corso")}.`,
+			why: `${s.displayScore}/100, rischio ${band.toLowerCase()}: ${plural(s.counts.non_iniziato, "controllo non iniziato", "controlli non iniziati")} e ${plural(s.counts.pianificato_in_corso, "pianificato o in corso", "pianificati o in corso")}.`,
 			next: nextFromTask(task),
 			ref: `Appendice A, area A${d.catIndex.get(s.name)}${task ? "; piano, Appendice B" : ""}`,
 		});
@@ -312,7 +312,7 @@ function summary(w: PdfWriter, data: ReportData, d: Derived): void {
 			value: d.overall !== null ? `${d.overall}/100` : "Non valutato",
 			hint:
 				d.overall !== null
-					? `Fascia ${d.overallBand} · ${d.scored.length} aree valutate${d.excluded.length ? `, ${d.excluded.length} esclus${d.excluded.length === 1 ? "a" : "e"}` : ""}`
+					? `Rischio ${String(d.overallBand).toLowerCase()} · ${d.scored.length} aree valutate${d.excluded.length ? `, ${d.excluded.length} esclus${d.excluded.length === 1 ? "a" : "e"}` : ""}`
 					: sourceStateLabel(data.assessment),
 			color: bandColor(d.overallBand),
 		},
@@ -359,7 +359,7 @@ function summary(w: PdfWriter, data: ReportData, d: Derived): void {
 	const prios = priorities(data, d);
 	w.heading("Priorità", 2, { keepWith: 30 });
 	if (prios.length === 0) {
-		w.paragraph("Nei dati disponibili non emergono interventi urgenti: nessuna area in fascia Alto o Altissimo, nessuna attività critica aperta, nessun finding critico confermato.");
+		w.paragraph("Nei dati disponibili non emergono interventi urgenti: nessuna area a rischio alto o altissimo, nessuna attività critica aperta, nessun finding critico confermato.");
 	} else {
 		w.table(
 			[
@@ -460,7 +460,7 @@ function areas(w: PdfWriter, data: ReportData, d: Derived): void {
 	w.addPage();
 	w.heading("Risultati per area", 1);
 	w.paragraph(
-		"Punteggio da 0 a 100 sulle risposte applicabili di ogni area (Completato 100, Pianificato o in corso 50, Non iniziato 0). Le aree con sole risposte non applicabili non hanno punteggio e restano fuori dalla media complessiva; uno 0 è un punteggio reale.",
+		"Punteggio da 0 a 100 sulle risposte applicabili di ogni area (Completato 100, Pianificato o in corso 50, Non iniziato 0): più alto è, meglio è. Il rischio va nel verso opposto: un punteggio alto corrisponde a un rischio basso. Le aree con sole risposte non applicabili non hanno punteggio e restano fuori dalla media complessiva; uno 0 è un punteggio reale.",
 		{ size: 9, color: BRAND.muted },
 	);
 
@@ -469,9 +469,10 @@ function areas(w: PdfWriter, data: ReportData, d: Derived): void {
 		sorted.map((s) => {
 			const band = getRiskFromScore(s.displayScore as number).label;
 			return {
-				label: s.name,
+				label: s.status === "partial" ? `${s.name} (parziale)` : s.name,
 				value: s.displayScore,
-				valueLabel: `${s.displayScore}/100 · ${band}${s.status === "partial" ? " · parziale" : ""}`,
+				scoreLabel: `${s.displayScore}/100`,
+				riskLabel: band,
 				color: bandColor(band),
 			};
 		}),
@@ -490,7 +491,7 @@ function areas(w: PdfWriter, data: ReportData, d: Derived): void {
 		[
 			{ label: "Area", width: 70 },
 			{ label: "Punteggio", width: 20, align: "right", nowrap: true },
-			{ label: "Fascia", width: 22, nowrap: true },
+			{ label: "Rischio", width: 22, nowrap: true },
 			{ label: "Risposte (C · P · NI · N/A)", width: 40, nowrap: true },
 			{ label: "Stato", width: 26 },
 		],
@@ -571,7 +572,7 @@ function surfaceScan(w: PdfWriter, data: ReportData, d: Derived): void {
 		3,
 	);
 	w.paragraph(
-		"La postura va da 0 a 100 (100 = nessun rischio rilevato) e riflette lo stato corrente del perimetro; la fascia deriva dai punti di rischio con le soglie del servizio. I finding chiusi, accettati o fuori perimetro non sono contati.",
+		"La postura va da 0 a 100 (100 = nessun rischio rilevato) e riflette lo stato corrente del perimetro; il livello di rischio deriva dai punti di rischio con le soglie del servizio. I finding chiusi, accettati o fuori perimetro non sono contati.",
 		{ size: 8.5, color: BRAND.muted },
 	);
 
@@ -663,7 +664,7 @@ function darkRisk(w: PdfWriter, d: Derived): void {
 		[
 			{ label: "Record raccolti", value: total === null ? "Non disponibile" : String(total), hint: "Record della fonte che citano il perimetro" },
 			{ label: "Nuovi nella settimana", value: fresh === null ? "Non disponibile" : String(fresh), hint: weekStart ? `Settimana dal ${formatShortDate(weekStart)}` : null },
-			{ label: "Indice di esposizione", value: index === null ? "Non disponibile" : `${index}/100`, hint: index === null ? null : `Fascia ${level ?? "n/d"} · 0 = nessuna, 100 = massima`, color: surfaceLevelColor(level) },
+			{ label: "Indice di esposizione", value: index === null ? "Non disponibile" : `${index}/100`, hint: index === null ? null : `Rischio ${(level ?? "n/d").toLowerCase()} · 0 = nessuna, 100 = massima`, color: surfaceLevelColor(level) },
 			{ label: "Ultima esecuzione", value: formatShortDate((coverage.last_run_at as string) ?? null), hint: `${num(coverage.scope_entries) ?? 0} voci di perimetro monitorate` },
 		],
 		2,
@@ -775,7 +776,7 @@ function appendices(w: PdfWriter, data: ReportData, d: Derived): void {
 			w.heading(`A${i + 1} · ${cat.name}`, 2, { keepWith: 25 });
 			w.paragraph(
 				s.displayScore !== null
-					? `Punteggio ${s.displayScore}/100 · fascia ${band} · ${CATEGORY_STATUS_LABELS[s.status].toLowerCase()}`
+					? `Punteggio ${s.displayScore}/100 · rischio ${String(band).toLowerCase()} · ${CATEGORY_STATUS_LABELS[s.status].toLowerCase()}`
 					: CATEGORY_STATUS_LABELS[s.status],
 				{ size: 9, style: "bold", color: bandColor(band) },
 			);
@@ -961,7 +962,7 @@ function appendices(w: PdfWriter, data: ReportData, d: Derived): void {
 			{ label: "Significato", width: 134 },
 		],
 		[
-			["Punteggio assessment", "Media delle aree valutate, 0–100; più alto è meglio. Fasce: Altissimo sotto 20, Alto 20–39, Moderato 40–59, Basso 60–79, Molto basso da 80."],
+			["Punteggio assessment", "Media delle aree valutate, 0–100; più alto è meglio. Il rischio va nel verso opposto: altissimo sotto 20, alto 20–39, moderato 40–59, basso 60–79, molto basso da 80."],
 			["Non applicabile (N/A)", "Risposta esclusa dal calcolo: non abbassa né alza il punteggio."],
 			["Postura SurfaceScan360", "Stato corrente del perimetro esterno, 0–100; 100 = nessun rischio rilevato."],
 			["Indice DarkRisk360", "Esposizione nel dark web, 0–100; più alto è peggio."],
