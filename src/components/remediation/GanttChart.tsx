@@ -54,6 +54,7 @@ export interface GanttTask {
 	priority: string;
 	color: string;
 	assignee: string;
+	assigneeUserId?: string | null;
 	isHidden?: boolean;
 	budget?: number;
 	startOffset: number;

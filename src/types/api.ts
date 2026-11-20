@@ -399,6 +399,8 @@ export interface RemediationTask {
 	progress: number;
 	is_done: boolean;
 	assignee: string | null;
+	/** Utente dell'azienda assegnato; null per «Da assegnare» o assegnatario scritto a mano (storico). */
+	assignee_user_id?: string | null;
 	budget: number | null;
 	dependencies: string[] | null;
 	display_order: number | null;
@@ -420,6 +422,7 @@ export interface StoreRemediationTaskRequest {
 	progress?: number;
 	is_done?: boolean;
 	assignee?: string | null;
+	assignee_user_id?: string | null;
 	budget?: number | null;
 	display_order?: number | null;
 	is_deleted?: boolean;

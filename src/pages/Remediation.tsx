@@ -74,6 +74,7 @@ interface DbTask {
 	progress: number;
 	is_done: boolean;
 	assignee: string | null;
+	assignee_user_id: string | null;
 	priority: string;
 	color: string;
 	budget: number | null;
@@ -145,6 +146,7 @@ const EMPTY_FORM: RemediationTaskFormData = {
 	priority: "",
 	description: "",
 	assignee: "",
+	assigneeUserId: null,
 	complexity: "medium",
 	estimatedDays: "",
 	budget: "",
@@ -248,6 +250,7 @@ const Remediation: React.FC = () => {
 			progress: typeof task.progress === "number" ? task.progress : 0,
 			is_done: task.is_done === true,
 			assignee: task.assignee ?? null,
+			assignee_user_id: task.assignee_user_id ?? null,
 			priority: task.priority,
 			color: task.color,
 			budget: task.budget ?? null,
@@ -338,6 +341,7 @@ const Remediation: React.FC = () => {
 			priority: PRIORITY_DB_TO_IT[t.priority] || "Media",
 			color: t.color,
 			assignee: t.assignee || "",
+			assigneeUserId: t.assignee_user_id ?? null,
 			isHidden: t.is_hidden || false,
 			budget: t.budget || 0,
 			startOffset: (daysFromStart / totalDays) * 100,
@@ -454,6 +458,7 @@ const Remediation: React.FC = () => {
 			priority: action.priority,
 			description: action.task,
 			assignee: action.assignee || "",
+			assigneeUserId: action.assigneeUserId ?? null,
 			complexity: "medium",
 			estimatedDays: String(days),
 			budget: String(action.budget || 0),
@@ -470,7 +475,9 @@ const Remediation: React.FC = () => {
 			await updateTask(editingTask, {
 				task: editTaskData.description,
 				category: editTaskData.category,
-				assignee: editTaskData.assignee,
+				// L'assegnatario si invia solo se cambiato: un nome storico scritto a
+				// mano resta finché non si sceglie un utente.
+				...(editTaskData.assigneeChanged ? { assignee_user_id: editTaskData.assigneeUserId } : {}),
 				priority: PRIORITY_IT_TO_DB[editTaskData.priority] || "medium",
 				progress: Number(editTaskData.progress) || 0,
 				is_done: editTaskData.isDone ?? false,
@@ -659,7 +666,7 @@ const Remediation: React.FC = () => {
 				"medium") as StoreRemediationTaskRequest["priority"],
 			color: PRIORITY_COLORS[newRemediation.priority] || "#3b82f6",
 			progress: Number(newRemediation.progress) || 0,
-			assignee: newRemediation.assignee,
+			assignee_user_id: newRemediation.assigneeUserId,
 			budget: estimatedBudget,
 			display_order: activeTasks.length,
 			is_deleted: false,
@@ -756,6 +763,8 @@ const Remediation: React.FC = () => {
 									productsByCategory={productsByCategory}
 									calculateDays={calculateDays}
 									calculateBudget={calculateBudget}
+									companyId={orgId ?? ""}
+									groupId={groupId}
 								/>
 								<div className="flex justify-end space-x-2 pt-2">
 									<Button
@@ -802,6 +811,8 @@ const Remediation: React.FC = () => {
 											productsByCategory={productsByCategory}
 											calculateDays={calculateDays}
 											calculateBudget={calculateBudget}
+											companyId={orgId ?? ""}
+											groupId={groupId}
 										/>
 										<div className="flex justify-end space-x-2 pt-4">
 											<Button
@@ -1033,7 +1044,7 @@ const Remediation: React.FC = () => {
 																•
 															</span>
 															<span className="text-sm text-muted-foreground">
-																Team: {t.assignee}
+																Assegnatario: {t.assignee || "Da assegnare"}
 															</span>
 															<span className="text-sm text-muted-foreground">
 																•

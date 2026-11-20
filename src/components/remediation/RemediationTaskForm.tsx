@@ -19,6 +19,7 @@ import {
 	PopoverTrigger,
 } from "@/components/ui/popover";
 import { ProductCombobox } from "@/components/remediation/ProductCombobox";
+import { AssigneeSelect } from "@/components/shared/AssigneeSelect";
 import { Calendar, Euro } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -34,7 +35,12 @@ export interface RemediationTaskFormData {
 	product: string;
 	priority: string;
 	description: string;
+	/** Nome dell'assegnatario attuale (anche scritto a mano prima del 20/11/2026). */
 	assignee: string;
+	/** Utente dell'azienda scelto; null = «Da assegnare» o valore storico a mano. */
+	assigneeUserId: string | null;
+	/** Vero se l'assegnatario è stato cambiato in questa modale: solo allora si invia. */
+	assigneeChanged?: boolean;
 	complexity: string;
 	estimatedDays: string;
 	budget: string;
@@ -47,16 +53,6 @@ export interface RemediationTaskFormData {
 
 /** Opzioni condivise: un'unica fonte di verità per entrambe le modali. */
 const PRIORITY_OPTIONS = ["Critica", "Alta", "Media", "Bassa"] as const;
-const TEAM_OPTIONS = [
-	"IT Security Team",
-	"Development Team",
-	"DevSecOps Team",
-	"Security Auditor",
-	"Procurement Team",
-	"Operations Team",
-	"Compliance Team",
-	"HR & Training",
-] as const;
 
 const composeTask = (category: string, product: string): string =>
 	product.trim() ? `${category} - ${product.trim()}` : category;
@@ -68,6 +64,8 @@ interface Props {
 	productsByCategory: Record<string, string[]>;
 	calculateDays: (complexity: string, category: string) => number;
 	calculateBudget: (days: number, complexity: string) => number;
+	companyId: string;
+	groupId: string | null | undefined;
 }
 
 export const RemediationTaskForm: React.FC<Props> = ({
@@ -77,6 +75,8 @@ export const RemediationTaskForm: React.FC<Props> = ({
 	productsByCategory,
 	calculateDays,
 	calculateBudget,
+	companyId,
+	groupId,
 }) => {
 	// Tolleranza: se il valore corrente non è tra le opzioni (task legacy con
 	// categoria/team fuori catalogo), lo aggiungiamo in testa così resta visibile.
@@ -84,10 +84,9 @@ export const RemediationTaskForm: React.FC<Props> = ({
 		value.category && !categories.includes(value.category)
 			? [value.category, ...categories]
 			: categories;
-	const teamOptions =
-		value.assignee && !TEAM_OPTIONS.includes(value.assignee as (typeof TEAM_OPTIONS)[number])
-			? [value.assignee, ...TEAM_OPTIONS]
-			: [...TEAM_OPTIONS];
+	// Assegnatario scritto a mano prima che si scegliesse tra gli utenti: resta
+	// finché non se ne sceglie uno.
+	const legacyAssignee = !value.assigneeUserId && !value.assigneeChanged && value.assignee.trim() !== "" ? value.assignee : null;
 
 	const autoDays =
 		Number(value.estimatedDays) || calculateDays(value.complexity, value.category);
@@ -215,22 +214,20 @@ export const RemediationTaskForm: React.FC<Props> = ({
 			</div>
 
 			<div className="space-y-2">
-				<Label>Team Assegnato</Label>
-				<Select
-					value={value.assignee}
-					onValueChange={(v) => onChange((p) => ({ ...p, assignee: v }))}
-				>
-					<SelectTrigger>
-						<SelectValue placeholder="Seleziona team" />
-					</SelectTrigger>
-					<SelectContent>
-						{teamOptions.map((t) => (
-							<SelectItem key={t} value={t}>
-								{t}
-							</SelectItem>
-						))}
-					</SelectContent>
-				</Select>
+				<Label htmlFor="remediation-assignee">Assegnatario</Label>
+				<AssigneeSelect
+					id="remediation-assignee"
+					companyId={companyId}
+					groupId={groupId}
+					value={value.assigneeUserId}
+					currentName={value.assignee || null}
+					onChange={(userId) => onChange((p) => ({ ...p, assigneeUserId: userId, assigneeChanged: true }))}
+				/>
+				{legacyAssignee && (
+					<p className="text-xs text-muted-foreground">
+						Assegnato in precedenza a «{legacyAssignee}». Scegli un utente dell'azienda per sostituirlo.
+					</p>
+				)}
 			</div>
 
 			<div className="grid grid-cols-2 gap-4">
