@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
 import { OsPatchesTable } from './OsPatchesTable';
 import { SoftwarePatchesTable } from './SoftwarePatchesTable';
 import { useHipatchDashboard } from '@/hooks/useHipatch';
-import { assetOs, OS_ASSENTE, OS_NON_RILEVATO_HINT } from '@/lib/hipatch/assetOs';
+import { assetOs, OS_ASSENTE, OS_NON_RILEVATO, OS_NON_RILEVATO_HINT } from '@/lib/hipatch/assetOs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DEFAULT_ASSET_FILTERS,
@@ -457,7 +457,7 @@ export const HiPatchDashboard: React.FC = () => {
                   <SelectContent>
                     <SelectItem value="all">Tutti gli OS</SelectItem>
                     {assetOsOptions.map(({ os, count }) => (
-                      <SelectItem key={os} value={os}>{os} ({count})</SelectItem>
+                      <SelectItem key={os} value={os} aria-label={os === OS_NON_RILEVATO ? `Sistema operativo non rilevato (${count})` : undefined}>{os} ({count})</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

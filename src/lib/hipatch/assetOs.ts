@@ -4,7 +4,7 @@ import type { HipatchAsset } from "@/lib/api/hipatch";
  * Il sistema operativo di un asset HiPatch, dal campo più completo a quello più
  * povero: nome completo, nome, produttore + versione, piattaforma. Null se la
  * scansione non l'ha identificato: tabelle ed export mostrano un trattino, con
- * il tooltip che spiega perché; il filtro per OS lo chiama «OS non rilevato».
+ * il tooltip che spiega perché; anche il filtro per OS usa il trattino.
  */
 export function assetOs(a: HipatchAsset): string | null {
 	const v = (s?: string) => (s ?? "").trim();
@@ -17,8 +17,8 @@ export function assetOs(a: HipatchAsset): string | null {
 	);
 }
 
-/** Voce del filtro per sistema operativo. */
-export const OS_NON_RILEVATO = "OS non rilevato";
+/** Voce del filtro per sistema operativo quando l'OS non è stato identificato: il trattino, come in tabella. */
+export const OS_NON_RILEVATO = "—";
 
 /** Cella di tabella ed export quando l'OS non è stato identificato. */
 export const OS_ASSENTE = "—";
