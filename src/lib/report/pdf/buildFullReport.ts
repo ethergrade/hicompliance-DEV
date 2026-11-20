@@ -24,6 +24,7 @@ import {
 	parseTaskDate,
 } from "@/lib/remediation/kpis";
 import { toCvss } from "@/lib/surfacescan/normalize";
+import { MAIL_STATUS_LABEL } from "@/lib/surfacescan/mailSecurity";
 import type { RemediationTask } from "@/types/api";
 import type { ReportData, SourceResult } from "../collectReportData";
 import { BRAND, CONTENT_W, PAGE, PdfWriter, RISK_BAND, SEVERITY, type Cell, type ReportFonts, type RGB } from "./writer";
@@ -606,23 +607,31 @@ function surfaceScan(w: PdfWriter, data: ReportData, d: Derived): void {
 	);
 
 	if (ss.mail.length) {
-		const v = (b: boolean | null) => (b === null ? "Non verificato" : b ? "Presente" : "Assente");
+		const st = (s: string): { text: string; color: RGB } => {
+			const x = MAIL_STATUS_LABEL[s] ?? MAIL_STATUS_LABEL.unknown;
+			return { text: x.label, color: x.tone === "bad" ? SEVERITY.high : x.tone === "warn" ? SEVERITY.medium : x.tone === "ok" ? RISK_BAND.Basso : BRAND.muted };
+		};
+		const rischio = { alto: "Alto", medio: "Medio", basso: "Basso", non_determinato: "Non determinato" } as const;
 		w.table(
 			[
-				{ label: "Dominio", width: 64 },
-				{ label: "SPF", width: 30, nowrap: true },
-				{ label: "DMARC", width: 30, nowrap: true },
-				{ label: "Rischio spoofing", width: 54, nowrap: true },
+				{ label: "Dominio", width: 46 },
+				{ label: "SPF", width: 30 },
+				{ label: "DMARC", width: 38 },
+				{ label: "DKIM", width: 30 },
+				{ label: "Rischio spoofing", width: 34 },
 			],
 			ss.mail.map((m) => [
 				m.domain,
-				v(m.spf),
-				v(m.dmarc),
-				{ text: m.spoofingRisk === "alto" ? "Alto" : m.spoofingRisk === "medio" ? "Medio" : "Basso", color: m.spoofingRisk === "alto" ? SEVERITY.critical : m.spoofingRisk === "medio" ? SEVERITY.medium : RISK_BAND.Basso },
+				st(m.spfStatus),
+				m.dmarcStatus === "no_enforcement" && m.dmarcReporting !== null
+					? { ...st(m.dmarcStatus), text: `${MAIL_STATUS_LABEL.no_enforcement.label}${m.dmarcReporting ? ", report attivi" : ", senza report"}` }
+					: st(m.dmarcStatus),
+				st(m.dkimStatus),
+				{ text: rischio[m.spoofingRisk], color: m.spoofingRisk === "alto" ? SEVERITY.critical : m.spoofingRisk === "medio" ? SEVERITY.medium : m.spoofingRisk === "basso" ? RISK_BAND.Basso : BRAND.muted },
 			]),
 			{
 				title: "Sicurezza della posta",
-				note: "Rischio spoofing: alto senza SPF e DMARC, medio se uno dei due manca o non è verificato. Una policy DMARC «p=none» segnala ma non blocca.",
+				note: "Anomalie: SPF o DMARC assenti o non validi su un dominio che riceve posta, DKIM con verifica fallita. «Policy senza enforcement» (p=none) segnala ma non blocca. DKIM «Non verificato»: il selettore usato dal server di posta non è tra quelli comuni, non è un errore. «Controllo incompleto»: il DNS non ha risposto.",
 			},
 		);
 	}
