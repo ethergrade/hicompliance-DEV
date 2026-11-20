@@ -1,3 +1,4 @@
+import { VULN_LABEL } from './SurfaceFindingSheet';
 import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -784,7 +785,11 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ printMode = false }
                                                   <TableCell className="min-w-32">
                                                     {rowCves.length > 0 ? (
                                                       <div className="flex flex-wrap gap-1">
-                                                        {rowCves.slice(0, 3).map((cve) => (
+                                                        {/* Prima la CVE principale: CVSS e stato mostrati sono i suoi. */}
+                                                        {(row.primary_cve && rowCves.includes(row.primary_cve)
+                                                          ? [row.primary_cve, ...rowCves.filter((c) => c !== row.primary_cve)]
+                                                          : rowCves
+                                                        ).slice(0, 3).map((cve) => (
                                                           <Button
                                                             key={`${row.id}-${cve}`}
                                                             size="sm"
@@ -798,6 +803,14 @@ const SecurityFindings: React.FC<SecurityFindingsProps> = ({ printMode = false }
                                                         {rowCves.length > 3 && (
                                                           <Badge variant="secondary" className="text-[10px]">
                                                             +{rowCves.length - 3}
+                                                          </Badge>
+                                                        )}
+                                                        {row.vulnerability_status && (
+                                                          <Badge
+                                                            variant={row.vulnerability_status === 'confirmed' ? 'destructive' : 'outline'}
+                                                            className="text-[10px]"
+                                                          >
+                                                            {VULN_LABEL[row.vulnerability_status] ?? row.vulnerability_status}
                                                           </Badge>
                                                         )}
                                                       </div>

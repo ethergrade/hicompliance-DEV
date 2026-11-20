@@ -778,6 +778,21 @@ export const surfaceScan360Api = {
 	},
 
 	/** Assegnatario (utente dell'azienda) e stato dell'intervento (da_fare, in_corso, da_verificare). */
+	/** Verifica documentata dell'operatore sulle CVE del finding. */
+	async updateFindingVulnerability(
+		companyId: string,
+		findingId: string,
+		payload: { status: "to_verify" | "confirmed" | "discarded"; note?: string | null },
+		groupId?: string | null,
+	): Promise<Record<string, unknown>> {
+		const res = await complianceApiClient.patch<ApiResponse<Record<string, unknown>>>(
+			`/companies/${companyId}/surface-scan360/findings/${findingId}/vulnerability`,
+			payload,
+			groupId ? groupHeader(groupId) : undefined,
+		);
+		return res.data;
+	},
+
 	async updateFindingAction(
 		companyId: string,
 		findingId: string,

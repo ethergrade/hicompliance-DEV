@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AssigneeSelect } from "@/components/shared/AssigneeSelect";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { surfaceScan360Api } from "@/lib/api/surface-scan360";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
@@ -83,6 +84,13 @@ const domainExpiryText = (expires: unknown, kind: unknown): string => {
 const cveList = (cves: string[]): string =>
 	cves.length > 20 ? `${cves.slice(0, 20).join(", ")} e altre ${cves.length - 20}` : cves.join(", ");
 
+/** Stato della vulnerabilità, separato dall'appartenenza dell'asset al cliente. */
+export const VULN_LABEL: Record<string, string> = {
+	to_verify: "Da verificare",
+	confirmed: "Confermata",
+	discarded: "Scartata",
+};
+
 const Row: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
 	<div className="grid grid-cols-[140px_1fr] gap-3 py-1.5 text-sm">
 		<dt className="text-muted-foreground">{label}</dt>
@@ -105,6 +113,8 @@ export const SurfaceFindingSheet: React.FC<{ canManage: boolean }> = ({ canManag
 	const [assigneeUserId, setAssigneeUserId] = useState<string | null>(null);
 	const [actionStatus, setActionStatus] = useState<string>("");
 	const [saving, setSaving] = useState(false);
+	const [vulnNote, setVulnNote] = useState("");
+	const [vulnSaving, setVulnSaving] = useState(false);
 
 	useEffect(() => {
 		setFinding(null);
@@ -156,7 +166,33 @@ export const SurfaceFindingSheet: React.FC<{ canManage: boolean }> = ({ canManag
 		}
 	};
 
+	const verify = async (status: "to_verify" | "confirmed" | "discarded") => {
+		if (!organizationId || !findingId) return;
+		if (status !== "to_verify" && vulnNote.trim().length < 10) {
+			toast.error("Descrivi l'evidenza o la verifica fatta (almeno 10 caratteri).");
+			return;
+		}
+		setVulnSaving(true);
+		try {
+			const updated = await surfaceScan360Api.updateFindingVulnerability(
+				organizationId,
+				findingId,
+				{ status, note: status === "to_verify" ? null : vulnNote.trim() },
+				groupId,
+			);
+			setFinding(updated);
+			setVulnNote("");
+			toast.success(status === "confirmed" ? "Vulnerabilità confermata" : status === "discarded" ? "Vulnerabilità scartata" : "Riportata da verificare");
+		} catch {
+			toast.error("Non è stato possibile salvare la verifica");
+		} finally {
+			setVulnSaving(false);
+		}
+	};
+
 	const evidence = (finding?.evidence ?? {}) as Record<string, unknown>;
+	const hasCve = Array.isArray(finding?.cve) && (finding?.cve as unknown[]).length > 0;
+	const vulnStatus = String(finding?.vulnerability_status ?? (hasCve ? "to_verify" : ""));
 	const isTls = String(finding?.finding_type ?? "").startsWith("ssl_certificate_");
 	const isDomainExpiry = String(finding?.finding_type ?? "") === "domain_expiry";
 	const resolved = String(finding?.status ?? "") === "resolved";
@@ -205,6 +241,20 @@ export const SurfaceFindingSheet: React.FC<{ canManage: boolean }> = ({ canManag
 							{isDomainExpiry && evidence.registrar ? <Row label="Registrar" value={String(evidence.registrar)} /> : null}
 							{cvss !== null && <Row label="CVSS" value={cvss.toLocaleString("it-IT", { maximumFractionDigits: 1 })} />}
 							{Array.isArray(finding.cve) && finding.cve.length > 0 && <Row label="CVE" value={cveList(finding.cve as string[])} />}
+							{hasCve && finding.primary_cve ? <Row label="CVE principale" value={String(finding.primary_cve)} /> : null}
+							{hasCve && (
+								<Row
+									label="Vulnerabilità"
+									value={
+										<span>
+											{VULN_LABEL[vulnStatus] ?? vulnStatus}
+											{finding.vulnerability_note ? (
+												<span className="block text-xs text-muted-foreground">«{String(finding.vulnerability_note)}»</span>
+											) : null}
+										</span>
+									}
+								/>
+							)}
 							<Row label="Assegnatario" value={String(finding.assignee ?? "").trim() || "Da assegnare"} />
 							<Row label="Intervento" value={ACTION_LABEL[String(finding.action_status ?? "")] ?? "Da valutare"} />
 						</dl>
@@ -224,6 +274,35 @@ export const SurfaceFindingSheet: React.FC<{ canManage: boolean }> = ({ canManag
 									: "Il finding si chiude quando una nuova scansione dello stesso endpoint non lo conferma. Se la verifica non è disponibile, l'esito precedente resta da verificare."}
 							</p>
 						</div>
+
+						{canManage && hasCve && (
+							<div className="space-y-2 rounded-md border border-border p-3">
+								<Label htmlFor="finding-vuln-note">Verifica della vulnerabilità</Label>
+								<p className="text-xs text-muted-foreground">
+									Per confermare serve un'evidenza sul servizio (versione, risposta, test) o una verifica documentata.
+								</p>
+								<Textarea
+									id="finding-vuln-note"
+									value={vulnNote}
+									onChange={(e) => setVulnNote(e.target.value)}
+									placeholder="Evidenza o verifica fatta"
+									rows={2}
+								/>
+								<div className="flex flex-wrap gap-2">
+									<Button type="button" size="sm" disabled={vulnSaving} onClick={() => verify("confirmed")}>
+										Conferma
+									</Button>
+									<Button type="button" size="sm" variant="outline" disabled={vulnSaving} onClick={() => verify("discarded")}>
+										Scarta
+									</Button>
+									{vulnStatus !== "to_verify" && (
+										<Button type="button" size="sm" variant="ghost" disabled={vulnSaving} onClick={() => verify("to_verify")}>
+											Riporta da verificare
+										</Button>
+									)}
+								</div>
+							</div>
+						)}
 
 						{canManage && (
 							<form

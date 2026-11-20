@@ -35,6 +35,10 @@ export interface SurfaceFindingRow {
   remediation: string | null;
   evidence: Record<string, any> | null;
   attribution_confidence: string | null;
+  /** CVE da cui vengono CVSS ed EPSS della riga (la più grave del gruppo). */
+  primary_cve?: string | null;
+  /** to_verify | confirmed | discarded: separato dall'appartenenza dell'asset. */
+  vulnerability_status?: string | null;
   status: string | null;
   created_at: string;
   first_seen_at?: string | null;
@@ -275,6 +279,8 @@ const mapApiFinding = (record: Record<string, any> | null): SurfaceFindingRow | 
     remediation: record.remediation ?? null,
     evidence: record.evidence && typeof record.evidence === 'object' ? (record.evidence as Record<string, any>) : null,
     attribution_confidence: record.attribution_confidence ?? null,
+    primary_cve: record.primary_cve ?? null,
+    vulnerability_status: record.vulnerability_status ?? null,
     status: record.status ?? null,
     created_at: String(record.created_at || new Date().toISOString()),
     first_seen_at: record.first_seen_at ?? null,
