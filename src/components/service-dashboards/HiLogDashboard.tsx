@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { insidePercentLabel } from '@/components/charts/pieLabels';
 import jsPDF from 'jspdf';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -559,7 +560,7 @@ export const HiLogDashboard: React.FC = () => {
                 <p className="text-sm font-medium mb-2 text-center">Events comparison</p>
                 <ResponsiveContainer width="100%" height="90%">
                   <PieChart>
-                    <Pie data={securityEventsData.filter(e => e.value > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" label={({ name }) => name}>
+                    <Pie data={securityEventsData.filter(e => e.value > 0)} cx="50%" cy="50%" innerRadius="55%" outerRadius="92%" dataKey="value" label={insidePercentLabel()} labelLine={false}>
                       {securityEventsData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}

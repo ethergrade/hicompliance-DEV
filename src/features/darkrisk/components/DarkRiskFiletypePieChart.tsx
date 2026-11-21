@@ -1,5 +1,6 @@
 import React from 'react';
-import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { insidePercentLabel, PieLegend } from '@/components/charts/pieLabels';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { FileText } from 'lucide-react';
 
@@ -94,16 +95,17 @@ export function DarkRiskFiletypePieChart({ data, title = 'Risultati per tipo di 
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <ResponsiveContainer width="100%" height={220}>
+        <ResponsiveContainer width="100%" height={180}>
           <PieChart>
             <Pie
               data={chartData}
               cx="50%"
               cy="50%"
-              outerRadius={70}
+              outerRadius="90%"
               dataKey="value"
-              label={({ percent }) => `${(percent * 100).toFixed(1)}%`}
+              label={insidePercentLabel()}
               labelLine={false}
+              isAnimationActive={false}
             >
               {chartData.map((entry, idx) => (
                 <Cell key={`cell-${idx}`} fill={entry.color} />
@@ -118,12 +120,9 @@ export function DarkRiskFiletypePieChart({ data, title = 'Risultati per tipo di 
               itemStyle={{ color: 'hsl(var(--card-foreground))' }}
               labelStyle={{ color: 'hsl(var(--card-foreground))' }}
             />
-            <Legend
-              iconSize={10}
-              formatter={(value) => <span style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))' }}>{value}</span>}
-            />
           </PieChart>
         </ResponsiveContainer>
+        <PieLegend items={chartData} />
       </CardContent>
     </Card>
   );

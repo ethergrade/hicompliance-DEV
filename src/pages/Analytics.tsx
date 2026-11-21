@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { insidePercentLabel, PieLegend } from '@/components/charts/pieLabels';
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useClientOrganization } from "@/hooks/useClientOrganization";
 import { useDashboardMetrics } from "@/hooks/useDashboardMetrics";
@@ -1072,9 +1073,10 @@ const Analytics: React.FC = () => {
 													data={severityDistribution}
 													cx="50%"
 													cy="50%"
-													outerRadius={100}
+													outerRadius="92%"
 													dataKey="value"
-													label={({ name, value }) => `${name}: ${value}`}
+													label={insidePercentLabel()}
+													labelLine={false}
 												>
 													{severityDistribution.map((entry, index) => (
 														<Cell key={`cell-${index}`} fill={entry.color} />
@@ -1084,6 +1086,7 @@ const Analytics: React.FC = () => {
 											</PieChart>
 										</ResponsiveContainer>
 									</div>
+									<PieLegend items={severityDistribution} />
 								</CardContent>
 							</Card>
 						</div>

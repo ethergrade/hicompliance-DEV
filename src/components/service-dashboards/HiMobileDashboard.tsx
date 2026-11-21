@@ -3,6 +3,7 @@
 // registrazioni, policy, app, batteria e cifratura si mostrano solo se presenti
 // (la sorgente oggi non li fornisce): nessun numero d'esempio ai clienti.
 import React, { useMemo, useState } from "react";
+import { insidePercentLabel, PieLegend } from '@/components/charts/pieLabels';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -123,7 +124,7 @@ export const HiMobileDashboard: React.FC = () => {
 						<div className="h-64">
 							<ResponsiveContainer width="100%" height="100%">
 								<PieChart>
-									<Pie data={pie} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={2} dataKey="value" label={({ name, value }) => `${name}: ${value}`}>
+									<Pie data={pie} cx="50%" cy="50%" innerRadius="55%" outerRadius="92%" paddingAngle={2} dataKey="value" label={insidePercentLabel()} labelLine={false}>
 										{pie.map((entry, index) => (
 											<Cell key={`cell-${index}`} fill={entry.color} />
 										))}
@@ -132,6 +133,7 @@ export const HiMobileDashboard: React.FC = () => {
 								</PieChart>
 							</ResponsiveContainer>
 						</div>
+						<PieLegend items={pie} />
 					</CardContent>
 				</Card>
 

@@ -1,5 +1,6 @@
 // @ts-nocheck -- type drift vs API contract, da riallineare
 import React, { useMemo, useState } from 'react';
+import { insidePercentLabel } from '@/components/charts/pieLabels';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { ExposureOpenPortRow, ExposureSummary, ExposureTechnologyRow } from '@/lib/surfacescan/exposureApi';
@@ -15,7 +16,6 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-  type PieLabelRenderProps,
 } from 'recharts';
 
 interface ExposureChartsProps {
@@ -62,8 +62,6 @@ type SeverityChartRow = {
   description: string;
 };
 
-const renderSeverityLabel = ({ name, value, percent }: PieLabelRenderProps & { value?: number }): string =>
-  `${name} ${Number(value || 0)} · ${Math.round(Number(percent || 0) * 100)}%`;
 const RISKY_PORTS = new Set([21, 23, 445, 3389, 5900, 6379, 9200, 9300, 11211, 27017, 3306, 5432, 1433, 1521, 2375]);
 const TLS_PORTS = new Set([443, 465, 636, 853, 989, 990, 993, 995, 8443, 9443]);
 const WEB_PORTS = new Set([80, 443, 8000, 8080, 8081, 8443, 8888, 9443]);
@@ -303,7 +301,7 @@ export const ExposureCharts: React.FC<ExposureChartsProps> = ({
                 </div>
                 <div className="h-[300px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <PieChart margin={{ top: 34, right: 62, bottom: 22, left: 62 }}>
+                    <PieChart margin={{ top: 30, right: 16, bottom: 16, left: 16 }}>
                       <Pie
                         data={severityData}
                         dataKey="value"
@@ -316,8 +314,8 @@ export const ExposureCharts: React.FC<ExposureChartsProps> = ({
                         cornerRadius={2}
                         stroke="#0b111a"
                         strokeWidth={2}
-                        label={renderSeverityLabel}
-                        labelLine={{ stroke: '#43536a', strokeWidth: 1 }}
+                        label={insidePercentLabel()}
+                        labelLine={false}
                         activeIndex={activeSeverityIndex == null ? undefined : activeSeverityIndex}
                         activeShape={{ outerRadius: 96, stroke: '#c8f5ff', strokeWidth: 1 }}
                         inactiveShape={activeSeverityIndex == null ? undefined : { opacity: 0.38 }}

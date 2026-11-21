@@ -1,5 +1,6 @@
 // @ts-nocheck -- type drift vs API contract, da riallineare
 import React, { useMemo, useState } from "react";
+import { insidePercentLabel, PieLegend } from '@/components/charts/pieLabels';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -827,10 +828,9 @@ export const DarkRiskFindingsAnalytics: React.FC<{
                     nameKey="scope"
                     cx="50%"
                     cy="50%"
-                    outerRadius={90}
-                    label={(entry: ScopePieRow & { percent?: number }) =>
-                      `${entry.scope} ${(Number(entry.percent || 0) * 100).toFixed(0)}%`
-                    }
+                    outerRadius="92%"
+                    label={insidePercentLabel()}
+                    labelLine={false}
                   >
                     {data.scopeRows.map((entry) => (
                       <Cell
@@ -849,6 +849,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{
                 </PieChart>
               </ResponsiveContainer>
             </div>
+            <PieLegend items={data.scopeRows.map((r) => ({ name: r.scope, value: r.count, color: scopePalette[r.scope] || scopePalette.unknown }))} />
           </div>
         </div>
 
