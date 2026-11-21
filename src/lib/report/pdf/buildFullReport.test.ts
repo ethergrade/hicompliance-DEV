@@ -126,9 +126,10 @@ const reportData = (): ReportData => {
 	};
 };
 
-const darkFinding = (i: number, severity: string, asset: string | null, title = `Leak ${i}`) =>
+/** Come in produzione per Inera: nessun asset collegato, solo la voce di perimetro del record. */
+const darkFinding = (i: number, severity: string, perimeterEntry: string | null, title = `Leak ${i}`) =>
 	({
-		id: `d${i}`, title, findingType: "domain_leak", severity, status: "new", asset, leakDate: i % 2 ? "2025-03-01" : null,
+		id: `d${i}`, title, findingType: "domain_leak", severity, status: "new", asset: null, perimeterEntry, leakDate: i % 2 ? "2025-03-01" : null,
 		surfaceFindingId: null, firstSeenAt: "2026-10-01T00:00:00Z", lastSeenAt: "2026-11-16T00:00:00Z", acknowledged: false,
 		acknowledgedAt: null, acknowledgedBy: null, acknowledgementNote: null, assignee: null, assigneeUserId: null,
 		actionStatus: null, compromiseType: "direct",
@@ -139,7 +140,7 @@ const withDarkRisk = (): ReportData => {
 	const data = reportData();
 	const rows = [
 		...Array.from({ length: 18 }, (_, i) => darkFinding(i, "high", i < 12 ? "inera.it" : null, i === 0 ? "Credenziale esposta: mario.rossi@inera.it" : `Leak ${i}`)),
-		...Array.from({ length: 30 }, (_, i) => darkFinding(100 + i, "medium", "95.216.30.73")),
+		...Array.from({ length: 30 }, (_, i) => darkFinding(100 + i, "medium", "95.216.30.73", i === 0 ? "Collection #2-#5 &amp; Antipublic" : `Leak ${100 + i}`)),
 	];
 	return {
 		...data,
@@ -204,6 +205,8 @@ describe("buildFullReportPdf · DarkRisk360", () => {
 		expect(text).toContain("Appendice F · Anagrafica e consistenze");
 		expect(text).toContain("m***@inera.it");
 		expect(text).not.toContain("mario.rossi@inera.it");
+		expect(text).toContain("Collection #2-#5 & Antipublic");
+		expect(text).not.toContain("&amp;");
 	});
 });
 

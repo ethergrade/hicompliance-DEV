@@ -186,6 +186,8 @@ export interface DarkRiskFinding {
 	severity: string;
 	status: string;
 	asset: string | null;
+	/** Voce di perimetro del record (dominio o IP del cliente), anche senza asset collegato. */
+	perimeterEntry: string | null;
 	leakDate: string | null;
 	/** Id del rilievo SurfaceScan di origine, per i rilievi importati da lì. */
 	surfaceFindingId: string | null;

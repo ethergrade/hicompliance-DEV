@@ -167,7 +167,7 @@ export function DarkRiskEvidenceSheet({
 						</div>
 
 						<dl className="divide-y divide-border">
-							<Row label="Perché riguarda il cliente" value={finding.asset ? `Cita ${finding.asset}` : "Asset da attribuire"} />
+							<Row label="Perché riguarda il cliente" value={finding.asset ? `Cita ${finding.asset}` : finding.perimeterEntry ? `Trovata cercando ${finding.perimeterEntry}, voce del perimetro` : "Asset da attribuire"} />
 							<Row
 								label="Tipo di esposizione"
 								value={finding.compromiseType === "direct" ? "Diretta (perimetro del cliente)" : finding.compromiseType === "indirect" ? "Indiretta (terze parti)" : "Non determinata"}

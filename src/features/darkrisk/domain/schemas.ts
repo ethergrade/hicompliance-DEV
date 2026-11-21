@@ -368,6 +368,7 @@ export const parseFinding = (value: unknown): DarkRiskFinding => {
 		severity: stringValue(item.severity, "info"),
 		status: stringValue(item.status, "new"),
 		asset: nullableString(item.affected_asset),
+		perimeterEntry: nullableString(item.perimeter_entry),
 		leakDate: nullableString(item.leak_date),
 		surfaceFindingId: nullableString(item.surface_finding_id),
 		firstSeenAt: nullableString(item.first_seen_at),

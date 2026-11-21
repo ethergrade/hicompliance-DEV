@@ -239,13 +239,14 @@ function priorities(data: ReportData, d: Derived): Priority[] {
 	const darkFound = d.darkFindings.filter((f) => f.severity === "critical" || f.severity === "high");
 	const darkHigh = d.darkFindings.length ? darkFound.length : (num(sevDist.critical) ?? 0) + (num(sevDist.high) ?? 0);
 	if (d.darkIncluded && darkHigh > 0) {
-		const top = darkFound[0];
+		// Per la frase, meglio un'evidenza riferita a una voce di perimetro.
+		const top = darkFound.find((f) => f.asset ?? f.perimeterEntry) ?? darkFound[0];
 		out.push({
 			weight: 6,
 			what: "Valutare le evidenze DarkRisk360 di gravità alta",
 			why:
 				`${plural(darkHigh, "evidenza aperta", "evidenze aperte")} di gravità critica o alta` +
-				(top ? `; la prima riguarda ${top.asset ?? "un riferimento non ancora attribuito a una voce di perimetro"}.` : " nell'ultimo aggiornamento settimanale."),
+				(top ? ` ad oggi; la prima riguarda ${top.asset ?? top.perimeterEntry ?? "un riferimento non ancora attribuito a una voce di perimetro"}.` : " nell'ultimo aggiornamento settimanale."),
 			next: "Verificarne la pertinenza nella Console DarkRisk360, assegnarle e documentare la decisione.",
 			ref: d.darkFindings.length ? "DarkRisk360, Appendice E" : "DarkRisk360",
 		});
@@ -265,6 +266,15 @@ function priorities(data: ReportData, d: Derived): Priority[] {
 	}
 	return scelte.slice(0, 3).sort((a, b) => a.weight - b.weight);
 }
+
+/** Entità HTML lasciate dalla fonte nei nomi dei file («&amp;» → «&»). */
+const decodeEntities = (text: string): string =>
+	text
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">")
+		.replace(/&quot;/g, '"')
+		.replace(/&#0?39;|&apos;/g, "'")
+		.replace(/&amp;/g, "&");
 
 /** Maschera ogni indirizzo email dentro un testo («mario.rossi@x.it» → «m***@x.it»). */
 const maskEmailsIn = (text: string): string =>
@@ -970,14 +980,14 @@ function appendices(w: PdfWriter, data: ReportData, d: Derived): void {
 		w.addPage();
 		w.heading("Appendice E · Evidenze DarkRisk360 aperte", 1);
 		w.paragraph(
-			"Evidenze ancora aperte del profilo Standard, raggruppate per voce di perimetro: per ognuna gravità, data della fonte e ultima osservazione, chi la segue. Le credenziali in chiaro non compaiono nel report.",
+			`Evidenze ancora aperte del profilo Standard al ${formatShortDate(data.generatedAt)}, raggruppate per voce di perimetro: per ognuna gravità, data della fonte e ultima osservazione, chi la segue. Le credenziali in chiaro non compaiono nel report. I conteggi della sezione DarkRisk360 vengono invece dall'ultimo aggiornamento settimanale e possono differire.`,
 			{ size: 9, color: BRAND.muted },
 		);
 		const MAX_ROWS = 300;
 		const rows = d.darkFindings.slice(0, MAX_ROWS);
 		const gruppi = new Map<string, DarkRiskFinding[]>();
 		for (const f of rows) {
-			const k = f.asset ?? "Da attribuire a una voce di perimetro";
+			const k = f.asset ?? f.perimeterEntry ?? "Da attribuire a una voce di perimetro";
 			gruppi.set(k, [...(gruppi.get(k) ?? []), f]);
 		}
 		// Prima le voci attribuite, dalla più numerosa; per ultime quelle da attribuire.
@@ -998,7 +1008,7 @@ function appendices(w: PdfWriter, data: ReportData, d: Derived): void {
 				evidenze.map((f) => [
 					`E${++n}`,
 					{ text: SEVERITY_LABEL[f.severity] ?? f.severity, color: SEVERITY[f.severity] ?? BRAND.text, bold: true },
-					maskEmailsIn(f.title),
+					maskEmailsIn(decodeEntities(f.title)),
 					f.leakDate ? formatShortDate(f.leakDate) : "Non verificata",
 					formatShortDate(f.lastSeenAt),
 					f.assignee ?? "Da assegnare",
