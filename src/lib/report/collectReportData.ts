@@ -12,6 +12,8 @@ import { ApiError } from "@/lib/api-client";
 import { assessmentV2Api } from "@/lib/api/assessment-v2";
 import { assetInventoryApi } from "@/lib/api/asset-inventory";
 import { darkRiskApi } from "@/lib/api/darkrisk";
+import { darkRiskGateway } from "@/features/darkrisk/api/darkRiskGateway";
+import type { DarkRiskFinding } from "@/features/darkrisk/domain/contracts";
 import { remediationTasksApi } from "@/lib/api/remediation-tasks";
 import { surfaceScan360Api, type SurfaceScanHistoryEntry, type SurfaceScanJob } from "@/lib/api/surface-scan360";
 import { loadV2AssessmentData, mapToUiStatus } from "@/lib/assessmentV2Mapper";
@@ -89,6 +91,20 @@ export interface ReportData {
 	inventory: SourceResult<AssetInventoryResource>;
 	surfaceScan: SourceResult<ReportSurfaceScan>;
 	darkRisk: SourceResult<Record<string, unknown>>;
+	/** Evidenze DarkRisk aperte del profilo Standard (critiche, alte, medie) per l'appendice. */
+	darkFindings: SourceResult<{ rows: DarkRiskFinding[]; total: number }>;
+}
+
+/** Stati che non sono più un'esposizione aperta (come PortfolioRisk::INACTIVE_STATUSES). */
+const DARK_INACTIVE = ["resolved", "suppressed", "false_positive", "accepted_risk"];
+
+/** Fino a 400 evidenze critiche, alte e medie, solo quelle ancora aperte. */
+async function loadDarkFindings(organizationId: string, groupId: string | null | undefined) {
+	const filters = { severity: "critical,high,medium", per_page: 200 };
+	const first = await darkRiskGateway.getFindings(organizationId, groupId, { ...filters, page: 1 });
+	const rest = first.lastPage > 1 ? await darkRiskGateway.getFindings(organizationId, groupId, { ...filters, page: 2 }) : null;
+	const rows = [...first.rows, ...(rest?.rows ?? [])].filter((f) => !DARK_INACTIVE.includes(f.status));
+	return { rows, total: first.total };
 }
 
 export interface CollectReportInput {
@@ -270,7 +286,7 @@ export async function collectReportData(input: CollectReportInput): Promise<Repo
 
 	if (signal?.aborted) throw new ReportAborted();
 
-	const [assessment, campaigns, snapshots, remediation, inventory, surfaceScan, darkRisk] = await Promise.all([
+	const [assessment, campaigns, snapshots, remediation, inventory, surfaceScan, darkRisk, darkFindings] = await Promise.all([
 		source(() => loadAssessment(organizationId, groupId), (a) => a.categories.length === 0, timeout, signal),
 		source(() => assessmentV2Api.campaigns(organizationId, groupId), () => false, timeout, signal),
 		source(() => assessmentV2Api.snapshots(organizationId, groupId), (s) => s.length === 0, timeout, signal),
@@ -288,6 +304,7 @@ export async function collectReportData(input: CollectReportInput): Promise<Repo
 			timeout,
 			signal,
 		),
+		source(() => loadDarkFindings(organizationId, groupId), (r) => r.rows.length === 0, timeout, signal),
 	]);
 
 	// Il tenant è quello del click: se nel frattempo è cambiato, niente PDF misto.
@@ -305,5 +322,6 @@ export async function collectReportData(input: CollectReportInput): Promise<Repo
 		inventory,
 		surfaceScan,
 		darkRisk,
+		darkFindings,
 	};
 }

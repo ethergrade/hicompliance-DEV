@@ -27,6 +27,7 @@ import { toCvss } from "@/lib/surfacescan/normalize";
 import { MAIL_STATUS_LABEL } from "@/lib/surfacescan/mailSecurity";
 import type { RemediationTask } from "@/types/api";
 import type { ReportData, SourceResult } from "../collectReportData";
+import type { DarkRiskFinding } from "@/features/darkrisk/domain/contracts";
 import { BRAND, CONTENT_W, PAGE, PdfWriter, RISK_BAND, SEVERITY, type Cell, type ReportFonts, type RGB } from "./writer";
 import { formatLongDate, formatNumberIt, formatShortDate, markdownToBlocks, maskEmail, pdfSafe } from "./text";
 
@@ -134,6 +135,9 @@ interface Derived {
 	darkIncluded: boolean;
 	dark: Record<string, unknown>;
 	darkSnapshot: Record<string, unknown>;
+	/** Evidenze DarkRisk aperte, dalla più grave alla più recente. */
+	darkFindings: DarkRiskFinding[];
+	darkFindingsTotal: number;
 	catIndex: Map<string, number>;
 }
 
@@ -161,6 +165,12 @@ function derive(data: ReportData): Derived {
 		darkIncluded: data.darkRisk.status !== "not_active" && dark.enabled !== false,
 		dark,
 		darkSnapshot: obj(dark.weekly_snapshot),
+		darkFindings: [...(data.darkFindings?.data?.rows ?? [])].sort(
+			(a, b) =>
+				SEVERITY_ORDER.indexOf(a.severity as (typeof SEVERITY_ORDER)[number]) - SEVERITY_ORDER.indexOf(b.severity as (typeof SEVERITY_ORDER)[number]) ||
+				String(b.lastSeenAt ?? "").localeCompare(String(a.lastSeenAt ?? "")),
+		),
+		darkFindingsTotal: data.darkFindings?.data?.total ?? 0,
 		catIndex: new Map(scores.map((s, i) => [s.name, i + 1])),
 	};
 }
@@ -226,19 +236,39 @@ function priorities(data: ReportData, d: Derived): Priority[] {
 	}
 
 	const sevDist = obj(d.darkSnapshot.severity_distribution);
-	const darkHigh = (num(sevDist.critical) ?? 0) + (num(sevDist.high) ?? 0);
+	const darkFound = d.darkFindings.filter((f) => f.severity === "critical" || f.severity === "high");
+	const darkHigh = d.darkFindings.length ? darkFound.length : (num(sevDist.critical) ?? 0) + (num(sevDist.high) ?? 0);
 	if (d.darkIncluded && darkHigh > 0) {
+		const top = darkFound[0];
 		out.push({
 			weight: 6,
 			what: "Valutare le evidenze DarkRisk360 di gravità alta",
-			why: `${plural(darkHigh, "evidenza aperta", "evidenze aperte")} di gravità critica o alta nell'ultimo aggiornamento settimanale.`,
-			next: "Verificare la pertinenza nella Console DarkRisk360 e prenderle in carico.",
-			ref: "DarkRisk360",
+			why:
+				`${plural(darkHigh, "evidenza aperta", "evidenze aperte")} di gravità critica o alta` +
+				(top ? `; la prima riguarda ${top.asset ?? "un riferimento non ancora attribuito a una voce di perimetro"}.` : " nell'ultimo aggiornamento settimanale."),
+			next: "Verificarne la pertinenza nella Console DarkRisk360, assegnarle e documentare la decisione.",
+			ref: d.darkFindings.length ? "DarkRisk360, Appendice E" : "DarkRisk360",
 		});
 	}
 
-	return out.sort((a, b) => a.weight - b.weight).slice(0, 3);
+	// Al massimo tre priorità, ma ogni modulo con voci critiche o alte ne ha
+	// almeno una: prima DarkRisk restava sempre fuori, dietro a SurfaceScan.
+	const sorted = out.sort((a, b) => a.weight - b.weight);
+	const scelte: Priority[] = [];
+	for (const modulo of ["SurfaceScan360", "DarkRisk360"]) {
+		const prima = sorted.find((p) => p.ref.startsWith(modulo));
+		if (prima) scelte.push(prima);
+	}
+	for (const p of sorted) {
+		if (scelte.length >= 3) break;
+		if (!scelte.includes(p)) scelte.push(p);
+	}
+	return scelte.slice(0, 3).sort((a, b) => a.weight - b.weight);
 }
+
+/** Maschera ogni indirizzo email dentro un testo («mario.rossi@x.it» → «m***@x.it»). */
+const maskEmailsIn = (text: string): string =>
+	text.replace(/([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*(@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/g, "$1***$2");
 
 /* ─────────────────────────── Sezioni ─────────────────────────── */
 
@@ -794,6 +824,10 @@ function darkRisk(w: PdfWriter, d: Derived): void {
 			},
 		);
 	}
+
+	if (d.darkFindings.length) {
+		w.paragraph("Elenco delle evidenze aperte, per voce di perimetro, in Appendice E.", { size: 9, color: BRAND.muted });
+	}
 }
 
 function appendices(w: PdfWriter, data: ReportData, d: Derived): void {
@@ -931,9 +965,59 @@ function appendices(w: PdfWriter, data: ReportData, d: Derived): void {
 		);
 	}
 
-	// E · Anagrafica e consistenze
+	// E · Evidenze DarkRisk per voce di perimetro
+	if (d.darkIncluded && d.darkFindings.length) {
+		w.addPage();
+		w.heading("Appendice E · Evidenze DarkRisk360 aperte", 1);
+		w.paragraph(
+			"Evidenze ancora aperte del profilo Standard, raggruppate per voce di perimetro: per ognuna gravità, data della fonte e ultima osservazione, chi la segue. Le credenziali in chiaro non compaiono nel report.",
+			{ size: 9, color: BRAND.muted },
+		);
+		const MAX_ROWS = 300;
+		const rows = d.darkFindings.slice(0, MAX_ROWS);
+		const gruppi = new Map<string, DarkRiskFinding[]>();
+		for (const f of rows) {
+			const k = f.asset ?? "Da attribuire a una voce di perimetro";
+			gruppi.set(k, [...(gruppi.get(k) ?? []), f]);
+		}
+		// Prima le voci attribuite, dalla più numerosa; per ultime quelle da attribuire.
+		const ordine = [...gruppi.entries()].sort(
+			([ka, a], [kb, b]) => Number(ka.startsWith("Da attribuire")) - Number(kb.startsWith("Da attribuire")) || b.length - a.length,
+		);
+		let n = 0;
+		for (const [voce, evidenze] of ordine) {
+			w.table(
+				[
+					{ label: "Rif.", width: 13, nowrap: true },
+					{ label: "Gravità", width: 20, nowrap: true },
+					{ label: "Evidenza", width: 75 },
+					{ label: "Data fonte", width: 22, nowrap: true },
+					{ label: "Ultima oss.", width: 22, nowrap: true },
+					{ label: "Chi la segue", width: 26 },
+				],
+				evidenze.map((f) => [
+					`E${++n}`,
+					{ text: SEVERITY_LABEL[f.severity] ?? f.severity, color: SEVERITY[f.severity] ?? BRAND.text, bold: true },
+					maskEmailsIn(f.title),
+					f.leakDate ? formatShortDate(f.leakDate) : "Non verificata",
+					formatShortDate(f.lastSeenAt),
+					f.assignee ?? "Da assegnare",
+				]),
+				{ title: `${voce} · ${plural(evidenze.length, "evidenza", "evidenze")}`, continueTitle: `${voce} (continua)`, fontSize: 8 },
+			);
+		}
+		const nonElencate = Math.max(0, d.darkFindingsTotal - rows.length);
+		w.paragraph(
+			`Elencate ${rows.length} evidenze aperte di gravità critica, alta e media` +
+				(nonElencate ? `; ${nonElencate} non elencate (chiuse, accettate o oltre il limite del report)` : "") +
+				". L'elenco completo, con il dettaglio di ogni evidenza, è nella Console, DarkRisk360 > Evidenze.",
+			{ size: 8, color: BRAND.muted },
+		);
+	}
+
+	// F · Anagrafica e consistenze
 	w.addPage();
-	w.heading("Appendice E · Anagrafica e consistenze", 1);
+	w.heading("Appendice F · Anagrafica e consistenze", 1);
 	const org = data.org ?? {};
 	const sectors = toList(org.customer_sectors);
 	const solutions = toList(org.implemented_technologies);
@@ -987,7 +1071,7 @@ function appendices(w: PdfWriter, data: ReportData, d: Derived): void {
 
 	// F · Metodologia e glossario
 	w.addPage();
-	w.heading("Appendice F · Metodologia e glossario", 1);
+	w.heading("Appendice G · Metodologia e glossario", 1);
 	w.paragraph(
 		"Il punteggio dell'assessment è un'autovalutazione a questionario: misura quanto i controlli sono dichiarati attivi, non ne verifica l'efficacia. SurfaceScan360 osserva dall'esterno i servizi esposti del perimetro dichiarato; DarkRisk360 cerca riferimenti al perimetro in fonti del dark web e di data leak. Le tre misure hanno scale e significati diversi e non vanno sommate.",
 		{ size: 9.5 },

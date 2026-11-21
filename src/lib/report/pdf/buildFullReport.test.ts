@@ -122,6 +122,30 @@ const reportData = (): ReportData => {
 			mail: [],
 		}),
 		darkRisk: { status: "not_active", data: null, fetchedAt: "", reason: "Servizio non attivo" },
+		darkFindings: { status: "not_active", data: null, fetchedAt: "", reason: "Servizio non attivo" },
+	};
+};
+
+const darkFinding = (i: number, severity: string, asset: string | null, title = `Leak ${i}`) =>
+	({
+		id: `d${i}`, title, findingType: "domain_leak", severity, status: "new", asset, leakDate: i % 2 ? "2025-03-01" : null,
+		surfaceFindingId: null, firstSeenAt: "2026-10-01T00:00:00Z", lastSeenAt: "2026-11-16T00:00:00Z", acknowledged: false,
+		acknowledgedAt: null, acknowledgedBy: null, acknowledgementNote: null, assignee: null, assigneeUserId: null,
+		actionStatus: null, compromiseType: "direct",
+	}) as const;
+
+/** Inera: DarkRisk attivo con 18 evidenze alte, che devono avere un posto nelle priorità e un'appendice. */
+const withDarkRisk = (): ReportData => {
+	const data = reportData();
+	const rows = [
+		...Array.from({ length: 18 }, (_, i) => darkFinding(i, "high", i < 12 ? "inera.it" : null, i === 0 ? "Credenziale esposta: mario.rossi@inera.it" : `Leak ${i}`)),
+		...Array.from({ length: 30 }, (_, i) => darkFinding(100 + i, "medium", "95.216.30.73")),
+	];
+	return {
+		...data,
+		surfaceScan: { ...data.surfaceScan, data: { ...data.surfaceScan.data!, findings: [finding(0, "critical"), ...Array.from({ length: 188 }, (_, i) => finding(i + 1, "high"))], counts: countSurfaceFindings([finding(0, "critical"), ...Array.from({ length: 188 }, (_, i) => finding(i + 1, "high"))]) } },
+		darkRisk: ok({ enabled: true, total_leaks: 593, new_this_week: 16, risk_index: 36, risk_level: "Medio", weekly_snapshot: { severity_distribution: { high: 18, medium: 312 } }, monitoring_coverage: {} }),
+		darkFindings: ok({ rows: [...rows], total: 48 }),
 	};
 };
 
@@ -161,6 +185,25 @@ describe("buildFullReportPdf · CSBNO", () => {
 	it("le tabelle lunghe ripetono titolo e intestazione con «continua»", async () => {
 		const text = (await buildFullReportPdf(reportData(), null, { compress: false })).text();
 		expect(text).toContain("continua");
+	});
+});
+
+describe("buildFullReportPdf · DarkRisk360", () => {
+	it("le evidenze alte hanno un posto fra le priorità anche con molti finding SurfaceScan", async () => {
+		const text = (await buildFullReportPdf(withDarkRisk(), null, { compress: false })).text();
+		// Le celle vanno a capo: si cercano frammenti brevi.
+		expect(text).toContain("Valutare le evidenze");
+		expect(text).toContain("Appendice E");
+	});
+
+	it("l'appendice E elenca le evidenze aperte per voce di perimetro, senza email in chiaro", async () => {
+		const text = (await buildFullReportPdf(withDarkRisk(), null, { compress: false })).text();
+		expect(text).toContain("Appendice E · Evidenze DarkRisk360 aperte");
+		expect(text).toContain("inera.it · 12 evidenze");
+		expect(text).toContain("Da attribuire a una voce di perimetro · 6 evidenze");
+		expect(text).toContain("Appendice F · Anagrafica e consistenze");
+		expect(text).toContain("m***@inera.it");
+		expect(text).not.toContain("mario.rossi@inera.it");
 	});
 });
 
