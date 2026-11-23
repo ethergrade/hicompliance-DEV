@@ -142,7 +142,7 @@ export interface ExtendedRunResult {
 /**
  * Credenziale esposta da `darkrisk/credential-leaks` (solo profilo Esteso).
  *
- * Nel profilo Esteso il backend manda l'account intero e la password con i soli primi tre caratteri
+ * Nel profilo Esteso il backend manda l'account intero e la password con i soli primi due caratteri
  * (`clearValue`, `clearAccount`); `clearAccount` è null sugli hit ingeriti
  * prima che venisse conservato, e allora resta il `selector`. Il reveal
  * audiato sull'evidenza (`evidenceId`) resta disponibile per il dato grezzo.

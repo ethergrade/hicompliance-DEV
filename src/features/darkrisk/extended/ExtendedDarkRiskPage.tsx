@@ -243,10 +243,10 @@ export default function ExtendedDarkRiskPage() {
 				) : (
 					<>
 						<div className="rounded-md border border-amber-500/25 bg-amber-500/5 p-3 text-sm text-amber-100">
-							<strong>Dati altamente sensibili.</strong> Gli account sono mostrati
-							per intero, le password solo con i primi tre caratteri: trattali con riservatezza e non condividere
-							export o schermate al di fuori del cliente. Le credenziali provengono
-							dal bucket <code>leaks.private.general</code>.
+							<strong>Dati altamente sensibili.</strong> Per GDPR e ISO 27001 non conserviamo né mostriamo
+							password in chiaro: di ogni credenziale trovi l'account, i primi due caratteri della password,
+							l'origine e la data del leak, quanto serve per la bonifica (reset forzato della password e MFA).
+							Tratta questi dati con riservatezza e non condividere export o schermate al di fuori dell'azienda.
 						</div>
 						<ScopeEditor
 							scope={scopeQuery.data ?? { targets: [] }}

@@ -277,7 +277,7 @@ function IdentityCredentialTooltip({ active, payload, label }: any) {
         <span className="text-foreground font-semibold">{row.domains}</span>
       </div>
       <p className="text-[11px] text-muted-foreground mb-1">
-        Password esposte (primi tre caratteri, lista completa):
+        Password esposte (primi due caratteri, lista completa):
       </p>
       {preview.length === 0 ? (
         <p className="text-[11px] text-muted-foreground">
@@ -1061,7 +1061,7 @@ export const DarkRiskFindingsAnalytics: React.FC<{
                   <tr className="border-b border-border/60 text-left text-muted-foreground">
                     <th className="py-2 pr-3">Identity (Email)</th>
                     <th className="py-2 pr-3">Password valide</th>
-                    <th className="py-2 pr-3">Password (primi 3 caratteri)</th>
+                    <th className="py-2 pr-3">Password (primi 2 caratteri)</th>
                     <th className="py-2 pr-3">Domini</th>
                     <th className="py-2 pr-3">Altri dati</th>
                     <th className="py-2 pr-3">Marcato il</th>

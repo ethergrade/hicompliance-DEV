@@ -379,7 +379,7 @@ export function generateDtiEstesoPdf(report: DtiEstesoReportJson): void {
       if ((d.passwords || []).length > 0) {
         subTitle(`Password esposte rilevate (${d.passwords_total})`, [200, 50, 50]);
         text('Dati sensibili - riservato. Mostrare solo a personale autorizzato.', { size: 8, color: [200, 50, 50] });
-        drawTable(['#', 'Account / Username', 'Password (primi 3 car.)', 'Fonte', 'Data'],
+        drawTable(['#', 'Account / Username', 'Password (primi 2 car.)', 'Fonte', 'Data'],
           d.passwords.slice(0, 300).map((p, i) => [String(i + 1), String(p.username || '-'), p.value, p.collection_title, fmtDate(p.data_collection)]),
           [30, 150, 150, 120, 65]);
         if (d.passwords_total > d.passwords.length) {
@@ -404,7 +404,7 @@ export function generateDtiEstesoPdf(report: DtiEstesoReportJson): void {
   if (allPw.length > 0) {
     sectionTitle(`Credenziali esposte — Password (${allPw.length})`);
     text('Dati sensibili - riservato. Mostrare solo a personale autorizzato.', { size: 8, color: [200, 50, 50] });
-    drawTable(['#', 'Asset', 'Account / Username', 'Password (primi 3 car.)', 'Fonte', 'Data'],
+    drawTable(['#', 'Asset', 'Account / Username', 'Password (primi 2 car.)', 'Fonte', 'Data'],
       allPw.slice(0, 500).map((p, i) => [String(i + 1), p.asset, String(p.username || '-'), p.value, p.source, fmtDate(p.date)]),
       [28, 110, 120, 120, 72, 65]);
     if (allPw.length > 500) text(`Mostrate 500 di ${allPw.length} password.`, { size: 8, color: [MUTED.r, MUTED.g, MUTED.b] });
