@@ -72,6 +72,14 @@ export default function SalesManager() {
 				...("notes" in p ? { notes: p.notes ?? null } : {}), updatedAt: new Date().toISOString() } : x));
 		} catch (e: any) { toast({ title: "Salvataggio non riuscito", description: e.message, variant: "destructive" }); }
 	};
+	const pushBudget = async (r: SalesRow) => {
+		if (!window.confirm(`Aggiornare il budget nel piano di remediation a ${eur(r.proposedValue)}? Verrà modificato solo il budget di questa azione.`)) return;
+		try {
+			await salesManagerApi.pushBudget(r.taskId, r.proposedValue);
+			setRows((all) => all.map((x) => x.taskId === r.taskId ? { ...x, budget: r.proposedValue } : x));
+			toast({ title: "Budget inviato al piano" });
+		} catch (e: any) { toast({ title: "Invio non riuscito", description: e.message, variant: "destructive" }); }
+	};
 	const openPlan = (orgId: string) => { const o = organizations.find((x) => x.id === orgId); if (o) { setSelectedOrganization(o); navigate("/remediation"); } };
 
 	const scopeRows = openOrg ? rows.filter((r) => r.organizationId === openOrg) : rows.filter((r) => filtered.some((c) => c.organizationId === r.organizationId));
@@ -163,8 +171,13 @@ export default function SalesManager() {
 												<TableCell className="max-w-md"><div className="font-medium">{r.task}</div><div className="text-xs text-muted-foreground">{r.category}</div></TableCell>
 												<TableCell>{r.priority}</TableCell>
 												<TableCell className="text-right">{r.progress}%</TableCell>
-												<TableCell>{hasBudget ? <div><div>{eur(effectiveValue(r.budget, r.proposedValue))}</div><div className="text-xs text-muted-foreground">dal piano</div></div>
-													: <ValueInput row={r} onSave={(v) => patch(r, { proposed_value: v })} />}</TableCell>
+												<TableCell className="min-w-40"><div className="space-y-1">
+													<ValueInput row={r} onSave={(v) => patch(r, { proposed_value: v })} />
+													<div className="text-xs text-muted-foreground">Piano: {hasBudget ? eur(Number(r.budget)) : "non valorizzato"}</div>
+													{r.proposedValue != null && Number(r.proposedValue) !== Number(r.budget ?? 0) && (
+														<Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => pushBudget(r)}>Invia budget al piano</Button>
+													)}
+												</div></TableCell>
 												<TableCell><Badge variant={statusVariant(r.status)}>{STATUS_LABELS[r.status]}</Badge></TableCell>
 												<TableCell><div className="flex flex-wrap gap-1">{nextStatuses(r.status).map((s) => (
 													<Button key={s} size="sm" variant="outline" className="h-7 text-xs" onClick={() => patch(r, {

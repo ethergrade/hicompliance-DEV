@@ -24,6 +24,11 @@ export const salesManagerApi = {
 			};
 		});
 	},
+	/** Pushes ONLY the budget of a single remediation task to the current plan; no other field is touched. */
+	async pushBudget(taskId: string, budget: number | null) {
+		const { error } = await sb.from("remediation_tasks").update({ budget }).eq("id", taskId);
+		if (error) throw error;
+	},
 	async save(row: { taskId: string; organizationId: string }, patch: Partial<{ status: CommercialStatus; proposed_value: number | null; notes: string | null; proposed_at: string | null; closed_at: string | null }>) {
 		const { data: u } = await supabase.auth.getUser();
 		const { error } = await sb.from("remediation_commercial").upsert(

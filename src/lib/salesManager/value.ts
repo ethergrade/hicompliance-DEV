@@ -20,10 +20,10 @@ const NEXT: Record<CommercialStatus, CommercialStatus[]> = {
 export const nextStatuses = (s: CommercialStatus) => NEXT[s] ?? [];
 export const canMove = (from: CommercialStatus, to: CommercialStatus) => NEXT[from]?.includes(to) ?? false;
 
-/** Plan budget wins; otherwise the sales value; null when neither is set. */
+/** Sales value (set in Sales Manager) wins; otherwise the plan budget; null when neither is set. */
 export function effectiveValue(budget: number | null | undefined, proposed: number | null | undefined): number | null {
-	if (budget != null && Number(budget) > 0) return Number(budget);
 	if (proposed != null && Number(proposed) > 0) return Number(proposed);
+	if (budget != null && Number(budget) > 0) return Number(budget);
 	return null;
 }
 

@@ -2,7 +2,8 @@ import { describe, expect, test } from "vitest";
 import { canMove, effectiveValue, summarize, type SalesRow } from "./value";
 
 describe("sales manager rules", () => {
-	test("plan budget wins over sales value", () => expect(effectiveValue(5000, 3000)).toBe(5000));
+	test("sales value wins over plan budget", () => expect(effectiveValue(5000, 3000)).toBe(3000));
+	test("plan budget used when sales value empty", () => expect(effectiveValue(5000, null)).toBe(5000));
 	test("sales value used when budget empty", () => expect(effectiveValue(null, 3000)).toBe(3000));
 	test("no value when both empty", () => expect(effectiveValue(0, null)).toBeNull());
 	test("proposto cannot jump to completato", () => expect(canMove("proposto", "completato")).toBe(false));
