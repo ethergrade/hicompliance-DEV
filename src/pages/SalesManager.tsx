@@ -69,6 +69,8 @@ export default function SalesManager() {
 	const [sortC, setSortC] = useState<Sort>(null);
 	const [sortR, setSortR] = useState<Sort>(null);
 	const [view, setView] = useState<"dashboard" | "clienti">("dashboard");
+	const [clientSel, setClientSel] = useState<Set<string>>(new Set());
+	const [fromStatus, setFromStatus] = useState<CommercialStatus | "all">("all");
 	const [sel, setSel] = useState<Set<string>>(new Set());
 	const [bulkValue, setBulkValue] = useState("");
 
@@ -113,6 +115,15 @@ export default function SalesManager() {
 		for (const r of targets) await patch(r, p);
 		toast({ title: `${label}: ${targets.length} remediation aggiornate` });
 		setSel(new Set());
+	};
+	const bulkClients = async (st: CommercialStatus) => {
+		const targets = rows.filter((r) => clientSel.has(r.organizationId) && r.status !== st && (fromStatus === "all" || r.status === fromStatus));
+		if (!targets.length) { toast({ title: "Nessuna remediation da aggiornare" }); return; }
+		if (!window.confirm(`Spostare ${targets.length} remediation di ${clientSel.size} clienti a «${STATUS_LABELS[st]}»?`)) return;
+		const today = new Date().toISOString().slice(0, 10);
+		for (const r of targets) await patch(r, { status: st, ...(st === "inviato" ? { proposed_at: today } : {}), ...(isWon(st) || st === "rifiutato" ? { closed_at: today } : {}) });
+		toast({ title: `${targets.length} remediation spostate a ${STATUS_LABELS[st]}` });
+		setClientSel(new Set());
 	};
 	const openPlan = (orgId: string) => { const o = organizations.find((x) => x.id === orgId); if (o) { setSelectedOrganization(o); navigate("/remediation"); } };
 
@@ -165,17 +176,34 @@ export default function SalesManager() {
 								</div>
 							</div>
 						</CardHeader>
-						<CardContent className="overflow-x-auto">
+						<CardContent className="overflow-x-auto space-y-3">
+							{clientSel.size > 0 && (
+								<div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 p-2">
+									<span className="text-sm font-medium">{clientSel.size} clienti selezionati</span>
+									<span className="text-xs text-muted-foreground">Remediation da:</span>
+									<select className="h-7 rounded-md border bg-background px-2 text-xs" value={fromStatus} onChange={(e) => setFromStatus(e.target.value as any)}>
+										<option value="all">Tutti gli stati</option>
+										{COMMERCIAL_STATUSES.map((st) => <option key={st} value={st}>{STATUS_LABELS[st]}</option>)}
+									</select>
+									<span className="text-xs text-muted-foreground">sposta a:</span>
+									{COMMERCIAL_STATUSES.map((st) => <Button key={st} size="sm" variant="outline" className="h-7 text-xs" onClick={() => bulkClients(st)}>{STATUS_LABELS[st]}</Button>)}
+									<Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setClientSel(new Set())}>Annulla</Button>
+								</div>
+							)}
 							<Table>
 								<TableHeader><TableRow>
+									<TableHead className="w-8"><Checkbox aria-label="Seleziona tutti i clienti" checked={filtered.length > 0 && filtered.every((c) => clientSel.has(c.organizationId))}
+										onCheckedChange={(v) => setClientSel(v ? new Set(filtered.map((c) => c.organizationId)) : new Set())} /></TableHead>
 									<SortHead k="name" sort={sortC} setSort={setSortC}>Cliente</SortHead><SortHead k="total" sort={sortC} setSort={setSortC} className="text-right">Remediation</SortHead>
 									{COMMERCIAL_STATUSES.map((s) => <SortHead key={s} k={"st:" + s} sort={sortC} setSort={setSortC} className="text-right text-xs">{STATUS_LABELS[s]}</SortHead>)}
 									<SortHead k="unvalued" sort={sortC} setSort={setSortC} className="text-right">Da valorizzare</SortHead><SortHead k="pipelineValue" sort={sortC} setSort={setSortC} className="text-right">Pipeline</SortHead><SortHead k="acceptedValue" sort={sortC} setSort={setSortC} className="text-right">Accettato</SortHead><SortHead k="lastUpdate" sort={sortC} setSort={setSortC}>Aggiornato</SortHead><TableHead />
 								</TableRow></TableHeader>
 								<TableBody>
-									{busy && <TableRow><TableCell colSpan={14} className="text-muted-foreground">Caricamento…</TableCell></TableRow>}
+									{busy && <TableRow><TableCell colSpan={15} className="text-muted-foreground">Caricamento…</TableCell></TableRow>}
 									{filtered.map((c) => (
-										<TableRow key={c.organizationId} className="cursor-pointer" onClick={() => setOpenOrg(c.organizationId)}>
+										<TableRow key={c.organizationId} className="cursor-pointer" data-state={clientSel.has(c.organizationId) ? "selected" : undefined} onClick={() => setOpenOrg(c.organizationId)}>
+											<TableCell onClick={(e) => e.stopPropagation()}><Checkbox aria-label="Seleziona cliente" checked={clientSel.has(c.organizationId)}
+												onCheckedChange={(v) => setClientSel((cur) => { const n = new Set(cur); v ? n.add(c.organizationId) : n.delete(c.organizationId); return n; })} /></TableCell>
 											<TableCell className="font-medium">{c.name}</TableCell>
 											<TableCell className="text-right">{c.total}</TableCell>
 											{COMMERCIAL_STATUSES.map((s) => <TableCell key={s} className="text-right">{c.byStatus[s] || ""}</TableCell>)}
