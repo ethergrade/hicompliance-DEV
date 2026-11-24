@@ -6383,6 +6383,33 @@ export type Database = {
         }
         Relationships: []
       }
+      sales_targets: {
+        Row: {
+          created_at: string
+          target_count: number
+          target_value: number
+          updated_at: string
+          updated_by: string | null
+          year: number
+        }
+        Insert: {
+          created_at?: string
+          target_count?: number
+          target_value?: number
+          updated_at?: string
+          updated_by?: string | null
+          year: number
+        }
+        Update: {
+          created_at?: string
+          target_count?: number
+          target_value?: number
+          updated_at?: string
+          updated_by?: string | null
+          year?: number
+        }
+        Relationships: []
+      }
       services: {
         Row: {
           code: string

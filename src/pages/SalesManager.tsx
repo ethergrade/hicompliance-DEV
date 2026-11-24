@@ -15,6 +15,8 @@ import { useClientContext } from "@/contexts/ClientContext";
 import { useToast } from "@/hooks/use-toast";
 import { salesManagerApi } from "@/lib/api/salesManager";
 import { COMMERCIAL_STATUSES, STATUS_LABELS, effectiveValue, eur, isWon, nextStatuses, summarize, type CommercialStatus, type SalesRow } from "@/lib/salesManager/value";
+import { SalesKpiPanel } from "@/components/sales/SalesKpiPanel";
+import { supabase } from "@/integrations/supabase/client";
 import { exportCsv, exportExcel, exportPpt } from "@/lib/salesManager/export";
 
 const statusVariant = (s: CommercialStatus): "default" | "destructive" | "secondary" => (isWon(s) ? "default" : s === "rifiutato" ? "destructive" : "secondary");
@@ -73,6 +75,15 @@ export default function SalesManager() {
 		if (!allowed) return;
 		salesManagerApi.listRows().then(setRows).catch((e) => toast({ title: "Errore caricamento", description: String(e.message ?? e), variant: "destructive" })).finally(() => setBusy(false));
 	}, [allowed, toast]);
+	useEffect(() => {
+		if (!allowed) return;
+		let t: number | undefined;
+		const reload = () => { window.clearTimeout(t); t = window.setTimeout(() => salesManagerApi.listRows().then(setRows).catch(() => {}), 800); };
+		const ch = supabase.channel(`sales-live-${Math.random().toString(36).slice(2)}`)
+			.on("postgres_changes", { event: "*", schema: "public", table: "remediation_commercial" }, reload)
+			.on("postgres_changes", { event: "*", schema: "public", table: "remediation_tasks" }, reload).subscribe();
+		return () => { window.clearTimeout(t); supabase.removeChannel(ch); };
+	}, [allowed]);
 
 	const names = useMemo(() => Object.fromEntries(organizations.map((o) => [o.id, o.name])), [organizations]);
 	const summary = useMemo(() => summarize(organizations.map((o) => ({ id: o.id, name: o.name })), rows), [organizations, rows]);
@@ -131,6 +142,7 @@ export default function SalesManager() {
 						<Card key={l}><CardContent className="p-4"><div className="text-xs text-muted-foreground">{l}</div><div className="text-2xl font-bold">{v}</div></CardContent></Card>
 					))}
 				</div>
+				{!openOrg && <SalesKpiPanel rows={rows} />}
 
 				{!openOrg ? (
 					<Card>

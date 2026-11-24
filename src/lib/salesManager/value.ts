@@ -56,3 +56,15 @@ export function summarize(orgs: { id: string; name: string }[], rows: SalesRow[]
 }
 
 export const eur = (n: number | null) => n == null ? "—" : new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(n);
+
+/** Annual KPI: won remediations closed in the year (closedAt, else updatedAt) against the target. */
+export function annualKpi(rows: SalesRow[], year: number, target: { value: number; count: number }) {
+	const won = rows.filter((r) => isWon(r.status) && new Date(r.closedAt ?? r.updatedAt ?? 0).getFullYear() === year);
+	const value = won.reduce((a, r) => a + (effectiveValue(r.budget, r.proposedValue) ?? 0), 0);
+	return {
+		wonValue: value, wonCount: won.length,
+		remainingValue: Math.max(0, target.value - value), remainingCount: Math.max(0, target.count - won.length),
+		pctValue: target.value > 0 ? Math.min(100, Math.round((value / target.value) * 100)) : 0,
+		pctCount: target.count > 0 ? Math.min(100, Math.round((won.length / target.count) * 100)) : 0,
+	};
+}

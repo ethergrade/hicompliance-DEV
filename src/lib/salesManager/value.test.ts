@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { canMove, effectiveValue, summarize, type SalesRow } from "./value";
+import { annualKpi, canMove, effectiveValue, summarize, type SalesRow } from "./value";
 
 describe("sales manager rules", () => {
 	test("sales value wins over plan budget", () => expect(effectiveValue(5000, 3000)).toBe(3000));
@@ -17,5 +17,18 @@ describe("sales manager rules", () => {
 		];
 		const [s] = summarize([{ id: "o1", name: "A" }], rows);
 		expect(s.total).toBe(3); expect(s.unvalued).toBe(1); expect(s.acceptedValue).toBe(1000); expect(s.pipelineValue).toBe(1000);
+	});
+});
+
+describe("annual KPI", () => {
+	const base = { organizationId: "o", task: "t", category: "c", priority: "p", progress: 0, notes: null, proposedAt: null, budget: null } as any;
+	const rows = [
+		{ ...base, taskId: "1", status: "accettato", proposedValue: 4000, closedAt: "2026-03-01", updatedAt: "2026-03-01" },
+		{ ...base, taskId: "2", status: "completato", proposedValue: 1000, closedAt: "2025-12-01", updatedAt: "2025-12-01" },
+		{ ...base, taskId: "3", status: "inviato", proposedValue: 9000, closedAt: null, updatedAt: "2026-05-01" },
+	];
+	test("remaining = target minus won in the year", () => {
+		const k = annualKpi(rows, 2026, { value: 10000, count: 5 });
+		expect(k.wonValue).toBe(4000); expect(k.remainingValue).toBe(6000); expect(k.remainingCount).toBe(4); expect(k.pctValue).toBe(40);
 	});
 });
