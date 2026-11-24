@@ -1820,6 +1820,39 @@ export type Database = {
           },
         ]
       }
+      crm_sync_events: {
+        Row: {
+          budget: number | null
+          created_at: string
+          id: number
+          organization_id: string | null
+          origin: string
+          status: string | null
+          task_id: string | null
+          vat_number: string | null
+        }
+        Insert: {
+          budget?: number | null
+          created_at?: string
+          id?: number
+          organization_id?: string | null
+          origin?: string
+          status?: string | null
+          task_id?: string | null
+          vat_number?: string | null
+        }
+        Update: {
+          budget?: number | null
+          created_at?: string
+          id?: number
+          organization_id?: string | null
+          origin?: string
+          status?: string | null
+          task_id?: string | null
+          vat_number?: string | null
+        }
+        Relationships: []
+      }
       cve_enrichment_queue: {
         Row: {
           attempts: number
@@ -9454,6 +9487,7 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      crm_log_event: { Args: { _task: string }; Returns: undefined }
       darkrisk_apply_retention: { Args: { _org_id?: string }; Returns: Json }
       darkrisk_is_analyst: {
         Args: { _organization_id: string; _user_id: string }

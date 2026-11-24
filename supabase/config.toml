@@ -103,3 +103,6 @@ verify_jwt = false
 
 [functions.va-reports]
 verify_jwt = false
+
+[functions.crm-sync]
+verify_jwt = false
