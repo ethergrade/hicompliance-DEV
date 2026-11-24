@@ -10,22 +10,25 @@ function detailRecords(rows: SalesRow[], names: Record<string, string>) {
 	return rows.map((r) => ({
 		Cliente: names[r.organizationId] ?? r.organizationId, Azione: r.task, Categoria: r.category, Priorità: r.priority,
 		"Avanzamento %": r.progress, "Budget piano": r.budget ?? "", "Valore commerciale": r.proposedValue ?? "",
-		"Valore effettivo": effectiveValue(r.budget, r.proposedValue) ?? "", Stato: STATUS_LABELS[r.status], Note: r.notes ?? "",
+		"Valore effettivo": effectiveValue(r.budget, r.proposedValue) ?? "",
+		"Budget allineato al piano": r.proposedValue == null ? "" : Number(r.proposedValue) === Number(r.budget ?? 0) ? "Sì" : "No",
+		Stato: STATUS_LABELS[r.status], "Data proposta": r.proposedAt ?? "", "Data chiusura": r.closedAt ?? "",
+		"Ultimo aggiornamento": r.updatedAt ? new Date(r.updatedAt).toLocaleString("it-IT") : "", Note: r.notes ?? "",
+		"ID remediation": r.taskId, "ID cliente": r.organizationId,
 	}));
 }
 function summaryRecords(s: ClientSummary[]) {
 	return s.map((c) => ({
 		Cliente: c.name, Remediation: c.total, "Da valorizzare": c.unvalued,
 		...Object.fromEntries(COMMERCIAL_STATUSES.map((st) => [STATUS_LABELS[st], c.byStatus[st]])),
-		"Pipeline (EUR)": c.pipelineValue, "Accettato (EUR)": c.acceptedValue,
+		"Pipeline (EUR)": c.pipelineValue, "Accettato (EUR)": c.acceptedValue, "ID cliente": c.organizationId,
 	}));
 }
 
 export function exportCsv(summary: ClientSummary[], rows: SalesRow[], names: Record<string, string>) {
-	const ws = XLSX.utils.json_to_sheet(detailRecords(rows, names));
-	const csv = XLSX.utils.sheet_to_csv(ws, { FS: ";" });
+	const csv = XLSX.utils.sheet_to_csv(XLSX.utils.json_to_sheet(summaryRecords(summary)), { FS: ";" })
+		+ "\n\n" + XLSX.utils.sheet_to_csv(XLSX.utils.json_to_sheet(detailRecords(rows, names)), { FS: ";" });
 	saveAs(new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" }), `HiSolution_SalesManager_${stamp()}.csv`);
-	void summary;
 }
 
 export function exportExcel(summary: ClientSummary[], rows: SalesRow[], names: Record<string, string>) {
@@ -36,7 +39,7 @@ export function exportExcel(summary: ClientSummary[], rows: SalesRow[], names: R
 	s1["!cols"] = [{ wch: 32 }, ...Array(12).fill({ wch: 14 })];
 	const s2 = XLSX.utils.aoa_to_sheet(head);
 	XLSX.utils.sheet_add_json(s2, detailRecords(rows, names), { origin: "A4" });
-	s2["!cols"] = [{ wch: 28 }, { wch: 50 }, { wch: 18 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 40 }];
+	s2["!cols"] = [{ wch: 28 }, { wch: 50 }, { wch: 18 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 40 }, { wch: 38 }, { wch: 38 }];
 	XLSX.utils.book_append_sheet(wb, s1, "Riepilogo");
 	XLSX.utils.book_append_sheet(wb, s2, "Dettaglio");
 	XLSX.writeFile(wb, `HiSolution_SalesManager_${stamp()}.xlsx`);
@@ -82,16 +85,19 @@ export async function exportPpt(summary: ClientSummary[], rows: SalesRow[]) {
 	s.addChart("bar", [{ name: "Remediation", labels: COMMERCIAL_STATUSES.map((x) => STATUS_LABELS[x]), values: COMMERCIAL_STATUSES.map((x) => summary.reduce((a, c) => a + c.byStatus[x], 0)) }],
 		{ x: 0.5, y: 3.7, w: 12.3, h: 3.3, chartColors: [ACC], showValue: true, catAxisLabelFontSize: 12, valAxisHidden: true });
 
+	const PER = 10;
 	for (const c of summary.filter((x) => x.total > 0)) {
-		const sl = pptx.addSlide({ masterName: "HISOL" });
-		sl.addText(c.name, { x: 0.5, y: 1.1, w: 9, h: 0.7, fontSize: 28, bold: true, color: NAVY, fontFace: "Georgia" });
-		sl.addText(`Pipeline ${fmt(c.pipelineValue)} · Accettato ${fmt(c.acceptedValue)}`, { x: 0.5, y: 1.8, w: 12, h: 0.4, fontSize: 16, color: ACC });
-		const r = rows.filter((x) => x.organizationId === c.organizationId).slice(0, 12);
-		const hdr = ["Azione", "Priorità", "Valore", "Stato"].map((t) => ({ text: t, options: { bold: true, color: "FFFFFF", fill: { color: NAVY } } }));
-		sl.addTable([hdr, ...r.map((x) => { const v = effectiveValue(x.budget, x.proposedValue); return [x.task, x.priority, v == null ? "Da valorizzare" : fmt(v), STATUS_LABELS[x.status]].map((t) => ({ text: String(t) })); })],
-			{ x: 0.5, y: 2.35, w: 12.3, colW: [7.3, 1.5, 1.8, 1.7], fontSize: 11, border: { type: "solid", color: "DDE2EA", pt: 0.5 }, autoPage: false });
-		const extra = rows.filter((x) => x.organizationId === c.organizationId).length - r.length;
-		if (extra > 0) sl.addText(`+ altre ${extra} remediation nel file Excel`, { x: 0.5, y: 6.75, w: 8, h: 0.35, fontSize: 12, italic: true, color: "5A6478" });
+		const all = rows.filter((x) => x.organizationId === c.organizationId);
+		const pages = Math.max(1, Math.ceil(all.length / PER));
+		for (let p = 0; p < pages; p++) {
+			const sl = pptx.addSlide({ masterName: "HISOL" });
+			sl.addText(c.name + (pages > 1 ? ` (${p + 1}/${pages})` : ""), { x: 0.5, y: 1.1, w: 12, h: 0.7, fontSize: 28, bold: true, color: NAVY, fontFace: "Georgia" });
+			sl.addText(`Remediation ${c.total} · Da valorizzare ${c.unvalued} · Pipeline ${fmt(c.pipelineValue)} · Accettato ${fmt(c.acceptedValue)}`, { x: 0.5, y: 1.8, w: 12.3, h: 0.4, fontSize: 14, color: ACC });
+			const hdr = ["Azione", "Categoria", "Priorità", "Avanz.", "Budget piano", "Valore comm.", "Stato", "Note"].map((t) => ({ text: t, options: { bold: true, color: "FFFFFF", fill: { color: NAVY } } }));
+			const body = all.slice(p * PER, (p + 1) * PER).map((x) => [x.task, x.category ?? "", x.priority ?? "", `${x.progress}%`,
+				x.budget ? fmt(Number(x.budget)) : "—", x.proposedValue ? fmt(Number(x.proposedValue)) : "—", STATUS_LABELS[x.status], x.notes ?? ""].map((t) => ({ text: String(t) })));
+			sl.addTable([hdr, ...body], { x: 0.4, y: 2.3, w: 12.5, colW: [3.9, 1.5, 0.9, 0.8, 1.3, 1.3, 1.2, 1.6], fontSize: 9, border: { type: "solid", color: "DDE2EA", pt: 0.5 }, autoPage: false });
+		}
 	}
 	const end = pptx.addSlide();
 	end.background = { color: NAVY };
