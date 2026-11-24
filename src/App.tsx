@@ -15,6 +15,7 @@ import ServiceDashboard from "./pages/ServiceDashboard";
 import SurfaceScan360 from "./pages/SurfaceScan360";
 import Assessment from "./pages/Assessment";
 import Nis2Acn from "./pages/Nis2Acn";
+import SalesManager from "./pages/SalesManager";
 import Remediation from "./pages/Remediation";
 import ReportPreview from "./pages/ReportPreview";
 import Analytics from "./pages/Analytics";
@@ -107,6 +108,7 @@ const App = () => (
 							<Route path="/entra" element={<EntraRedirect />} />
 							<Route path="/admin/nuclei-scan360" element={<NucleiScan360 />} />
 							<Route path="/admin/clients" element={<ClientSelection />} />
+							<Route path="/sales-manager" element={<SalesManager />} />
 							<Route
 								path="/dashboard"
 								element={

@@ -6141,6 +6141,59 @@ export type Database = {
           },
         ]
       }
+      remediation_commercial: {
+        Row: {
+          closed_at: string | null
+          created_at: string
+          currency: string
+          id: string
+          notes: string | null
+          organization_id: string
+          proposed_at: string | null
+          proposed_value: number | null
+          status: string
+          task_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          closed_at?: string | null
+          created_at?: string
+          currency?: string
+          id?: string
+          notes?: string | null
+          organization_id: string
+          proposed_at?: string | null
+          proposed_value?: number | null
+          status?: string
+          task_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          closed_at?: string | null
+          created_at?: string
+          currency?: string
+          id?: string
+          notes?: string | null
+          organization_id?: string
+          proposed_at?: string | null
+          proposed_value?: number | null
+          status?: string
+          task_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "remediation_commercial_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: true
+            referencedRelation: "remediation_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       remediation_tasks: {
         Row: {
           assignee: string | null

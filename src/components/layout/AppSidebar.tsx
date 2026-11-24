@@ -40,7 +40,7 @@ import {
 	Laptop as LaptopIcon,
 	FolderOpen,
 } from "lucide-react";
-import { Flame, Mail, Smartphone } from "lucide-react";
+import { Flame, Mail, Smartphone, Briefcase } from "lucide-react";
 import { SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import {
 	Sidebar,
@@ -113,6 +113,11 @@ const complianceEventItems = [
 ];
 
 const adminNavigation = [
+	{
+		title: "Sales Manager",
+		href: "/sales-manager",
+		icon: Briefcase,
+	},
 	{
 		title: "Gestione Clienti",
 		href: "/admin/clients",
@@ -478,6 +483,8 @@ export const AppSidebar: React.FC = () => {
 										if (item.href === "/admin/companies")
 											return (isAdmin || isSuperAdmin) && hasCompanyMgmt;
 										// Show "Reportistica Aggregata" for admin/sales who can manage multiple clients
+										if (item.href === "/sales-manager")
+											return isSuperAdmin || isSales;
 										if (item.href === "/admin/reporting")
 											return canManageMultipleClients;
 										// Show "Gestione Ruoli" only with user management capability
