@@ -1,0 +1,2 @@
+REVOKE EXECUTE ON FUNCTION public.sync_commercial_to_task_budget() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.sync_task_budget_to_commercial() FROM PUBLIC, anon, authenticated;

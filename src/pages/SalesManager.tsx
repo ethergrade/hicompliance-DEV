@@ -90,17 +90,9 @@ export default function SalesManager() {
 		try {
 			await salesManagerApi.save(r, p);
 			setRows((all) => all.map((x) => x.taskId === r.taskId ? { ...x,
-				...(p.status ? { status: p.status } : {}), ...("proposed_value" in p ? { proposedValue: p.proposed_value ?? null } : {}),
+				...(p.status ? { status: p.status } : {}), ...("proposed_value" in p ? { proposedValue: p.proposed_value ?? null, budget: p.proposed_value ?? null } : {}),
 				...("notes" in p ? { notes: p.notes ?? null } : {}), updatedAt: new Date().toISOString() } : x));
 		} catch (e: any) { toast({ title: "Salvataggio non riuscito", description: e.message, variant: "destructive" }); }
-	};
-	const pushBudget = async (r: SalesRow) => {
-		if (!window.confirm(`Aggiornare il budget nel piano di remediation a ${eur(r.proposedValue)}? Verrà modificato solo il budget di questa azione.`)) return;
-		try {
-			await salesManagerApi.pushBudget(r.taskId, r.proposedValue);
-			setRows((all) => all.map((x) => x.taskId === r.taskId ? { ...x, budget: r.proposedValue } : x));
-			toast({ title: "Budget inviato al piano" });
-		} catch (e: any) { toast({ title: "Invio non riuscito", description: e.message, variant: "destructive" }); }
 	};
 	const bulk = async (p: Parameters<typeof salesManagerApi.save>[1], label: string) => {
 		const targets = rows.filter((r) => sel.has(r.taskId));
@@ -108,17 +100,6 @@ export default function SalesManager() {
 		for (const r of targets) await patch(r, p);
 		toast({ title: `${label}: ${targets.length} remediation aggiornate` });
 		setSel(new Set());
-	};
-	const bulkPush = async () => {
-		const targets = rows.filter((r) => sel.has(r.taskId) && r.proposedValue != null && Number(r.proposedValue) !== Number(r.budget ?? 0));
-		if (!targets.length) { toast({ title: "Nessuna remediation selezionata con budget da inviare" }); return; }
-		if (!window.confirm(`Inviare il budget al piano per ${targets.length} remediation? Verrà modificato solo il budget.`)) return;
-		try {
-			for (const r of targets) await salesManagerApi.pushBudget(r.taskId, r.proposedValue);
-			const ids = new Set(targets.map((t) => t.taskId));
-			setRows((all) => all.map((x) => ids.has(x.taskId) ? { ...x, budget: x.proposedValue } : x));
-			toast({ title: `Budget inviato al piano per ${targets.length} remediation` }); setSel(new Set());
-		} catch (e: any) { toast({ title: "Invio non riuscito", description: e.message, variant: "destructive" }); }
 	};
 	const openPlan = (orgId: string) => { const o = organizations.find((x) => x.id === orgId); if (o) { setSelectedOrganization(o); navigate("/remediation"); } };
 
@@ -208,7 +189,6 @@ export default function SalesManager() {
 										...(isWon(st) || st === "rifiutato" ? { closed_at: new Date().toISOString().slice(0, 10) } : {}) }, STATUS_LABELS[st])}>{STATUS_LABELS[st]}</Button>)}
 									<Input type="number" min={0} className="h-7 w-28" placeholder="Valore €" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)} />
 									<Button size="sm" variant="outline" className="h-7 text-xs" disabled={bulkValue === ""} onClick={() => { bulk({ proposed_value: Number(bulkValue) }, "Valore"); setBulkValue(""); }}>Applica valore</Button>
-									<Button size="sm" variant="outline" className="h-7 text-xs" onClick={bulkPush}>Invia budget al piano</Button>
 									<Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setSel(new Set())}>Annulla</Button>
 								</div>
 							)}
@@ -231,10 +211,7 @@ export default function SalesManager() {
 												<TableCell className="text-right">{r.progress}%</TableCell>
 												<TableCell className="min-w-40"><div className="space-y-1">
 													<ValueInput key={String(r.proposedValue)} row={r} onSave={(v) => patch(r, { proposed_value: v })} />
-													<div className="text-xs text-muted-foreground">Piano: {hasBudget ? eur(Number(r.budget)) : "non valorizzato"}</div>
-													{r.proposedValue != null && Number(r.proposedValue) !== Number(r.budget ?? 0) && (
-														<Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => pushBudget(r)}>Invia budget al piano</Button>
-													)}
+													<div className="text-xs text-muted-foreground">{hasBudget ? "Sincronizzato col piano" : "Piano non valorizzato"}</div>
 												</div></TableCell>
 												<TableCell><Badge variant={statusVariant(r.status)}>{STATUS_LABELS[r.status]}</Badge></TableCell>
 												<TableCell><div className="flex flex-wrap gap-1">{nextStatuses(r.status).map((s) => (
