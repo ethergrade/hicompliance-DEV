@@ -6227,6 +6227,59 @@ export type Database = {
           },
         ]
       }
+      remediation_plan_items: {
+        Row: {
+          cost: number | null
+          created_at: string
+          done: boolean
+          due_date: string | null
+          id: string
+          notes: string | null
+          organization_id: string
+          owner: string | null
+          sort_order: number
+          task_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          cost?: number | null
+          created_at?: string
+          done?: boolean
+          due_date?: string | null
+          id?: string
+          notes?: string | null
+          organization_id: string
+          owner?: string | null
+          sort_order?: number
+          task_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          cost?: number | null
+          created_at?: string
+          done?: boolean
+          due_date?: string | null
+          id?: string
+          notes?: string | null
+          organization_id?: string
+          owner?: string | null
+          sort_order?: number
+          task_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "remediation_plan_items_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "remediation_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       remediation_tasks: {
         Row: {
           assignee: string | null

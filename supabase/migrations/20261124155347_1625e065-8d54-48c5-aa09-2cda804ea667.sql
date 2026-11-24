@@ -1,0 +1,1 @@
+CREATE INDEX remediation_plan_items_task_idx ON public.remediation_plan_items (task_id);

@@ -16,6 +16,7 @@ import SurfaceScan360 from "./pages/SurfaceScan360";
 import Assessment from "./pages/Assessment";
 import Nis2Acn from "./pages/Nis2Acn";
 import SalesManager from "./pages/SalesManager";
+import SalesPlan from "./pages/SalesPlan";
 import Remediation from "./pages/Remediation";
 import ReportPreview from "./pages/ReportPreview";
 import Analytics from "./pages/Analytics";
@@ -109,6 +110,7 @@ const App = () => (
 							<Route path="/admin/nuclei-scan360" element={<NucleiScan360 />} />
 							<Route path="/admin/clients" element={<ClientSelection />} />
 							<Route path="/sales-manager" element={<SalesManager />} />
+							<Route path="/sales-manager/piano/:orgId" element={<SalesPlan />} />
 							<Route
 								path="/dashboard"
 								element={

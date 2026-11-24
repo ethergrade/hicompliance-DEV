@@ -225,7 +225,10 @@ export default function SalesManager() {
 								<Button size="sm" variant="ghost" onClick={() => { setOpenOrg(null); setSel(new Set()); }}><ArrowLeft className="mr-1 h-4 w-4" />Clienti</Button>
 								<CardTitle className="truncate">{names[openOrg]}</CardTitle>
 							</div>
-							<Button size="sm" onClick={() => openPlan(openOrg)}><ExternalLink className="mr-1 h-4 w-4" />Apri piano di remediation</Button>
+							<div className="flex flex-wrap gap-2">
+								<Button size="sm" onClick={() => navigate(`/sales-manager/piano/${openOrg}`)}>Piano completo</Button>
+								<Button size="sm" variant="outline" onClick={() => openPlan(openOrg)}><ExternalLink className="mr-1 h-4 w-4" />Apri piano di remediation</Button>
+							</div>
 						</CardHeader>
 						<CardContent className="overflow-x-auto space-y-3">
 							{sel.size > 0 && (
