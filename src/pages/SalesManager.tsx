@@ -15,6 +15,7 @@ import { useClientContext } from "@/contexts/ClientContext";
 import { useToast } from "@/hooks/use-toast";
 import { salesManagerApi } from "@/lib/api/salesManager";
 import { COMMERCIAL_STATUSES, STATUS_LABELS, effectiveValue, eur, isWon, nextStatuses, summarize, type CommercialStatus, type SalesRow } from "@/lib/salesManager/value";
+import { SalesDashboard } from "@/components/sales/SalesDashboard";
 import { SalesKpiPanel } from "@/components/sales/SalesKpiPanel";
 import { supabase } from "@/integrations/supabase/client";
 import { exportCsv, exportExcel, exportPpt } from "@/lib/salesManager/export";
@@ -67,6 +68,7 @@ export default function SalesManager() {
 	const allowed = isSuperAdmin || isSales;
 	const [sortC, setSortC] = useState<Sort>(null);
 	const [sortR, setSortR] = useState<Sort>(null);
+	const [view, setView] = useState<"dashboard" | "clienti">("dashboard");
 	const [sel, setSel] = useState<Set<string>>(new Set());
 	const [bulkValue, setBulkValue] = useState("");
 
@@ -142,9 +144,15 @@ export default function SalesManager() {
 						<Card key={l}><CardContent className="p-4"><div className="text-xs text-muted-foreground">{l}</div><div className="text-2xl font-bold">{v}</div></CardContent></Card>
 					))}
 				</div>
-				{!openOrg && <SalesKpiPanel rows={rows} />}
+				{!openOrg && (
+					<div className="flex gap-1">
+						<Button size="sm" variant={view === "dashboard" ? "secondary" : "ghost"} onClick={() => setView("dashboard")}>Dashboard</Button>
+						<Button size="sm" variant={view === "clienti" ? "secondary" : "ghost"} onClick={() => setView("clienti")}>Clienti</Button>
+					</div>
+				)}
+				{!openOrg && view === "dashboard" && <><SalesDashboard rows={rows} names={names} onOpen={setOpenOrg} /><SalesKpiPanel rows={rows} /></>}
 
-				{!openOrg ? (
+				{!openOrg && view === "dashboard" ? null : !openOrg ? (
 					<Card>
 						<CardHeader className="space-y-3">
 							<CardTitle>Clienti</CardTitle>
