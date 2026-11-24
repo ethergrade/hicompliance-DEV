@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
-import { ArrowLeft, ExternalLink, FileSpreadsheet, FileText, Presentation } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ArrowLeft, ExternalLink, FileSpreadsheet, FileText, Presentation } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useUserRoles } from "@/hooks/useUserRoles";
@@ -34,6 +35,22 @@ function NotesInput({ row, onSave }: { row: SalesRow; onSave: (v: string) => voi
 		onChange={(e) => { const val = e.target.value; setV(val); window.clearTimeout(t.current); t.current = window.setTimeout(() => onSave(val), 1500); }} />;
 }
 
+type Sort = { key: string; dir: 1 | -1 } | null;
+function sortBy<T>(list: T[], sort: Sort, get: (x: T, k: string) => unknown): T[] {
+	if (!sort) return list;
+	return [...list].sort((a, b) => {
+		const x = get(a, sort.key), y = get(b, sort.key);
+		if (x == null || x === "") return 1; if (y == null || y === "") return -1;
+		return (typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y), "it", { numeric: true })) * sort.dir;
+	});
+}
+function SortHead({ k, sort, setSort, children, className }: { k: string; sort: Sort; setSort: (s: Sort) => void; children: React.ReactNode; className?: string }) {
+	const on = sort?.key === k;
+	const Icon = !on ? ArrowUpDown : sort!.dir === 1 ? ArrowUp : ArrowDown;
+	return <TableHead className={className}><button type="button" className="inline-flex items-center gap-1 hover:text-foreground" title="Ordina A→Z / Z→A"
+		onClick={() => setSort(!on ? { key: k, dir: 1 } : sort!.dir === 1 ? { key: k, dir: -1 } : null)}>{children}<Icon className="h-3 w-3" /></button></TableHead>;
+}
+
 export default function SalesManager() {
 	const { isSuperAdmin, isSales, loading } = useUserRoles() as any;
 	const { organizations, fetchOrganizations, hasFetchedOrganizations, setSelectedOrganization } = useClientContext();
@@ -46,6 +63,10 @@ export default function SalesManager() {
 	const [statusFilter, setStatusFilter] = useState<CommercialStatus | null>(null);
 	const [openOrg, setOpenOrg] = useState<string | null>(null);
 	const allowed = isSuperAdmin || isSales;
+	const [sortC, setSortC] = useState<Sort>(null);
+	const [sortR, setSortR] = useState<Sort>(null);
+	const [sel, setSel] = useState<Set<string>>(new Set());
+	const [bulkValue, setBulkValue] = useState("");
 
 	useEffect(() => { if (allowed && !hasFetchedOrganizations) fetchOrganizations(); }, [allowed, hasFetchedOrganizations, fetchOrganizations]);
 	useEffect(() => {
@@ -55,8 +76,9 @@ export default function SalesManager() {
 
 	const names = useMemo(() => Object.fromEntries(organizations.map((o) => [o.id, o.name])), [organizations]);
 	const summary = useMemo(() => summarize(organizations.map((o) => ({ id: o.id, name: o.name })), rows), [organizations, rows]);
-	const filtered = summary.filter((c) => c.name.toLowerCase().includes(search.toLowerCase())
+	const filteredRaw = summary.filter((c) => c.name.toLowerCase().includes(search.toLowerCase())
 		&& (!onlyUnvalued || c.unvalued > 0) && (!statusFilter || c.byStatus[statusFilter] > 0));
+	const filtered = sortBy(filteredRaw, sortC, (c: any, k) => k.startsWith("st:") ? c.byStatus[k.slice(3)] : c[k]);
 	const tot = summary.reduce((a, c) => ({ p: a.p + c.pipelineValue, w: a.w + c.acceptedValue, n: a.n + c.total, u: a.u + (c.unvalued > 0 ? 1 : 0) }), { p: 0, w: 0, n: 0, u: 0 });
 	const wonCount = rows.filter((r) => isWon(r.status)).length;
 	const decided = rows.filter((r) => isWon(r.status) || r.status === "rifiutato").length;
@@ -80,9 +102,29 @@ export default function SalesManager() {
 			toast({ title: "Budget inviato al piano" });
 		} catch (e: any) { toast({ title: "Invio non riuscito", description: e.message, variant: "destructive" }); }
 	};
+	const bulk = async (p: Parameters<typeof salesManagerApi.save>[1], label: string) => {
+		const targets = rows.filter((r) => sel.has(r.taskId));
+		if (!targets.length) return;
+		for (const r of targets) await patch(r, p);
+		toast({ title: `${label}: ${targets.length} remediation aggiornate` });
+		setSel(new Set());
+	};
+	const bulkPush = async () => {
+		const targets = rows.filter((r) => sel.has(r.taskId) && r.proposedValue != null && Number(r.proposedValue) !== Number(r.budget ?? 0));
+		if (!targets.length) { toast({ title: "Nessuna remediation selezionata con budget da inviare" }); return; }
+		if (!window.confirm(`Inviare il budget al piano per ${targets.length} remediation? Verrà modificato solo il budget.`)) return;
+		try {
+			for (const r of targets) await salesManagerApi.pushBudget(r.taskId, r.proposedValue);
+			const ids = new Set(targets.map((t) => t.taskId));
+			setRows((all) => all.map((x) => ids.has(x.taskId) ? { ...x, budget: x.proposedValue } : x));
+			toast({ title: `Budget inviato al piano per ${targets.length} remediation` }); setSel(new Set());
+		} catch (e: any) { toast({ title: "Invio non riuscito", description: e.message, variant: "destructive" }); }
+	};
 	const openPlan = (orgId: string) => { const o = organizations.find((x) => x.id === orgId); if (o) { setSelectedOrganization(o); navigate("/remediation"); } };
 
-	const scopeRows = openOrg ? rows.filter((r) => r.organizationId === openOrg) : rows.filter((r) => filtered.some((c) => c.organizationId === r.organizationId));
+	const orgRows = sortBy(openOrg ? rows.filter((r) => r.organizationId === openOrg) : [], sortR,
+		(r: any, k) => k === "value" ? effectiveValue(r.budget, r.proposedValue) : k === "status" ? STATUS_LABELS[r.status as CommercialStatus] : r[k]);
+	const scopeRows = openOrg ? orgRows : rows.filter((r) => filtered.some((c) => c.organizationId === r.organizationId));
 	const scopeSummary = openOrg ? summary.filter((c) => c.organizationId === openOrg) : filtered;
 	const exportBar = (
 		<div className="flex flex-wrap gap-2">
@@ -125,9 +167,9 @@ export default function SalesManager() {
 						<CardContent className="overflow-x-auto">
 							<Table>
 								<TableHeader><TableRow>
-									<TableHead>Cliente</TableHead><TableHead className="text-right">Remediation</TableHead>
-									{COMMERCIAL_STATUSES.map((s) => <TableHead key={s} className="text-right text-xs">{STATUS_LABELS[s]}</TableHead>)}
-									<TableHead className="text-right">Da valorizzare</TableHead><TableHead className="text-right">Pipeline</TableHead><TableHead className="text-right">Accettato</TableHead><TableHead>Aggiornato</TableHead><TableHead />
+									<SortHead k="name" sort={sortC} setSort={setSortC}>Cliente</SortHead><SortHead k="total" sort={sortC} setSort={setSortC} className="text-right">Remediation</SortHead>
+									{COMMERCIAL_STATUSES.map((s) => <SortHead key={s} k={"st:" + s} sort={sortC} setSort={setSortC} className="text-right text-xs">{STATUS_LABELS[s]}</SortHead>)}
+									<SortHead k="unvalued" sort={sortC} setSort={setSortC} className="text-right">Da valorizzare</SortHead><SortHead k="pipelineValue" sort={sortC} setSort={setSortC} className="text-right">Pipeline</SortHead><SortHead k="acceptedValue" sort={sortC} setSort={setSortC} className="text-right">Accettato</SortHead><SortHead k="lastUpdate" sort={sortC} setSort={setSortC}>Aggiornato</SortHead><TableHead />
 								</TableRow></TableHeader>
 								<TableBody>
 									{busy && <TableRow><TableCell colSpan={14} className="text-muted-foreground">Caricamento…</TableCell></TableRow>}
@@ -151,28 +193,44 @@ export default function SalesManager() {
 					<Card>
 						<CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
 							<div className="flex items-center gap-2 min-w-0">
-								<Button size="sm" variant="ghost" onClick={() => setOpenOrg(null)}><ArrowLeft className="mr-1 h-4 w-4" />Clienti</Button>
+								<Button size="sm" variant="ghost" onClick={() => { setOpenOrg(null); setSel(new Set()); }}><ArrowLeft className="mr-1 h-4 w-4" />Clienti</Button>
 								<CardTitle className="truncate">{names[openOrg]}</CardTitle>
 							</div>
 							<Button size="sm" onClick={() => openPlan(openOrg)}><ExternalLink className="mr-1 h-4 w-4" />Apri piano di remediation</Button>
 						</CardHeader>
-						<CardContent className="overflow-x-auto">
+						<CardContent className="overflow-x-auto space-y-3">
+							{sel.size > 0 && (
+								<div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 p-2">
+									<span className="text-sm font-medium">{sel.size} selezionate</span>
+									<span className="text-xs text-muted-foreground">Imposta stato:</span>
+									{COMMERCIAL_STATUSES.map((st) => <Button key={st} size="sm" variant="outline" className="h-7 text-xs" onClick={() => bulk({ status: st,
+										...(st === "inviato" ? { proposed_at: new Date().toISOString().slice(0, 10) } : {}),
+										...(isWon(st) || st === "rifiutato" ? { closed_at: new Date().toISOString().slice(0, 10) } : {}) }, STATUS_LABELS[st])}>{STATUS_LABELS[st]}</Button>)}
+									<Input type="number" min={0} className="h-7 w-28" placeholder="Valore €" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)} />
+									<Button size="sm" variant="outline" className="h-7 text-xs" disabled={bulkValue === ""} onClick={() => { bulk({ proposed_value: Number(bulkValue) }, "Valore"); setBulkValue(""); }}>Applica valore</Button>
+									<Button size="sm" variant="outline" className="h-7 text-xs" onClick={bulkPush}>Invia budget al piano</Button>
+									<Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setSel(new Set())}>Annulla</Button>
+								</div>
+							)}
 							<Table>
 								<TableHeader><TableRow>
-									<TableHead>Azione</TableHead><TableHead>Priorità</TableHead><TableHead className="text-right">Avanz.</TableHead>
-									<TableHead>Valore</TableHead><TableHead>Stato</TableHead><TableHead>Sposta a</TableHead><TableHead>Note</TableHead>
+									<TableHead className="w-8"><Checkbox aria-label="Seleziona tutte" checked={orgRows.length > 0 && orgRows.every((r) => sel.has(r.taskId))}
+										onCheckedChange={(v) => setSel(v ? new Set(orgRows.map((r) => r.taskId)) : new Set())} /></TableHead>
+									<SortHead k="task" sort={sortR} setSort={setSortR}>Azione</SortHead><SortHead k="priority" sort={sortR} setSort={setSortR}>Priorità</SortHead><SortHead k="progress" sort={sortR} setSort={setSortR} className="text-right">Avanz.</SortHead>
+									<SortHead k="value" sort={sortR} setSort={setSortR}>Valore</SortHead><SortHead k="status" sort={sortR} setSort={setSortR}>Stato</SortHead><TableHead>Sposta a</TableHead><SortHead k="notes" sort={sortR} setSort={setSortR}>Note</SortHead>
 								</TableRow></TableHeader>
 								<TableBody>
-									{scopeRows.length === 0 && <TableRow><TableCell colSpan={7} className="text-muted-foreground">Nessuna remediation nel piano di questo cliente.</TableCell></TableRow>}
+									{scopeRows.length === 0 && <TableRow><TableCell colSpan={8} className="text-muted-foreground">Nessuna remediation nel piano di questo cliente.</TableCell></TableRow>}
 									{scopeRows.map((r) => {
 										const hasBudget = r.budget != null && Number(r.budget) > 0;
 										return (
-											<TableRow key={r.taskId}>
+											<TableRow key={r.taskId} data-state={sel.has(r.taskId) ? "selected" : undefined}>
+												<TableCell><Checkbox aria-label="Seleziona" checked={sel.has(r.taskId)} onCheckedChange={(v) => setSel((cur) => { const n = new Set(cur); v ? n.add(r.taskId) : n.delete(r.taskId); return n; })} /></TableCell>
 												<TableCell className="max-w-md"><div className="font-medium">{r.task}</div><div className="text-xs text-muted-foreground">{r.category}</div></TableCell>
 												<TableCell>{r.priority}</TableCell>
 												<TableCell className="text-right">{r.progress}%</TableCell>
 												<TableCell className="min-w-40"><div className="space-y-1">
-													<ValueInput row={r} onSave={(v) => patch(r, { proposed_value: v })} />
+													<ValueInput key={String(r.proposedValue)} row={r} onSave={(v) => patch(r, { proposed_value: v })} />
 													<div className="text-xs text-muted-foreground">Piano: {hasBudget ? eur(Number(r.budget)) : "non valorizzato"}</div>
 													{r.proposedValue != null && Number(r.proposedValue) !== Number(r.budget ?? 0) && (
 														<Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => pushBudget(r)}>Invia budget al piano</Button>
